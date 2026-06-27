@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gomidas</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --chrome: #2b2b30; --chrome2: #242428; --panel: #2e2e34; --panel2: #333339;
+      --line: #15151a; --line2: #3c3c44; --text: #d7d7dc; --dim: #9a9aa3;
+      --accent: #3a6ad0; --accent2: #2b53a8; --hover: #3a3a42;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--chrome2); color: var(--text);
+                 font-family: -apple-system, system-ui, sans-serif; overflow: hidden; font-size: 13px; }
+    body { display: flex; flex-direction: column; height: 100vh; }
+    button, select, input { font-family: inherit; }
+
+    /* ---------- top transport ---------- */
+    #transport { flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+                 padding: 6px 10px; background: linear-gradient(#303036, #26262b);
+                 border-bottom: 1px solid var(--line); }
+    .tp-group { display: flex; align-items: center; gap: 4px; }
+    .tp-center { margin: 0 auto; }
+    .tp-right { margin-left: auto; }
+    .tp-btn { background: #3a3a42; color: var(--text); border: 1px solid var(--line);
+              border-radius: 6px; min-width: 30px; height: 28px; padding: 0 8px; cursor: pointer; font-size: 13px; }
+    .tp-btn:hover { background: var(--hover); }
+    .tp-btn.lg { font-size: 16px; }
+    .tp-play { background: var(--accent); border-color: var(--accent2); min-width: 40px; font-size: 16px; }
+    .tp-play:hover { background: #4778df; }
+    #transport select, #transport input { background: #3a3a42; color: var(--text);
+              border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 8px; cursor: pointer; }
+    #transport input[type=number] { width: 60px; cursor: text; }
+    #tp-trackchip { display: flex; flex-direction: column; justify-content: center; align-items: center;
+              min-width: 200px; height: 40px; padding: 2px 14px; background: #1d1d21;
+              border: 1px solid var(--line); border-radius: 8px; }
+    #tp-track { font-weight: 600; font-size: 13px; }
+    #tp-sub { font-size: 11px; color: var(--dim); display: flex; gap: 12px; }
+    #status { font-size: 11px; color: var(--dim); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tp-tempo { display: flex; align-items: center; gap: 4px; color: var(--dim); }
+
+    /* ---------- main row ---------- */
+    #main { flex: 1 1 auto; display: flex; min-height: 0; }
+
+    /* left palette */
+    #palette { flex: 0 0 210px; background: var(--chrome); border-right: 1px solid var(--line);
+               overflow-y: auto; padding: 8px; }
+    #editbar { display: flex; flex-direction: column; gap: 10px; }
+    .eb-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+                padding-bottom: 8px; border-bottom: 1px solid var(--line2); }
+    .eb-group:last-child { border-bottom: none; }
+    .eb-label { width: 100%; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+                color: var(--dim); margin-bottom: 2px; }
+    .eb-btn { background: #34343b; color: var(--text); border: 1px solid var(--line);
+              border-radius: 6px; min-width: 30px; height: 28px; padding: 0 7px; cursor: pointer; font-size: 13px; line-height: 1; }
+    .eb-btn:hover { background: var(--hover); }
+    .eb-btn.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
+
+    /* center */
+    #center { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+    #at-wrap { flex: 1 1 auto; overflow: auto; background: #3a3a40; padding: 22px;
+               outline: none; }
+    #at { padding: 24px; position: relative; background: #fff; color: #111; border-radius: 3px;
+          box-shadow: 0 6px 30px rgba(0,0,0,.5); min-height: 100%; }
+    #edit-cursor { position: absolute; pointer-events: none; display: none; z-index: 4;
+                   background: rgba(90,160,255,.10); border: 1px solid rgba(90,160,255,.45); border-radius: 2px; }
+    #string-cursor { position: absolute; pointer-events: none; display: none; z-index: 6;
+                   background: rgba(60,130,255,.30); border: 1px solid rgba(60,130,255,.95); border-radius: 3px; }
+    #play-cursor { position: absolute; pointer-events: none; display: none; z-index: 4;
+                   background: rgba(120,230,140,.30); border-left: 2px solid rgba(120,230,140,.95); }
+
+    /* fretboard / drum palette (center bottom) */
+    #fretboard { flex: 0 0 auto; max-height: 240px; background: #211c17; border-top: 2px solid var(--line);
+                 padding: 8px 12px; overflow: auto; }
+    .fb-grid { display: grid; gap: 0; min-width: 760px; }
+    .fb-corner, .fb-fnum, .fb-strlabel, .fb-cell { height: 24px; display: flex;
+                 align-items: center; justify-content: center; font-size: 12px; }
+    .fb-fnum { color: #8a7f70; font-size: 11px; }
+    .fb-fnum.fb-marker { color: #d9c089; font-weight: 700; }
+    .fb-strlabel { color: #d8c9a8; font-weight: 700; background: #2c251d; border-right: 2px solid #000; }
+    .fb-cell { position: relative; border: 1px solid #3a3026; background: #2a231b; cursor: pointer; }
+    .fb-cell:hover { background: #4a3d2c; }
+    .fb-cell.fb-open { background: #241f18; border-left: 3px solid #000; }
+    .fb-cell.fb-curstr { background: #332a1f; }
+    .fb-cell.fb-curstr:hover { background: #4a3d2c; }
+    .fb-cell.fb-inlay::before { content: ''; position: absolute; width: 9px; height: 9px;
+               border-radius: 50%; background: #5a4d38; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    .fb-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+              width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff;
+              display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; z-index: 1; }
+    .dp-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+    .dp-pad { min-width: 88px; height: 50px; display: flex; align-items: center; justify-content: center;
+              background: #2a231b; border: 1px solid #4a3d2c; border-radius: 8px; cursor: pointer;
+              color: #d8c9a8; font-weight: 600; user-select: none; }
+    .dp-pad:hover { background: #4a3d2c; }
+    .dp-pad.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
+
+    /* right inspector */
+    #inspector { flex: 0 0 250px; background: var(--chrome); border-left: 1px solid var(--line);
+                 overflow-y: auto; padding: 0; }
+    .insp-tabs { display: flex; border-bottom: 1px solid var(--line); }
+    .insp-tab { flex: 1; text-align: center; padding: 10px; font-size: 12px; font-weight: 600;
+                color: var(--dim); cursor: default; }
+    .insp-tab.active { color: #fff; background: var(--accent); }
+    .insp-sec { padding: 12px 14px; border-bottom: 1px solid var(--line2); }
+    .insp-h { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); margin: 0 0 8px; }
+    .insp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; font-size: 12px; }
+    .insp-row .v { color: var(--text); }
+    .insp-name { background: #1d1d21; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-weight: 600; }
+    .insp-pill { display: inline-flex; gap: 6px; }
+    .insp-pill span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 5px; background: #34343b; font-size: 11px; }
+    .insp-pill span.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .insp-tuning { font-family: ui-monospace, monospace; letter-spacing: .12em; background: #1d1d21;
+                   border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+    .insp-slider { -webkit-appearance: none; width: 120px; height: 4px; border-radius: 2px; background: #4a4a52; }
+    .insp-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+    .insp-toggle { width: 34px; height: 18px; border-radius: 9px; background: #4a4a52; position: relative; }
+    .insp-toggle.on { background: var(--accent); }
+    .insp-toggle::after { content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+                          background: #fff; top: 2px; left: 2px; transition: left .1s; }
+    .insp-toggle.on::after { left: 18px; }
+
+    /* bottom track list */
+    #tracks { flex: 0 0 auto; max-height: 168px; overflow-y: auto; background: var(--chrome2);
+              border-top: 1px solid var(--line); }
+    .tk-head { display: flex; align-items: center; gap: 10px; padding: 5px 10px; color: var(--dim);
+               font-size: 11px; border-bottom: 1px solid var(--line2); }
+    .tk-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; cursor: pointer;
+              border-bottom: 1px solid var(--line2); }
+    .tk-row:hover { background: #2c2c32; }
+    .tk-row.current { background: #233153; }
+    .tk-ico { width: 24px; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+              background: #44444c; font-size: 13px; }
+    .tk-name { flex: 1; font-weight: 600; font-size: 13px; }
+    .tk-badge { font-size: 10px; color: var(--dim); }
+    .tk-ctl { display: flex; gap: 4px; }
+    .tk-mini { width: 22px; height: 22px; border-radius: 4px; background: #34343b; border: 1px solid var(--line);
+               display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); cursor: pointer; }
+    .tk-mini:hover { background: var(--hover); }
+    .tk-mini.on { color: #cfe0ff; }
+    .tk-mini.mute { background: #c0533a; border-color: #8c331f; color: #fff; }
+    .tk-mini.solo { background: #d6a32a; border-color: #9c7414; color: #1b1b1f; }
+    .tk-vol { width: 110px; }
+    input.tk-volrange { -webkit-appearance: none; width: 110px; height: 4px; border-radius: 2px;
+               background: #4a4a52; cursor: pointer; vertical-align: middle; }
+    input.tk-volrange::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px;
+               border-radius: 50%; background: var(--accent); cursor: pointer; }
+
+    /* editable inspector controls */
+    .insp-input { background: #1d1d21; border: 1px solid var(--line); border-radius: 6px;
+               padding: 6px 10px; color: var(--text); font-weight: 600; width: 100%; }
+    .insp-select { background: #34343b; border: 1px solid var(--line); border-radius: 6px;
+               padding: 5px 8px; color: var(--text); font-size: 12px; }
+    .insp-tab { cursor: pointer; }
+    .insp-pill span { cursor: pointer; user-select: none; }
+
+    /* ---------- modal (New score / confirm) ---------- */
+    #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
+               align-items: center; justify-content: center; z-index: 50; }
+    #modal-overlay.show { display: flex; }
+    .modal { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px;
+               box-shadow: 0 18px 60px rgba(0,0,0,.6); width: 520px; max-width: 92vw;
+               max-height: 88vh; overflow: auto; }
+    .modal-h { padding: 14px 18px; font-size: 15px; font-weight: 700; border-bottom: 1px solid var(--line); }
+    .modal-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .modal-foot { padding: 12px 18px; display: flex; justify-content: flex-end; gap: 8px;
+               border-top: 1px solid var(--line); }
+    .m-field { display: flex; flex-direction: column; gap: 5px; }
+    .m-field > label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
+    .m-row { display: flex; gap: 10px; align-items: center; }
+    .modal input[type=text], .modal input[type=number], .modal select {
+               background: #1d1d21; color: var(--text); border: 1px solid var(--line);
+               border-radius: 6px; height: 30px; padding: 0 8px; }
+    .modal input[type=text] { flex: 1; }
+    .m-tracks { display: flex; flex-direction: column; gap: 8px; }
+    .m-track { display: flex; gap: 8px; align-items: center; background: #26262b;
+               border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+    .m-track select { flex: 1; }
+    .m-del { background: #3a3a42; border: 1px solid var(--line); border-radius: 6px; color: var(--dim);
+               width: 28px; height: 28px; cursor: pointer; }
+    .m-del:hover { background: #c0533a; color: #fff; }
+    .m-add { align-self: flex-start; background: #34343b; border: 1px solid var(--line);
+               border-radius: 6px; color: var(--text); padding: 6px 12px; cursor: pointer; }
+    .m-add:hover { background: var(--hover); }
+    .m-btn { border-radius: 6px; padding: 8px 16px; cursor: pointer; font-weight: 600; border: 1px solid var(--line); }
+    .m-btn.ghost { background: #34343b; color: var(--text); }
+    .m-btn.ghost:hover { background: var(--hover); }
+    .m-btn.primary { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .m-btn.primary:hover { background: #4778df; }
+    .m-msg { color: var(--text); line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <!-- ===== TOP TRANSPORT ===== -->
+  <div id="transport">
+    <div class="tp-group tp-left">
+      <button id="sample-btn" class="tp-btn lg" title="Load sample">⌂</button>
+      <button class="tp-btn" id="zoom-out" title="Zoom out">−</button>
+      <span id="zoom-pct" style="color:var(--dim);min-width:42px;text-align:center;">100%</span>
+      <button class="tp-btn" id="zoom-in" title="Zoom in">＋</button>
+      <button class="tp-btn" title="Undo (⌘Z)" id="undo-btn">↶</button>
+      <button class="tp-btn" title="Redo (⌘⇧Z)" id="redo-btn">↷</button>
+    </div>
+
+    <div class="tp-group tp-center">
+      <button class="tp-btn lg" title="Rewind" id="rewind-btn">⏮</button>
+      <button class="tp-btn tp-play" id="tp-play" title="Play / Stop (Space)">▶</button>
+      <button class="tp-btn lg" title="Forward" id="forward-btn">⏭</button>
+      <div id="tp-trackchip">
+        <div id="tp-track">—</div>
+        <div id="tp-sub"><span id="tp-pos">bar 1 · beat 1</span><span class="tp-tempo">♩ = <input id="tempo" type="number" min="40" max="240" step="1" value="120" style="width:48px;height:20px;padding:0 4px;" /></span></div>
+      </div>
+    </div>
+
+    <div class="tp-group tp-right">
+      <select id="new-select" title="New score">
+        <option value="">New…</option>
+        <option value="guitar">Guitar</option>
+        <option value="bass">Bass</option>
+        <option value="gb">Guitar + Bass</option>
+        <option value="drums">Drums</option>
+        <option value="band">Full Band</option>
+      </select>
+      <select id="addtrack-select" title="Add track">
+        <option value="">+ Track…</option>
+        <option value="guitar">Guitar</option>
+        <option value="bass">Bass</option>
+        <option value="drums">Drums</option>
+      </select>
+      <button id="openproj-btn" class="tp-btn">Open</button>
+      <button id="save-btn" class="tp-btn">Save</button>
+      <select id="track-select" title="Shown tracks"></select>
+      <span id="status">loading…</span>
+    </div>
+  </div>
+
+  <!-- ===== MAIN ===== -->
+  <div id="main">
+    <div id="palette"><div id="editbar"></div></div>
+
+    <div id="center">
+      <div id="at-wrap" tabindex="0"><div id="at"></div></div>
+      <div id="fretboard"></div>
+    </div>
+
+    <div id="inspector"></div>
+  </div>
+
+  <!-- ===== BOTTOM TRACK LIST ===== -->
+  <div id="tracks"></div>
+
+  <input id="file-input" type="file" hidden />
+
+  <!-- ===== MODAL (New score / confirm) ===== -->
+  <div id="modal-overlay"><div class="modal" id="modal-box"></div></div>
+
+  <script src="juce_native_interop.js"></script>
+  <script src="alphaTab.min.js"></script>
+  <script src="editor.js"></script>
+  <script src="fretboard.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
