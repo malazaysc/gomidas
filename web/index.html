@@ -28,6 +28,10 @@
               border-radius: 6px; min-width: 30px; height: 28px; padding: 0 8px; cursor: pointer; font-size: 13px; }
     .tp-btn:hover { background: var(--hover); }
     .tp-btn.lg { font-size: 16px; }
+    .tp-btn.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .tp-btn.rec { background: #c0392b; border-color: #e74c3c; color: #fff; }
+    #vu { width: 60px; height: 10px; background: #2a2a30; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+    #vu-fill { height: 100%; width: 0%; background: #5c8; transition: width .05s linear; }
     .tp-play { background: var(--accent); border-color: var(--accent2); min-width: 40px; font-size: 16px; }
     .tp-play:hover { background: #4778df; }
     #transport select, #transport input { background: #3a3a42; color: var(--text);
@@ -70,6 +74,8 @@
                    background: rgba(60,130,255,.30); border: 1px solid rgba(60,130,255,.95); border-radius: 3px; }
     #play-cursor { position: absolute; pointer-events: none; display: none; z-index: 4;
                    background: rgba(120,230,140,.30); border-left: 2px solid rgba(120,230,140,.95); }
+    .sel-cell { position: absolute; pointer-events: none; display: none; z-index: 3;
+                background: rgba(255,190,70,.22); border-radius: 2px; }
 
     /* fretboard / drum palette (center bottom) */
     #fretboard { flex: 0 0 auto; max-height: 240px; background: #211c17; border-top: 2px solid var(--line);
@@ -94,8 +100,13 @@
     .dp-pad { min-width: 88px; height: 50px; display: flex; align-items: center; justify-content: center;
               background: #2a231b; border: 1px solid #4a3d2c; border-radius: 8px; cursor: pointer;
               color: #d8c9a8; font-weight: 600; user-select: none; }
+    .dp-pad { gap: 7px; }
+    .dp-key { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
+              padding: 0 4px; border-radius: 4px; background: #1b1610; border: 1px solid #4a3d2c;
+              color: #9a8a6a; font-size: 11px; font-weight: 700; }
     .dp-pad:hover { background: #4a3d2c; }
     .dp-pad.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .dp-pad.active .dp-key { background: rgba(0,0,0,.25); border-color: rgba(255,255,255,.3); color: #fff; }
 
     /* right inspector */
     #inspector { flex: 0 0 250px; background: var(--chrome); border-left: 1px solid var(--line);
@@ -208,6 +219,20 @@
       <button class="tp-btn lg" title="Rewind" id="rewind-btn">⏮</button>
       <button class="tp-btn tp-play" id="tp-play" title="Play / Stop (Space)">▶</button>
       <button class="tp-btn lg" title="Forward" id="forward-btn">⏭</button>
+      <button class="tp-btn" id="record-btn" title="Record output to WAV">⏺</button>
+      <button class="tp-btn" id="metro-btn" title="Metronome (click track)">♩</button>
+      <button class="tp-btn" id="countin-btn" title="Count-in (one bar of clicks before play)">⏱</button>
+      <button class="tp-btn" id="liveinput-btn" title="Live input monitor (play on top of the tracks)">🎤</button>
+      <input type="range" id="ingain" min="0" max="200" value="100" title="Input gain" style="width:70px">
+      <div id="vu" title="Output level"><div id="vu-fill"></div></div>
+      <select id="speed-select" title="Practice speed (slow down without changing pitch)">
+        <option value="0.25">25%</option>
+        <option value="0.5">50%</option>
+        <option value="0.75">75%</option>
+        <option value="1" selected>100%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5">150%</option>
+      </select>
       <div id="tp-trackchip">
         <div id="tp-track">—</div>
         <div id="tp-sub"><span id="tp-pos">bar 1 · beat 1</span><span class="tp-tempo">♩ = <input id="tempo" type="number" min="40" max="240" step="1" value="120" style="width:48px;height:20px;padding:0 4px;" /></span></div>

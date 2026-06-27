@@ -154,9 +154,10 @@
     const fb = document.getElementById('fretboard');
     fb.innerHTML = '';
     const grid = el('div', 'dp-grid');
-    drums.forEach(d => {
+    drums.forEach((d, i) => {
       const pad = el('div', 'dp-pad');
       pad.dataset.midi = d.midi;
+      if (i < 9) pad.appendChild(el('span', 'dp-key', String(i + 1)));   // keyboard hotkey (digits 1–9)
       pad.appendChild(el('span', 'dp-name', d.name));
       grid.appendChild(pad);
     });
@@ -234,6 +235,11 @@
   function sliderRow(label, val) { return '<div class="insp-row"><span>' + label + '</span><input type="range" class="insp-slider" value="' + (val || 20) + '" disabled></div>'; }
   function toggleRow(label, on) { return '<div class="insp-row"><span>' + label + '</span><div class="insp-toggle ' + (on ? 'on' : '') + '"></div></div>'; }
   function valRow(label, val) { return '<div class="insp-row"><span>' + label + '</span><span class="v">' + esc(val) + '</span></div>'; }
+  // 0 = hard left, 0.5 = center, 1 = hard right → "L42 / C / R42".
+  function panLabel(pan) {
+    const d = Math.round((pan - 0.5) * 200);
+    return d === 0 ? 'Center' : (d < 0 ? 'L' + (-d) : 'R' + d);
+  }
 
   let inspTab = 'track';            // 'song' | 'track'
   // Tuning presets offered in the inspector, keyed by string count (high→low MIDI).
@@ -257,9 +263,9 @@
   function buildInspector(s) {
     const ins = document.getElementById('inspector');
     if (!ins) return;
-    // Don't clobber a text field the user is actively typing into.
+    // Don't clobber a field the user is actively typing into / dragging (incl. the pan slider).
     const ae = document.activeElement;
-    if (ae && ins.contains(ae) && (ae.tagName === 'INPUT' && (ae.type === 'text' || ae.type === 'number'))) return;
+    if (ae && ins.contains(ae) && ae.tagName === 'INPUT' && (ae.type === 'text' || ae.type === 'number' || ae.type === 'range')) return;
 
     const tabs = '<div class="insp-tabs">' +
       '<div class="insp-tab ' + (inspTab === 'song' ? 'active' : '') + '" data-tab="song">SONG</div>' +
@@ -299,6 +305,11 @@
             ? valRow('Kit', 'Drum Kit')
             : '<div class="insp-row"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>') +
         '</div>' +
+        '<div class="insp-sec"><div class="insp-h">Mixer</div>' +
+          '<div class="insp-row"><span>Pan</span>' +
+            '<input type="range" class="insp-slider" id="ins-pan" min="0" max="100" value="' + Math.round((s.trackPan != null ? s.trackPan : 0.5) * 100) + '"></div>' +
+          '<div class="insp-row"><span class="v" id="ins-pan-lbl" style="font-size:11px">' + panLabel(s.trackPan != null ? s.trackPan : 0.5) + '</span></div>' +
+        '</div>' +
         '<div class="insp-sec"><div class="insp-h">Interpretation</div>' +
           valRow('Playing style', 'Pick') + sliderRow('Palm mute') + sliderRow('Accentuation') +
           toggleRow('Auto let ring', false) + toggleRow('Auto brush', true) +
@@ -323,6 +334,17 @@
     if (sound) sound.onchange = () => E.setTrackProgram(parseInt(sound.value, 10));
     const tuning = byId('ins-tuning');
     if (tuning) tuning.onchange = () => { const v = tuning.value; if (v) E.setTuningPreset(v.split(',').map(Number)); };
+    const pan = byId('ins-pan');
+    if (pan) pan.oninput = () => {
+      const st = E && E.getState && E.getState();
+      if (!st) return;
+      const i = st.curTrackIndex;
+      const flags = window.gomidasTrackFlags || (window.gomidasTrackFlags = {});
+      const f = flags[i] || (flags[i] = {});
+      f.pan = (parseInt(pan.value, 10) || 50) / 100;
+      const lbl = byId('ins-pan-lbl'); if (lbl) lbl.textContent = panLabel(f.pan);
+      if (window.gomidasApplyMixer) window.gomidasApplyMixer();
+    };
     const not = byId('ins-notation');
     if (not) not.querySelectorAll('span').forEach(sp => sp.onclick = () => E.toggleNotation(sp.dataset.not));
   }

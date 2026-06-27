@@ -7,16 +7,27 @@
   const DURATIONS = [1, 2, 4, 8, 16, 32]; // whole..thirty-second (alphaTab Duration enum values)
   // Drum palette (kit order, top→bottom). midi = GM percussion key; we resolve it to
   // the track's percussionArticulation index at runtime (works for any drum track).
+  // Full-ish GM kit, top(cymbals)→bottom(kick). The first 9 get digit hotkeys 1–9;
+  // all are click-able. Only pieces present in the track's percussionArticulations
+  // render (getState filters by outputMidiNumber), so imported drum tracks adapt.
   const DRUM_KIT = [
-    { name: 'Crash',   midi: 49 },
-    { name: 'Ride',    midi: 51 },
-    { name: 'HH open', midi: 46 },
-    { name: 'Hi-Hat',  midi: 42 },
-    { name: 'Tom Hi',  midi: 48 },
-    { name: 'Tom Mid', midi: 47 },
-    { name: 'Floor',   midi: 43 },
-    { name: 'Snare',   midi: 38 },
-    { name: 'Kick',    midi: 36 }
+    { name: 'Crash',     midi: 49 },
+    { name: 'Splash',    midi: 55 },
+    { name: 'China',     midi: 52 },
+    { name: 'Ride',      midi: 51 },
+    { name: 'Ride Bell', midi: 53 },
+    { name: 'HH open',   midi: 46 },
+    { name: 'Hi-Hat',    midi: 42 },
+    { name: 'HH pedal',  midi: 44 },
+    { name: 'Tom Hi',    midi: 48 },
+    { name: 'Tom Mid',   midi: 47 },
+    { name: 'Floor',     midi: 43 },
+    { name: 'Snare',     midi: 38 },
+    { name: 'Side Stick', midi: 37 },
+    { name: 'Hand Clap', midi: 39 },
+    { name: 'Tambourine', midi: 54 },
+    { name: 'Cowbell',   midi: 56 },
+    { name: 'Kick',      midi: 36 }
   ];
   let api = null;
   let isPlaying = false;
@@ -43,6 +54,7 @@
     const s = staff();
     return (s && s.tuning && s.tuning.length) ? s.tuning.length : 6;
   }
+  function isPercussionTrack() { const s = staff(); return !!(s && s.isPercussion); }
   function clampString() { cur.string = Math.max(0, Math.min(stringCount() - 1, cur.string)); }
   // Fretboard rows are top(0)=highest pitch; alphaTab note.string is 1-based from the
   // BOTTOM (1 = lowest pitch). Convert between a display row and an alphaTab string number.
@@ -55,11 +67,11 @@
     if (!v) return;
     let nb = cur.beat + delta;
     if (nb < 0) {
-      if (cur.bar > 0) { cur.bar--; cur.voice = 0; const nv = voice(); cur.beat = nv ? nv.beats.length - 1 : 0; }
+      if (cur.bar > 0) { cur.bar--; if (!voice()) cur.voice = 0; const nv = voice(); cur.beat = nv ? nv.beats.length - 1 : 0; }
       else cur.beat = 0;
     } else if (nb >= v.beats.length) {
       const s = staff();
-      if (cur.bar < s.bars.length - 1) { cur.bar++; cur.voice = 0; cur.beat = 0; }
+      if (cur.bar < s.bars.length - 1) { cur.bar++; if (!voice()) cur.voice = 0; cur.beat = 0; }
       else {
         // Last beat of the last bar: append ONE trailing rest you can fill (GP-style),
         // but don't keep piling rests — if the last beat is already an empty rest, stop.
@@ -74,6 +86,232 @@
   }
 
   function moveString(delta) { cur.string += delta; clampString(); refreshCursor(); }
+
+  // GP: Home / End — jump to the first / last beat of the current bar.
+  function moveToBarEdge(toEnd) {
+    const v = voice();
+    if (!v) return;
+    cur.beat = toEnd ? Math.max(0, v.beats.length - 1) : 0;
+    refreshCursor();
+  }
+  // GP: Cmd+Home / Cmd+End — jump to the first / last bar (cursor lands on its first beat).
+  function moveToScoreEdge(toEnd) {
+    const s = staff();
+    if (!s) return;
+    cur.bar = toEnd ? Math.max(0, s.bars.length - 1) : 0;
+    cur.voice = 0; cur.beat = 0;
+    refreshCursor();
+  }
+  // GP: Go To (Cmd+G) — jump to a 1-based bar number, clamped to the score.
+  function goToBar(barNo1) {
+    const s = staff();
+    if (!s) return;
+    cur.bar = Math.max(0, Math.min(s.bars.length - 1, (barNo1 | 0) - 1));
+    cur.voice = 0; cur.beat = 0;
+    refreshCursor();
+  }
+
+  // ---- selection + clipboard (beat range on voice 0 of the current track) -----
+  // GP: ⇧→/⇧← extend, ⌘A select all, ⌘C/⌘X/⌘V copy/cut/paste, C copy last beat.
+  const sel = { active: false, anchor: null, head: null }; // anchor/head = {bar, beat}
+  let clipboard = null;     // array of serialized beats (plain objects, see serializeBeat)
+
+  function clearSelection() { sel.active = false; sel.anchor = null; sel.head = null; }
+
+  // Flat ordered list of every (bar,beat) on voice 0 of the current track's staff.
+  function beatPositions() {
+    const s = staff(); const out = [];
+    if (!s) return out;
+    for (let bi = 0; bi < s.bars.length; bi++) {
+      const v = s.bars[bi].voices[0];
+      if (!v) continue;
+      for (let be = 0; be < v.beats.length; be++) out.push({ bar: bi, beat: be });
+    }
+    return out;
+  }
+  function posIndex(positions, p) {
+    if (!p) return -1;
+    for (let i = 0; i < positions.length; i++) if (positions[i].bar === p.bar && positions[i].beat === p.beat) return i;
+    return -1;
+  }
+  // The beat objects under the selection (voice 0), or just the current beat if none.
+  // Lets beat-level ops (duration, tuplet) apply across a GP-style range selection.
+  function selectedBeats() {
+    const ps = selectedPositions();
+    if (!ps.length) { const b = beat(); return b ? [b] : []; }
+    const s = staff(); const out = [];
+    for (const p of ps) {
+      const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
+      const b = v && v.beats[p.beat];
+      if (b) out.push(b);
+    }
+    return out;
+  }
+
+  // The selected positions, inclusive, in score order (empty if no active selection).
+  function selectedPositions() {
+    if (!sel.active || !sel.anchor || !sel.head) return [];
+    const positions = beatPositions();
+    let a = posIndex(positions, sel.anchor), b = posIndex(positions, sel.head);
+    if (a < 0 || b < 0) return [];
+    if (a > b) { const t = a; a = b; b = t; }
+    return positions.slice(a, b + 1);
+  }
+
+  // GP: ⇧→ / ⇧← — start (or grow) a selection from the cursor by one beat.
+  function extendSelection(delta) {
+    const positions = beatPositions();
+    if (!positions.length) return;
+    if (!sel.active) { sel.active = true; sel.anchor = { bar: cur.bar, beat: cur.beat }; }
+    let idx = posIndex(positions, { bar: cur.bar, beat: cur.beat });
+    if (idx < 0) idx = 0;
+    idx = Math.max(0, Math.min(positions.length - 1, idx + delta));
+    cur.bar = positions[idx].bar; cur.beat = positions[idx].beat;
+    sel.head = { bar: cur.bar, beat: cur.beat };
+    refreshCursor();
+  }
+  // GP: ⌘A — select every beat in the current track.
+  function selectAll() {
+    const positions = beatPositions();
+    if (!positions.length) return;
+    sel.active = true; sel.anchor = positions[0]; sel.head = positions[positions.length - 1];
+    cur.bar = sel.head.bar; cur.beat = sel.head.beat;
+    refreshCursor();
+  }
+
+  // Plain-object (clipboard-safe) capture of a beat's musically meaningful fields.
+  function serializeNote(n) {
+    return { string: n.string, fret: n.fret, percussionArticulation: n.percussionArticulation,
+      isPalmMute: !!n.isPalmMute, isDead: !!n.isDead, isGhost: !!n.isGhost, isStaccato: !!n.isStaccato,
+      isLetRing: !!n.isLetRing, accentuated: n.accentuated, harmonicType: n.harmonicType, vibrato: n.vibrato };
+  }
+  function serializeBeat(b) {
+    return { duration: b.duration, dots: b.dots || 0,
+      tupletNumerator: b.tupletNumerator, tupletDenominator: b.tupletDenominator,
+      notes: b.notes.map(serializeNote) };
+  }
+  function deserializeBeat(sb, v) {
+    const nb = new alphaTab.model.Beat();
+    nb.voice = v;                 // splice bypasses voice.addBeat(), which sets this back-ref
+    nb.duration = sb.duration || 4;
+    if (sb.dots) nb.dots = sb.dots;
+    if (sb.tupletNumerator > 0) { nb.tupletNumerator = sb.tupletNumerator; nb.tupletDenominator = sb.tupletDenominator; }
+    nb.isEmpty = false;           // a 0-note beat becomes a timed rest (not a blank)
+    for (const sn of (sb.notes || [])) {
+      const n = new alphaTab.model.Note();
+      if (sn.string != null) n.string = sn.string;
+      if (typeof sn.fret === 'number') n.fret = sn.fret;
+      if (sn.percussionArticulation != null) n.percussionArticulation = sn.percussionArticulation;
+      if (sn.isPalmMute) n.isPalmMute = true;
+      if (sn.isDead) n.isDead = true;
+      if (sn.isGhost) n.isGhost = true;
+      if (sn.isStaccato) n.isStaccato = true;
+      if (sn.isLetRing) n.isLetRing = true;
+      if (sn.accentuated) n.accentuated = sn.accentuated;
+      if (sn.harmonicType) n.harmonicType = sn.harmonicType;
+      if (sn.vibrato) n.vibrato = sn.vibrato;
+      nb.addNote(n);
+    }
+    return nb;
+  }
+
+  // GP: ⌘C — copy the selection (or the current beat if nothing is selected).
+  function copySelection() {
+    const s = staff(); if (!s) return;
+    const ps = selectedPositions();
+    const list = ps.length ? ps : [{ bar: cur.bar, beat: cur.beat }];
+    clipboard = list.map(p => {
+      const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
+      const b = v && v.beats[p.beat];
+      return b ? serializeBeat(b) : null;
+    }).filter(Boolean);
+  }
+  // GP: ⌘V — insert the clipboard's beats right after the cursor (current bar/voice).
+  function pasteClipboard() {
+    if (!clipboard || !clipboard.length) return;
+    const v = voice(); if (!v) return;
+    let at = cur.beat + 1;
+    for (const sb of clipboard) { v.beats.splice(at, 0, deserializeBeat(sb, v)); at++; }
+    cur.beat = at - 1;
+    clearSelection();
+    applyEdit(true);
+    previewBeat();
+  }
+  // GP: ⌘X — copy the selection then remove those beats (keeping ≥1 beat per bar).
+  function cutSelection() {
+    copySelection();
+    const ps = selectedPositions();
+    if (!ps.length) { removeBeat(); return; }
+    const s = staff();
+    const byBar = {};
+    for (const p of ps) (byBar[p.bar] = byBar[p.bar] || []).push(p.beat);
+    const firstBar = ps[0].bar, firstBeat = ps[0].beat;
+    Object.keys(byBar).map(Number).sort((a, b) => b - a).forEach(bi => {
+      const v = s.bars[bi] && s.bars[bi].voices[0]; if (!v) return;
+      byBar[bi].sort((a, b) => b - a).forEach(be => { if (v.beats.length > 1) v.beats.splice(be, 1); });
+      if (!v.beats.length) { const nb = new alphaTab.model.Beat(); nb.voice = v; nb.duration = 4; nb.isEmpty = false; v.beats.push(nb); }
+    });
+    cur.bar = firstBar;
+    const fv = s.bars[firstBar] && s.bars[firstBar].voices[0];
+    cur.beat = Math.max(0, Math.min(firstBeat, (fv ? fv.beats.length : 1) - 1));
+    clearSelection();
+    applyEdit(true);
+  }
+  // GP: C — duplicate the previous beat at the cursor (copy last beat).
+  function copyLastBeat() {
+    const pb = prevBeat(), v = voice();
+    if (!pb || !v) return;
+    v.beats.splice(cur.beat + 1, 0, deserializeBeat(serializeBeat(pb), v));
+    cur.beat += 1;
+    applyEdit(true);
+    previewBeat();
+  }
+
+  // Draw a highlight rect over each selected beat column (pool of .sel-cell divs).
+  let selOverlayEls = [];
+  function renderSelection() {
+    const ps = selectedPositions();
+    const at = document.getElementById('at');
+    const s = staff();
+    let k = 0;
+    if (ps.length && at && s) {
+      for (const p of ps) {
+        const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
+        const b = v && v.beats[p.beat];
+        const col = beatColumn(b);
+        if (!col) continue;
+        let el = selOverlayEls[k];
+        if (!el) { el = document.createElement('div'); el.className = 'sel-cell'; at.appendChild(el); selOverlayEls[k] = el; }
+        el.style.display = 'block';
+        el.style.left = col.x + 'px'; el.style.top = col.y + 'px';
+        el.style.width = col.w + 'px'; el.style.height = col.h + 'px';
+        k++;
+      }
+    }
+    for (; k < selOverlayEls.length; k++) selOverlayEls[k].style.display = 'none';
+  }
+
+  // ---- A/B loop ---------------------------------------------------------------
+  // Loop over the current beat selection (or the current bar if nothing is selected).
+  let loopActive = false;
+  function loopSelection() {
+    const ps = selectedPositions();
+    let first, last, vIdx;
+    if (ps.length) { first = ps[0]; last = ps[ps.length - 1]; vIdx = 0; }
+    else {
+      const v = voice(); if (!v) return;
+      first = { bar: cur.bar, beat: 0 };
+      last = { bar: cur.bar, beat: v.beats.length - 1 };
+      vIdx = cur.voice;
+    }
+    if (window.gomidasSetLoopBars) {
+      window.gomidasSetLoopBars(cur.track, first.bar, vIdx, first.beat, last.bar, vIdx, last.beat);
+      loopActive = true;
+    }
+  }
+  function clearLoop() { loopActive = false; if (window.gomidasClearLoop) window.gomidasClearLoop(); }
+  function toggleLoop() { if (loopActive) clearLoop(); else loopSelection(); }
+  function isLoopActive() { return loopActive; }
 
   function moveTrack(delta) {
     const n = api.score.tracks.length;
@@ -93,6 +331,30 @@
     // onRenderFinished → refreshCursor repositions the cursor.
     if (window.gomidasShowTrack) window.gomidasShowTrack(cur.track);
     else refreshCursor();
+  }
+
+  // GP: Voices 1–4 (⌘1–⌘4) — switch the editing voice. Lazily create the voice (a
+  // whole-bar rest) in EVERY bar of the current track's staff so navigation across
+  // bars stays consistent. alphaTab already renders/plays all voices.
+  function selectVoice(n) {
+    n = Math.max(0, Math.min(3, n | 0));
+    const s = staff();
+    if (!s) return;
+    if (n > 0) {
+      for (const b of s.bars) {
+        while (b.voices.length <= n) {
+          const v = new alphaTab.model.Voice();
+          const be = new alphaTab.model.Beat();
+          be.duration = 1; be.isEmpty = true;   // whole-bar rest
+          v.addBeat(be);
+          b.addVoice(v);
+        }
+      }
+    }
+    cur.voice = n;
+    const v = voice();
+    cur.beat = Math.min(cur.beat, (v ? v.beats.length : 1) - 1);
+    applyEdit(true);   // finish() lays out the (possibly new) voice
   }
 
   // ---- undo / redo (JSON score snapshots) ------------------------------------
@@ -173,6 +435,7 @@
 
   let _editStartedAt = 0;        // timestamp of the in-flight edit, for the slow-render log
   function applyEdit(structural) {
+    clearSelection();   // any model-mutating edit collapses the beat selection
     if (_undoBase === null) _undoBase = currentSnap; // capture pre-burst state once
     try {
       if (structural) api.score.finish(api.settings);
@@ -292,6 +555,93 @@
     refreshCursor();
   }
 
+  // GP: Time Signature (⌘T) — set the current bar's time signature and propagate it
+  // forward to the end (GP applies a change from the current bar onward). Existing
+  // beats are kept; playback pads/truncates each bar to its new capacity.
+  function setTimeSignature(num, den) {
+    const score = api.score;
+    num = Math.max(1, Math.min(32, num | 0));
+    if ([1, 2, 4, 8, 16, 32].indexOf(den | 0) < 0) den = 4;
+    const i = Math.min(cur.bar, score.masterBars.length - 1);
+    for (let j = i; j < score.masterBars.length; j++) {
+      score.masterBars[j].timeSignatureNumerator = num;
+      score.masterBars[j].timeSignatureDenominator = den;
+    }
+    applyEdit(true);
+  }
+
+  // GP: Key Signature (⌘K) — set the current bar's key (−7..+7 accidentals) and
+  // major/minor type, propagated forward to the end.
+  function setKeySignature(ksValue, minor) {
+    const score = api.score;
+    ksValue = Math.max(-7, Math.min(7, ksValue | 0));
+    const KST = (alphaTab.model && alphaTab.model.KeySignatureType) || { Major: 0, Minor: 1 };
+    const type = minor ? KST.Minor : KST.Major;
+    const i = Math.min(cur.bar, score.masterBars.length - 1);
+    for (let j = i; j < score.masterBars.length; j++) {
+      score.masterBars[j].keySignature = ksValue;
+      score.masterBars[j].keySignatureType = type;
+    }
+    applyEdit(true);
+  }
+
+  function curMasterBar() {
+    const score = api.score;
+    return score && score.masterBars[Math.min(cur.bar, score.masterBars.length - 1)];
+  }
+  // GP: Open Repeat ([) — toggle a repeat-start barline on the current bar.
+  function toggleRepeatStart() {
+    const mb = curMasterBar(); if (!mb) return;
+    mb.isRepeatStart = !mb.isRepeatStart;
+    applyEdit(true);
+  }
+  // GP: Close Repeat (]) — toggle a repeat-end barline (default 2 plays) on the current bar.
+  function toggleRepeatEnd() {
+    const mb = curMasterBar(); if (!mb) return;
+    mb.repeatCount = (mb.repeatCount && mb.repeatCount > 0) ? 0 : 2;
+    applyEdit(true);
+  }
+  // GP: Directions (D) — Segno / Coda / Fine markers + Da Capo / Dal Segno jumps,
+  // stored in the current master bar's `directions` set. Toggles the given one.
+  function toggleDirection(name) {
+    const D = alphaTab.model && alphaTab.model.Direction;
+    const mb = curMasterBar();
+    if (!D || !mb || D[name] == null) return;
+    const val = D[name];
+    try {
+      if (mb.directions && mb.directions.has && mb.directions.has(val)) mb.directions.delete(val);
+      else mb.addDirection(val);
+    } catch (e) { nlog('toggleDirection: ' + e); return; }
+    applyEdit(true);
+  }
+  // GP: Fermata (F) — hold on the current beat. Toggles a medium fermata.
+  function toggleFermata() {
+    const b = beat();
+    if (!b) return;
+    try {
+      if (b.fermata) { b.fermata = null; }
+      else {
+        const F = alphaTab.model && alphaTab.model.Fermata;
+        const FT = alphaTab.model && alphaTab.model.FermataType;
+        if (!F) return;
+        const f = new F();
+        if (FT && FT.Medium != null) f.type = FT.Medium;
+        b.fermata = f;
+      }
+    } catch (e) { nlog('toggleFermata: ' + e); return; }
+    applyEdit(true);
+  }
+
+  // GP: Triplet Feel (⌘/) — toggle swing 8ths from the current bar onward.
+  function toggleTripletFeel() {
+    const score = api.score;
+    const TF = (alphaTab.model && alphaTab.model.TripletFeel) || { NoTripletFeel: 0, Triplet8th: 1 };
+    const i = Math.min(cur.bar, score.masterBars.length - 1);
+    const want = (score.masterBars[i].tripletFeel === TF.Triplet8th) ? TF.NoTripletFeel : TF.Triplet8th;
+    for (let j = i; j < score.masterBars.length; j++) score.masterBars[j].tripletFeel = want;
+    applyEdit(true);
+  }
+
   // Like applyEdit, but re-renders ALL tracks (for structural changes that add tracks).
   function commitStructuralAll() {
     try { api.score.finish(api.settings); } catch (e) { nlog('finish failed: ' + e); }
@@ -392,6 +742,29 @@
     commitStructuralAll();
   }
 
+  // GP: Delete Track (⌥⌘R) — remove the cursor's track. alphaTab sets per-track
+  // index/channel links at add-time and doesn't rebuild them in finish(), so we
+  // splice the JSON tracks array and round-trip (same proven path as deleteBar /
+  // addDrumTrack) for a clean, consistent score. Always keep at least one track.
+  function deleteTrack() {
+    const score = api.score;
+    if (!score || score.tracks.length <= 1) return;
+    const jc = JC();
+    if (!jc) return;
+    const idx = Math.min(cur.track, score.tracks.length - 1);
+    const raw = jc.scoreToJson(score);
+    const wasStr = (typeof raw === 'string');
+    const obj = wasStr ? JSON.parse(raw) : raw;
+    if (!obj.tracks || obj.tracks.length <= idx) return;
+    obj.tracks.splice(idx, 1);
+    const finalJson = wasStr ? JSON.stringify(obj) : obj;
+    if (currentSnap != null) { undoStack.push(currentSnap); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }
+    currentSnap = finalJson;
+    cur.track = Math.max(0, idx - 1); cur.bar = 0; cur.voice = 0; cur.beat = 0; cur.string = 0;
+    markDirty();
+    loadSnapshot(finalJson); // jsonToScore + renderScore (scoreLoaded resets to multi view)
+  }
+
   // ---- granular UI actions (fretboard / toolbar) -----------------------------
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   function midiToName(m) { return NOTE_NAMES[(((m | 0) % 12) + 12) % 12]; }
@@ -488,10 +861,12 @@
     if (existing) { b.removeNote(existing); applyEdit(false); }
   }
 
+  // Set the note duration across the selection (or the current beat).
   function setDuration(d) {
-    const b = beat();
-    if (!b || DURATIONS.indexOf(d) < 0) return;
-    b.duration = d;
+    if (DURATIONS.indexOf(d) < 0) return;
+    const targets = selectedBeats();
+    if (!targets.length) return;
+    for (const b of targets) b.duration = d;
     applyEdit(true);
   }
 
@@ -509,13 +884,29 @@
     applyEdit(true);
   }
 
+  // The "in the space of" denominator for an n-tuplet = the nearest lower power of two
+  // (GP/alphaTab convention: 3→2, 5→4, 6→4, 7→4, 9→8, 11→8, 13→8).
+  function tupletDenomFor(n) { let d = 1; while (d * 2 < n) d *= 2; return d; }
+
   // GP: Triolet (/) — make the current beat a triplet (3 in the space of 2); toggles off.
-  function toggleTriplet() {
-    const b = beat();
-    if (!b) return;
-    const isTriplet = (b.tupletNumerator === 3 && b.tupletDenominator === 2);
-    if (isTriplet) { b.tupletNumerator = -1; b.tupletDenominator = -1; }
-    else { b.tupletNumerator = 3; b.tupletDenominator = 2; }
+  function toggleTriplet() { setTuplet(3); }
+
+  // GP: Tuplet — set an n-tuplet (3/5/6/7/9…) across the selection (or the current
+  // beat); when every target already has it, toggles it off (spanning tuplet group).
+  function setTuplet(n) {
+    n = n | 0;
+    const targets = selectedBeats();
+    if (!targets.length) return;
+    if (n <= 1) {
+      for (const b of targets) { b.tupletNumerator = -1; b.tupletDenominator = -1; }
+      applyEdit(true); return;
+    }
+    const den = tupletDenomFor(n);
+    const allSame = targets.every(b => b.tupletNumerator === n && b.tupletDenominator === den);
+    for (const b of targets) {
+      if (allSame) { b.tupletNumerator = -1; b.tupletDenominator = -1; }
+      else { b.tupletNumerator = n; b.tupletDenominator = den; }
+    }
     applyEdit(true);
   }
 
@@ -642,13 +1033,28 @@
     const want = heavy ? AC.Heavy : AC.Normal;
     withCurNote(n => { n.accentuated = (n.accentuated === want) ? AC.None : want; });
   }
-  function naturalHarmonic() {
-    const HT = (alphaTab.model && alphaTab.model.HarmonicType) || { None: 0, Natural: 1 };
+  // GP: Harmonics — Natural (Y), Artificial (⌥Y), Pinch. Toggles the given type.
+  function setHarmonic(type) {
+    const HT = (alphaTab.model && alphaTab.model.HarmonicType) || { None: 0, Natural: 1, Artificial: 2, Pinch: 3 };
+    const want = (HT[type] != null) ? HT[type] : HT.Natural;
     withCurNote(n => {
-      const on = n.harmonicType === HT.Natural;
-      n.harmonicType = on ? HT.None : HT.Natural;
+      const on = n.harmonicType === want;
+      n.harmonicType = on ? HT.None : want;
       if (!on && !n.harmonicValue) n.harmonicValue = 12;
     });
+  }
+  function naturalHarmonic() { setHarmonic('Natural'); }
+  function artificialHarmonic() { setHarmonic('Artificial'); }
+  function pinchHarmonic() { setHarmonic('Pinch'); }
+  // GP: Pick slide down/up — note-level slide-out (PickSlideDown / PickSlideUp).
+  function pickSlide(up) {
+    const b = beat(); if (!b) return;
+    const n = b.notes.find(x => x.string === rowToStringNo(cur.string)); if (!n) return;
+    const SO = (alphaTab.model && alphaTab.model.SlideOutType) || { None: 0 };
+    const want = up ? SO.PickSlideUp : SO.PickSlideDown;
+    if (want == null) return;
+    n.slideOutType = (n.slideOutType === want) ? (SO.None != null ? SO.None : 0) : want;
+    applyEdit(true);
   }
   function vibratoNote() {
     const VT = (alphaTab.model && alphaTab.model.VibratoType) || { None: 0, Slight: 1 };
@@ -660,6 +1066,72 @@
     previewBeat();
   }
 
+  // ---- P2 expressive effects (notation; MIDI plain for now) ------------------
+  // GP: Brush Up/Down (⌘U/⌘D) + Arpeggio Up/Down (⇧⌘U/⇧⌘D) — beat-level strum.
+  function setBrush(kind) {
+    const b = beat(); if (!b) return;
+    const BT = (alphaTab.model && alphaTab.model.BrushType) || { None: 0, BrushUp: 1, BrushDown: 2, ArpeggioUp: 3, ArpeggioDown: 4 };
+    const map = { up: BT.BrushUp, down: BT.BrushDown, arpup: BT.ArpeggioUp, arpdown: BT.ArpeggioDown };
+    const want = map[kind]; if (want == null) return;
+    b.brushType = (b.brushType === want) ? BT.None : want;
+    applyEdit(true);
+  }
+  // GP: Pick Stroke Up/Down (⇧U/⇧D) — beat-level.
+  function setPickStroke(up) {
+    const b = beat(); if (!b) return;
+    const PS = (alphaTab.model && alphaTab.model.PickStroke) || { None: 0, Up: 1, Down: 2 };
+    const want = up ? PS.Up : PS.Down;
+    b.pickStroke = (b.pickStroke === want) ? PS.None : want;
+    applyEdit(true);
+  }
+  // GP: Wide Vibrato (⌥W) — note-level; distinct from slight vibrato (V).
+  function wideVibrato() {
+    const VT = (alphaTab.model && alphaTab.model.VibratoType) || { None: 0, Slight: 1, Wide: 2 };
+    withCurNote(n => { n.vibrato = (n.vibrato === VT.Wide) ? VT.None : VT.Wide; });
+  }
+  // GP: Tremolo Picking (") — beat-level rapid repick; speed is a Duration (16th).
+  function tremoloPicking() {
+    const b = beat(); if (!b) return;
+    const D = (alphaTab.model && alphaTab.model.Duration) || {};
+    const fast = (D.Sixteenth != null) ? D.Sixteenth : 16;
+    const on = (b.tremoloSpeed != null && b.tremoloSpeed !== -1);
+    b.tremoloSpeed = on ? null : fast;
+    applyEdit(true);
+  }
+  // GP: Trill (N) — note trills to an adjacent fret; toggles off.
+  function trillNote() {
+    const D = (alphaTab.model && alphaTab.model.Duration) || {};
+    const spd = (D.Sixteenth != null) ? D.Sixteenth : 16;
+    withCurNote(n => {
+      if (n.isTrill) { n.trillValue = -1; }
+      else { n.trillValue = (typeof n.fret === 'number' ? n.fret : 0) + 2; n.trillSpeed = spd; }
+    });
+  }
+  // GP: Grace note — before-beat (G) or on-beat (⌥G); beat-level type, toggles off.
+  function graceNote(onBeat) {
+    const b = beat(); if (!b) return;
+    const GT = (alphaTab.model && alphaTab.model.GraceType) || { None: 0, OnBeat: 1, BeforeBeat: 2 };
+    const want = onBeat ? GT.OnBeat : GT.BeforeBeat;
+    b.graceType = (b.graceType === want) ? GT.None : want;
+    applyEdit(true);
+  }
+  // GP: Slap ($) / Pop — bass technique, beat-level booleans.
+  function slapBeat() { const b = beat(); if (!b) return; b.slap = !b.slap; applyEdit(true); }
+  function popBeat() { const b = beat(); if (!b) return; b.pop = !b.pop; applyEdit(true); }
+  // GP: Fade In (<) / Fade Out (>) / Volume Swell (⌥<) — beat-level.
+  function setFade(kind) {
+    const b = beat(); if (!b) return;
+    const FT = alphaTab.model && alphaTab.model.FadeType;
+    if (FT) {
+      const map = { in: FT.FadeIn, out: FT.FadeOut, swell: FT.VolumeSwell };
+      const want = map[kind]; if (want == null) return;
+      b.fade = (b.fade === want) ? FT.None : want;
+    } else {
+      b.fadeIn = !b.fadeIn; // legacy bundle: only fade-in supported
+    }
+    applyEdit(true);
+  }
+
   // GP: Rest (R) — clear the beat's notes so it renders/plays as a rest (keeps its duration).
   function makeRest() {
     const b = beat();
@@ -667,6 +1139,48 @@
     while (b.notes.length) b.removeNote(b.notes[0]);
     b.isEmpty = false; // isRest = isEmpty || notes.length===0; keep it a real (timed) rest
     applyEdit(true);
+  }
+
+  // GP: Text (T) — set or clear a text annotation on the current beat.
+  function setBeatText(text) {
+    const b = beat();
+    if (!b) return;
+    b.text = (text == null || String(text).trim() === '') ? null : String(text);
+    applyEdit(true);
+  }
+  function getBeatText() { const b = beat(); return (b && b.text) ? b.text : ''; }
+
+  // GP: Chord (A) — attach a named chord (with an optional fret diagram) to the
+  // current beat. Stored in the staff's chord map and referenced by beat.chordId.
+  function setBeatChord(name, frets) {
+    const b = beat(), s = staff();
+    if (!b || !s) return;
+    name = String(name == null ? '' : name).trim();
+    const hasFrets = Array.isArray(frets) && frets.length > 0;
+    if (!name && !hasFrets) { b.chordId = null; applyEdit(true); return; } // clear
+    const Chord = alphaTab.model && alphaTab.model.Chord;
+    if (!Chord) return;
+    const ch = new Chord();
+    ch.name = name || 'Chord';
+    ch.showName = true;
+    if (hasFrets) {
+      ch.strings = frets.slice();          // fret per string (alphaTab order); -1 = muted/unplayed
+      ch.showDiagram = true;
+      const pos = frets.filter(f => f > 0);
+      ch.firstFret = pos.length ? Math.max(1, Math.min.apply(null, pos)) : 1;
+    } else {
+      ch.showDiagram = false;
+    }
+    const id = 'gx-' + ch.name + '-' + (hasFrets ? frets.join('.') : 'n');
+    try { s.addChord(id, ch); } catch (e) { nlog('addChord: ' + e); return; }
+    b.chordId = id;
+    applyEdit(true);
+  }
+  function getBeatChord() {
+    const b = beat(), s = staff();
+    if (!b || !s || !b.chordId || !s.chords || !s.chords.get) return null;
+    const ch = s.chords.get(b.chordId);
+    return ch ? { name: ch.name || '', frets: (ch.strings || []).slice() } : null;
   }
 
   // ---- inspector / song meta edits (right panel is now live, not mocked) ------
@@ -792,6 +1306,11 @@
       isRest: b ? b.isRest : false,
       isPlaying, trackName: track() ? (track().name || 'Track') : '',
       pos: `bar ${cur.bar + 1} · beat ${cur.beat + 1}`,
+      curBar: cur.bar,
+      timeSigNum: (function () { const mb = api.score.masterBars[cur.bar]; return mb ? (mb.timeSignatureNumerator || 4) : 4; })(),
+      timeSigDen: (function () { const mb = api.score.masterBars[cur.bar]; return mb ? (mb.timeSignatureDenominator || 4) : 4; })(),
+      keySig: (function () { const mb = api.score.masterBars[cur.bar]; return mb ? (mb.keySignature | 0) : 0; })(),
+      keySigMinor: (function () { const mb = api.score.masterBars[cur.bar]; const KST = (alphaTab.model && alphaTab.model.KeySignatureType) || { Minor: 1 }; return !!(mb && mb.keySignatureType === KST.Minor); })(),
       // ---- panel data (transport / inspector / track list) ----
       title: api.score.title || 'Untitled',
       artist: api.score.artist || '',
@@ -799,7 +1318,15 @@
       // (sometimes read-only) score.tempo so the SONG tab reflects live changes.
       songTempo: (function () { const tf = document.getElementById('tempo'); const v = tf && parseInt(tf.value, 10); return (v >= 20 && v <= 400) ? v : (api.score.tempo || 120); })(),
       curTrackIndex: cur.track,
+      curVoice: cur.voice,
+      voiceCount: (bar() ? bar().voices.length : 1),
       trackProgram: (track() && track().playbackInfo) ? (track().playbackInfo.program | 0) : 0,
+      trackPan: (function () {
+        const f = (window.gomidasTrackFlags || {})[cur.track] || {};
+        if (typeof f.pan === 'number') return f.pan;
+        const pb = track() && track().playbackInfo;
+        return (pb && pb.balance != null) ? Math.max(0, Math.min(1, pb.balance / 16)) : 0.5;
+      })(),
       showStandard: !!(s && s.showStandardNotation),
       showTab: !!(s && s.showTablature),
       allTracks: api.score.tracks.map((t, i) => ({
@@ -814,9 +1341,60 @@
   }
 
   // ---- transport -------------------------------------------------------------
+  // ---- count-in --------------------------------------------------------------
+  let countInOn = false, countInRunning = false, countInTimers = [];
+  function setCountIn(on) { countInOn = !!on; }
+  function toggleCountIn() { countInOn = !countInOn; return countInOn; }
+  function isCountIn() { return countInOn; }
+  function cancelCountIn() { countInRunning = false; countInTimers.forEach(clearTimeout); countInTimers = []; }
+  // Reflect a forced stop (e.g. Panic) in the UI without sending another transport msg.
+  function notifyStopped() { cancelCountIn(); isPlaying = false; refreshCursor(); }
+
+  function startPlayback() {
+    countInRunning = false;
+    isPlaying = true; lastPlayBeat = null;
+    if (window.gomidasSeekToCursor) window.gomidasSeekToCursor(cur.track, cur.bar, cur.voice, cur.beat);
+    window.__JUCE__.backend.emitEvent('__juce__invoke', { name: 'play', params: [1], resultId: 0 });
+    if (window.GomidasUI) window.GomidasUI.refresh(getState());
+  }
+
+  // One bar of wood-block clicks at the playback tempo, then start. Clicks go through
+  // the editor preview path on a free melodic channel; pressing play again aborts it.
+  function playWithCountIn() {
+    cancelCountIn();
+    countInRunning = true;
+    const mb = api.score.masterBars[Math.min(cur.bar, api.score.masterBars.length - 1)] || api.score.masterBars[0];
+    const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
+    const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
+    const tf = document.getElementById('tempo');
+    const bpm = (tf && parseInt(tf.value, 10)) || 120;
+    const ss = document.getElementById('speed-select');
+    const rate = (ss && parseFloat(ss.value)) || 1;
+    const unitMs = Math.max(80, (60000 / bpm) * (4 / den) / rate);
+    let ch = 15;
+    if (window.gomidasFreeClickChannel) { const c = window.gomidasFreeClickChannel(); if (c >= 0) ch = c; }
+    let i = 0;
+    const step = () => {
+      if (!countInRunning) return;
+      if (window.gomidasNativeInvoke)
+        window.gomidasNativeInvoke('preview', { channel: ch, program: 115, percussion: false, keys: [(i === 0) ? 84 : 72] });
+      i++;
+      const next = (i < num) ? step : () => { if (countInRunning) startPlayback(); };
+      countInTimers.push(setTimeout(next, unitMs));
+    };
+    step();
+  }
+
   function togglePlay() {
     flushHeavy(); // make sure native has the latest edited MIDI before playing
+    if (countInRunning) { cancelCountIn(); return; }     // pressing play during count-in aborts it
+    if (!isPlaying && countInOn) { playWithCountIn(); return; }
     isPlaying = !isPlaying;
+    if (isPlaying) {
+      // Start from the edit cursor, not bar 1 (seek the native transport there first).
+      lastPlayBeat = null;
+      if (window.gomidasSeekToCursor) window.gomidasSeekToCursor(cur.track, cur.bar, cur.voice, cur.beat);
+    }
     window.__JUCE__.backend.emitEvent('__juce__invoke',
       { name: isPlaying ? 'play' : 'stop', params: [1], resultId: 0 });
   }
@@ -908,8 +1486,10 @@
     } else {
       stringCursorEl.style.display = 'none';
     }
+    renderSelection();
     const st = document.getElementById('status');
     if (st) st.textContent = `${track() ? track().name : ''} · bar ${cur.bar + 1} · beat ${cur.beat + 1} · string ${cur.string + 1}`
+      + (cur.voice > 0 ? ` · voice ${cur.voice + 1}` : '')
       + (fretBuffer ? ` · fret ${fretBuffer}` : '');
     if (window.GomidasUI) window.GomidasUI.refresh(getState());
   }
@@ -975,13 +1555,30 @@
 
     // ---- Command (⌘) shortcuts ----
     if (meta) {
+      if (alt && (k === 'r' || k === 'R')) { deleteTrack(); return true; } // Delete Track ⌥⌘R
       if (k === 'z' || k === 'Z') { shift ? redo() : undo(); return true; } // Undo / Redo (⇧⌘Z)
       if (k === 'y' || k === 'Y') { redo(); return true; }
+      if (k === 'a' || k === 'A') { selectAll(); return true; }     // Select All ⌘A
+      if (k === 'c' || k === 'C') { copySelection(); return true; } // Copy ⌘C
+      if (k === 'x' || k === 'X') { cutSelection(); return true; }  // Cut ⌘X
+      if (k === 'v' || k === 'V') { pasteClipboard(); return true; }// Paste ⌘V
       if (k === '.') { toggleDoubleDot(); return true; }       // Double Dotting ⌘.
       if (k === '+' || k === '=') { addBar(); return true; }    // Insert Bar ⌘+
       if (k === '-' || k === '_') { removeBeat(); return true; }// Delete the Beats ⌘-
       if (k === 'ArrowUp') { moveTrack(-1); return true; }      // Previous Track ⌘↑
       if (k === 'ArrowDown') { moveTrack(1); return true; }     // Next Track ⌘↓
+      if (k === 'Home') { moveToScoreEdge(false); return true; }// First Bar ⌘Home
+      if (k === 'End') { moveToScoreEdge(true); return true; }  // Last Bar ⌘End
+      if (k === 'g' || k === 'G') { if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); return true; } // Go To ⌘G
+      if (k === 't' || k === 'T') { if (window.gomidasOpenTimeSig) window.gomidasOpenTimeSig(); return true; } // Time Signature ⌘T
+      if (k === 'k' || k === 'K') { if (window.gomidasOpenKeySig) window.gomidasOpenKeySig(); return true; }   // Key Signature ⌘K
+      if (k === 'u' || k === 'U') { setBrush(shift ? 'arpup' : 'up'); return true; }    // Brush Up ⌘U / Arpeggio Up ⇧⌘U
+      if (k === 'd' || k === 'D') { setBrush(shift ? 'arpdown' : 'down'); return true; }// Brush Down ⌘D / Arpeggio Down ⇧⌘D
+      if (k === '>') { if (window.gomidasZoom) window.gomidasZoom(1); return true; }    // Zoom In ⌘>
+      if (k === '<') { if (window.gomidasZoom) window.gomidasZoom(-1); return true; }   // Zoom Out ⌘<
+      if (k === '/') { toggleTripletFeel(); return true; }                              // Triplet Feel ⌘/
+      if (k.length === 1 && k >= '1' && k <= '4') { selectVoice(parseInt(k, 10) - 1); return true; } // Voices 1–4 ⌘1–⌘4
+      if (k === 'l' || k === 'L') { toggleLoop(); return true; }                        // A/B loop toggle ⌘L
       return false; // leave other ⌘ combos to the system
     }
     // ---- Control (⌃) shortcuts ----
@@ -998,13 +1595,26 @@
     }
 
     // ---- no modifier ----
-    if (k === 'ArrowRight') { moveBeat(1); return true; }
-    if (k === 'ArrowLeft') { moveBeat(-1); return true; }
-    if (k === 'ArrowUp') { moveString(-1); return true; }
-    if (k === 'ArrowDown') { moveString(1); return true; }
+    if (k === 'ArrowRight') { if (shift) extendSelection(1); else { clearSelection(); moveBeat(1); } return true; }  // ⇧→ extends selection
+    if (k === 'ArrowLeft') { if (shift) extendSelection(-1); else { clearSelection(); moveBeat(-1); } return true; } // ⇧← extends selection
+    if (k === 'ArrowUp') { clearSelection(); moveString(-1); return true; }
+    if (k === 'ArrowDown') { clearSelection(); moveString(1); return true; }
     if (k === 'PageUp') { moveTrack(-1); return true; }   // alias for ⌘↑ (no muscle-memory cost)
     if (k === 'PageDown') { moveTrack(1); return true; }  // alias for ⌘↓
+    if (k === 'F3') { if (window.gomidasToggleMultiView) window.gomidasToggleMultiView(); return true; } // GP: Multitrack view toggle
+    if (k === 'Home') { moveToBarEdge(false); return true; }  // GP: beginning of bar
+    if (k === 'End') { moveToBarEdge(true); return true; }    // GP: end of bar
+    if (k === 'Tab') { moveTrack(shift ? -1 : 1); return true; } // GP: next / prev staff (Tab / ⇧Tab)
     if (k.length === 1 && k >= '0' && k <= '9') {
+      // On a drum track, digits 1–9 toggle the matching kit piece on the current beat
+      // (palette order; the pad labels show the hotkey number). 0 clears the beat.
+      if (isPercussionTrack()) {
+        const drums = (getState() && getState().drums) || [];
+        const n = parseInt(k, 10);
+        if (n === 0) makeRest();
+        else if (n >= 1 && n <= drums.length) toggleDrum(drums[n - 1].midi);
+        return true;
+      }
       // Place the note instantly; a 2nd digit within 600ms amends it (1 then 2 → 12).
       fretBuffer += k;
       if (parseInt(fretBuffer, 10) > 24) fretBuffer = k; // frets cap at 24; restart the buffer
@@ -1026,12 +1636,26 @@
     if (k === 'l' || k === 'L') { (shift || k === 'L') ? tieBeat() : tieNote(); return true; } // GP: Tie Note / Tie Beat
     if (k === 'h' || k === 'H') { hammerPull(); return true; }          // GP: Hammer On / Pull Off
     if (k === 's' || k === 'S') { slideNote(false); return true; }      // GP: Legato Slide
+    if (k === 'c' || k === 'C') { copyLastBeat(); return true; }        // GP: Copy Last Beat
     if (k === 'o' || k === 'O') { ghostNote(); return true; }           // GP: Ghost Note
     if (k === '!') { staccato(); return true; }                        // GP: Staccato
     if (k === ';') { accent(false); return true; }                     // GP: Note accented
     if (k === ':') { accent(true); return true; }                      // GP: Heavily Accented Note
     if (k === 'y' || k === 'Y') { naturalHarmonic(); return true; }     // GP: Natural Harmonic
     if (k === 'v' || k === 'V') { vibratoNote(); return true; }         // GP: Left-Hand Vibrato
+    if ((k === 'u' || k === 'U') && shift) { setPickStroke(true); return true; }  // GP: Pick Stroke Up ⇧U
+    if ((k === 'd' || k === 'D') && shift) { setPickStroke(false); return true; } // GP: Pick Stroke Down ⇧D
+    if (k === 'n' || k === 'N') { trillNote(); return true; }           // GP: Trill
+    if (k === 'g' || k === 'G') { graceNote(false); return true; }      // GP: Grace note (before beat)
+    if (k === '"') { tremoloPicking(); return true; }                  // GP: Tremolo Picking
+    if (k === '$') { slapBeat(); return true; }                        // GP: Slap
+    if (k === '<') { setFade('in'); return true; }                     // GP: Fade In
+    if (k === '>') { setFade('out'); return true; }                    // GP: Fade Out
+    if (k === '[') { toggleRepeatStart(); return true; }               // GP: Open Repeat
+    if (k === ']') { toggleRepeatEnd(); return true; }                 // GP: Close Repeat
+    if (k === 't' || k === 'T') { if (window.gomidasOpenText) window.gomidasOpenText(); return true; } // GP: Text
+    if (k === 'f' || k === 'F') { toggleFermata(); return true; }      // GP: Fermata
+    if (k === 'a' || k === 'A') { if (window.gomidasOpenChord) window.gomidasOpenChord(); return true; } // GP: Chord
     if (k === ' ' || k === 'Spacebar') { togglePlay(); return true; }
     return false;
   }
@@ -1060,6 +1684,7 @@
   // ---- lifecycle hooks (called from app.js) ----------------------------------
   function onScoreLoaded(score) {
     lastPlayBeat = null;
+    clearSelection();
     if (preserveCursorNext) {
       // Re-render from an undo/redo snapshot: keep cursor (clamped), keep history.
       preserveCursorNext = false;
@@ -1075,6 +1700,7 @@
       if (_clearDrumRegOnLoad) { _clearDrumRegOnLoad = false; clearDrumRegistration(); }
       currentSnap = snapshot();
       dirty = false;             // freshly loaded score has no unsaved edits
+      clearLoop();               // drop any A/B loop from the previous score
       window.gomidasTrackFlags = {};   // clear mute/solo/hide/volume for the new score
       if (window.gomidasApplyMixer) window.gomidasApplyMixer();  // push per-track gains for the new score
     }
@@ -1166,14 +1792,20 @@
   window.GomidasEditor = {
     init, onScoreLoaded, onRenderFinished, onPlayTick, handleKey,
     addBar, setFret, deleteNoteOnString, setDuration, toggleDot, toggleDoubleDot, makeRest,
-    toggleTriplet, palmMute: palmMuteBeat, palmMuteNote, deadNote, letRing,
+    toggleTriplet, setTuplet, palmMute: palmMuteBeat, palmMuteNote, deadNote, letRing,
     tieNote, tieBeat, hammerPull, slideNote, toggleDrum, armDrumRegClear,
-    ghostNote, staccato, accent, naturalHarmonic, vibratoNote, transposeNote,
+    ghostNote, staccato, accent, naturalHarmonic, artificialHarmonic, pinchHarmonic, vibratoNote, transposeNote,
+    setBrush, setPickStroke, wideVibrato, tremoloPicking, trillNote, graceNote, slapBeat, popBeat, setFade, pickSlide,
     move: (d) => moveBeat(d), moveString: (d) => moveString(d), moveTrack: (d) => moveTrack(d),
-    selectTrack,
+    selectTrack, selectVoice, deleteTrack, goToBar, moveToBarEdge, moveToScoreEdge,
+    setTimeSignature, setKeySignature, toggleRepeatStart, toggleRepeatEnd, toggleTripletFeel,
+    toggleDirection, toggleFermata,
+    selectAll, copySelection, cutSelection, pasteClipboard, copyLastBeat, extendSelection,
+    loopSelection, clearLoop, toggleLoop, isLoopActive,
     insertBeat: insertBeatAfter, removeBeat, deleteBar, togglePlay, getState,
     setTrackName, setTrackProgram, toggleNotation, setTuningPreset, setSongTitle, setSongTempo,
-    isDirty, markClean, setAutoScroll,
+    setBeatText, getBeatText, setBeatChord, getBeatChord,
+    isDirty, markClean, setAutoScroll, setCountIn, toggleCountIn, isCountIn, notifyStopped,
     undo, redo, snapshot, loadProject: loadProjectJson, addTrack: addTrackOfKind,
     canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0
   };

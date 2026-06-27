@@ -5,6 +5,9 @@ build/
 compile_commands.json
 *.gomidas.bak
 
+# Local Claude Code session artifacts (scheduled-task locks, etc.)
+.claude/
+
 # Large optional high-quality SoundFont (144MB, over GitHub's 100MB limit).
 # Build falls back to the embedded sonivox bank when absent. See README "SoundFonts".
 assets/soundfont/FluidR3_GM.sf2

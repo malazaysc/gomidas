@@ -192,11 +192,20 @@ insurance against the WebView deferring a render when the loop goes idle right a
 and/or a bar-window render (`settings.display.startBar`/`barCount`) around the cursor; full render on idle.
 
 ## Roadmap
-- **Phase 1 — editor: DONE.** load/render GP3–8, render tab+notation, edit notes/durations/
-  beats/bars, multi-track + add-track, New/Open/Save (.gomidas), undo/redo, native MIDI playback
-  + transport + good SoundFont (FluidR3), per-note audition, fixed cursor. Drum tracks play.
-  - Drum-entry palette DONE (#8). **Deferred:** keyboard drum entry; bend editor.
-- **Phase 2:** per-track mixer **(vol/mute/solo DONE** via `AudioEngine::setChannelMix` → TSF channel
-  gain; **pan: engine-ready, no UI yet)**, A/B loop + count-in/metronome, tempo slow-down,
-  live input through a VST chain, record/loop. (Re-enable `MICROPHONE_PERMISSION_ENABLED` in CMake.)
-- **Phase 3:** `.gp` export (Gp7Exporter) + stem-sync (reuse Conduit `build-stems`).
+> Authoritative feature status lives in **`docs/FEATURES.md`** / **`docs/BACKLOG.md`** — keep them current.
+- **Phase 1 — editor: DONE.** load/render GP3–8, tab+notation, edit notes/durations/beats/bars,
+  multi-track + add/delete-track, New/Open/Save (.gomidas), undo/redo, native MIDI playback + transport
+  (starts from the edit cursor) + FluidR3 SoundFont, per-note audition. Selection + copy/cut/paste, voices
+  1–4, time/key sig, repeats, tuplets (incl. spanning), keyboard drum entry (17-pc kit), full GP8 effect set,
+  text/directions/fermata/chords, D.C./D.S. + repeat playback. **Deferred:** bend editor; multirest.
+- **Phase 2 — play on top: DONE except the depth items.** per-track mixer (vol/pan/mute/solo, persisted),
+  A/B loop, metronome, count-in, tempo slow-down (pitch-independent), **live input + AU/VST3 plugin insert +
+  plugin editor window**, input gain, output VU meter, WAV recording, panic. `MICROPHONE_PERMISSION_ENABLED`
+  re-enabled. ⚠️ **The live-input/plugin/recording stack builds + links but is UNVERIFIED at runtime — verify
+  before extending.** **TODO:** per-track VST *instruments* (priority #2), per-track plugin chains, plugin
+  state-save, loop/overdub recording.
+- **Phase 3:** `.gp` export (Gp7Exporter) **DONE**; **TODO:** stem-sync (reuse Conduit `build-stems`).
+
+### Real-time-safety caveats (milestone-1; harden before shipping)
+TSF voice alloc + the `Sequence` swap, **and the input-plugin swap/free + `processBlock`**, all happen on the
+audio thread under a `SpinLock` (tryEnter). Fine for a dev build; revisit for production.

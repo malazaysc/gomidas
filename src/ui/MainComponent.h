@@ -49,6 +49,12 @@ private:
 
     std::optional<juce::WebBrowserComponent::Resource> serveResource (const juce::String& url);
 
+    // ---- input-plugin editor window ----
+    void showPluginEditor();
+    void closePluginEditor();
+    struct PluginEditorWindow;
+    std::unique_ptr<PluginEditorWindow> pluginWindow;
+
     AudioEngine engine;
 
     std::unique_ptr<juce::WebBrowserComponent> webView;

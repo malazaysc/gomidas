@@ -22,9 +22,12 @@ FetchContent_MakeAvailable(JUCE)
 juce_add_gui_app(Gomidas
   PRODUCT_NAME  "Gomidas"
   COMPANY_NAME  "Alesi"
-  BUNDLE_ID     "com.alesi.gomidas")
-  # NOTE: live-input (Phase 2) will re-enable MICROPHONE_PERMISSION_ENABLED. The editor
-  # needs output only, so we keep it off to avoid a mic prompt on launch.
+  BUNDLE_ID     "com.alesi.gomidas"
+  # Live input (Phase 2): the entitlement + Info.plist usage string must exist for the
+  # audio input device to open. The device is still launched output-only, so no mic
+  # prompt appears until the user enables live-input monitoring (AudioEngine::setLiveInput).
+  MICROPHONE_PERMISSION_ENABLED TRUE
+  MICROPHONE_PERMISSION_TEXT "Gomidas uses the microphone for live input monitoring and recording over your tracks.")
 
 juce_generate_juce_header(Gomidas)
 
@@ -70,10 +73,14 @@ target_compile_definitions(Gomidas PRIVATE
   JUCE_USE_CURL=0
   JUCE_DISPLAY_SPLASH_SCREEN=0
   JUCE_APPLICATION_NAME_STRING="Gomidas"
-  JUCE_APPLICATION_VERSION_STRING="0.1.0")
+  JUCE_APPLICATION_VERSION_STRING="0.1.0"
+  # Host AU + VST3 plugins on the live-input chain (Phase 2 "play on top").
+  JUCE_PLUGINHOST_AU=1
+  JUCE_PLUGINHOST_VST3=1)
 
 target_link_libraries(Gomidas PRIVATE
   GomidasAssets
+  juce::juce_audio_processors
   juce::juce_audio_utils
   juce::juce_audio_devices
   juce::juce_dsp

@@ -3,6 +3,25 @@
 
 namespace gomidas
 {
+// A resizable window hosting the loaded input-plugin's own editor UI. On close it
+// calls back so MainComponent drops its pointer (the processor outlives the editor).
+struct MainComponent::PluginEditorWindow : public juce::DocumentWindow
+{
+    PluginEditorWindow (juce::AudioProcessorEditor* ed, const juce::String& name, std::function<void()> onClose)
+        : juce::DocumentWindow (name.isNotEmpty() ? name : juce::String ("Plugin"),
+                                juce::Colours::black, juce::DocumentWindow::closeButton),
+          closeFn (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (ed, true);
+        setResizable (ed->isResizable(), false);
+        centreWithSize (juce::jmax (320, getWidth()), juce::jmax (200, getHeight()));
+        setVisible (true);
+    }
+    void closeButtonPressed() override { if (closeFn) closeFn(); }
+    std::function<void()> closeFn;
+};
+
 namespace
 {
 // Map a requested URL path to an embedded resource name + MIME type.
@@ -44,6 +63,24 @@ MainComponent::MainComponent()
             [this] (const juce::Array<juce::var>&,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
             { engine.stop(); completion (juce::var()); })
+        .withNativeFunction ("seek",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { if (! args.isEmpty()) engine.seekTicks ((double) args[0]); completion (juce::var()); })
+        .withNativeFunction ("panic",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { engine.panic(); completion (juce::var()); })
+        .withNativeFunction ("setLoop",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        engine.setLoopRange ((double) obj->getProperty ("start"),
+                                             (double) obj->getProperty ("end"));
+                completion (juce::var());
+            })
         .withNativeFunction ("saveProject",
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
@@ -66,6 +103,37 @@ MainComponent::MainComponent()
                             }
                         });
                 }
+                completion (juce::var());
+            })
+        .withNativeFunction ("saveBinary",
+            [] (const juce::Array<juce::var>& args,
+                juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                    {
+                        const auto ext = obj->getProperty ("ext").toString();
+                        const auto b64 = obj->getProperty ("b64").toString();
+                        juce::MemoryOutputStream mos;
+                        if (juce::Base64::convertFromBase64 (mos, b64))
+                        {
+                            auto block = std::make_shared<juce::MemoryBlock> (mos.getMemoryBlock());
+                            auto chooser = std::make_shared<juce::FileChooser> (
+                                "Export", juce::File(), "*." + ext);
+                            chooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                                  | juce::FileBrowserComponent::canSelectFiles
+                                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+                                [block, ext, chooser] (const juce::FileChooser& fc)
+                                {
+                                    auto f = fc.getResult();
+                                    if (f != juce::File())
+                                    {
+                                        if (! f.hasFileExtension (ext)) f = f.withFileExtension (ext);
+                                        f.replaceWithData (block->getData(), block->getSize());
+                                    }
+                                });
+                        }
+                    }
                 completion (juce::var());
             })
         .withNativeFunction ("openProject",
@@ -122,6 +190,99 @@ MainComponent::MainComponent()
                     engine.setTempoBpm ((double) args[0]);
                 completion (juce::var());
             })
+        .withNativeFunction ("setPlaybackRate",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    engine.setPlaybackRate ((double) args[0]);
+                completion (juce::var());
+            })
+        .withNativeFunction ("setLiveInput",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                bool on = false;
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                    {
+                        const bool enabled = (bool) obj->getProperty ("enabled");
+                        const float gain   = (float) (double) obj->getProperty ("gain");
+                        on = engine.setLiveInput (enabled, gain > 0.0f ? gain : 1.0f);
+                    }
+                completion (juce::var (on));   // actual state (false if input couldn't open)
+            })
+        .withNativeFunction ("loadInputPlugin",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                auto start = juce::File ("/Library/Audio/Plug-Ins");
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose an AU (.component) or VST3 (.vst3) plugin", start, "*.vst3;*.component");
+                chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::canSelectDirectories,
+                    [this, chooser] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f != juce::File())
+                        {
+                            closePluginEditor();                 // drop the old editor first
+                            const bool ok = engine.loadInputPlugin (f);
+                            if (ok) showPluginEditor();          // open the new plugin's UI
+                            if (webView != nullptr)
+                                webView->evaluateJavascript ("window.gomidasInputPluginLoaded && window.gomidasInputPluginLoaded("
+                                    + juce::String (ok ? "true" : "false") + ","
+                                    + juce::JSON::toString (juce::var (engine.inputPluginName())) + ");");
+                        }
+                    });
+                completion (juce::var());
+            })
+        .withNativeFunction ("clearInputPlugin",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { closePluginEditor(); engine.clearInputPlugin(); completion (juce::var()); })
+        .withNativeFunction ("showPluginEditor",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { showPluginEditor(); completion (juce::var()); })
+        .withNativeFunction ("startRecording",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                auto docs = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Record to WAV", docs.getChildFile ("Gomidas Recording.wav"), "*.wav");
+                chooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                      | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::warnAboutOverwriting,
+                    [this, chooser] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        bool ok = false;
+                        juce::String name;
+                        if (f != juce::File())
+                        {
+                            if (! f.hasFileExtension ("wav")) f = f.withFileExtension ("wav");
+                            ok = engine.startRecording (f);
+                            name = f.getFileName();
+                        }
+                        if (webView != nullptr)
+                            webView->evaluateJavascript ("window.gomidasRecording && window.gomidasRecording("
+                                + juce::String (ok ? "true" : "false") + ","
+                                + juce::JSON::toString (juce::var (name)) + ");");
+                    });
+                completion (juce::var());
+            })
+        .withNativeFunction ("stopRecording",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                engine.stopRecording();
+                if (webView != nullptr)
+                    webView->evaluateJavascript ("window.gomidasRecording && window.gomidasRecording(false, \"\");");
+                completion (juce::var());
+            })
         .withNativeFunction ("setChannelMix",
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
@@ -171,8 +332,25 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     juce::MenuBarModel::setMacMainMenu (nullptr);
+    closePluginEditor();   // destroy the editor before the engine frees the plugin
     stopTimer();
     engine.shutdown();
+}
+
+void MainComponent::showPluginEditor()
+{
+    closePluginEditor();
+    auto* plugin = engine.pluginForEditor();
+    if (plugin == nullptr || ! plugin->hasEditor())
+        return;
+    if (auto* ed = plugin->createEditorIfNeeded())
+        pluginWindow = std::make_unique<PluginEditorWindow> (ed, engine.inputPluginName(),
+            [this] { closePluginEditor(); });
+}
+
+void MainComponent::closePluginEditor()
+{
+    pluginWindow.reset();
 }
 
 // ---- macOS menu bar ----------------------------------------------------------
@@ -187,6 +365,7 @@ void MainComponent::buildMenus()
             { "-", "" },
             { "Open... (.gp / .gomidas / MusicXML)", "open" },
             { "Save...",        "save" },
+            { "Export Guitar Pro (.gp)...", "exportgp" },
             { "-", "" },
             { "Load Sample",       "sample" },
         } },
@@ -194,18 +373,28 @@ void MainComponent::buildMenus()
             { "Undo",  "undo" },
             { "Redo",  "redo" },
             { "-", "" },
-            { "Cut",   "" },   // not implemented yet
-            { "Copy",  "" },
-            { "Paste", "" },
+            { "Cut",   "cut" },
+            { "Copy",  "copy" },
+            { "Paste", "paste" },
+            { "-", "" },
+            { "Select All", "selectall" },
         } },
         { "Track", {
             { "Add Guitar Track", "addtrack:guitar" },
             { "Add Bass Track",   "addtrack:bass" },
             { "Add Drum Track",   "addtrack:drums" },
+            { "-", "" },
+            { "Delete Track", "deletetrack" },
         } },
         { "Bar", {
             { "Insert Bar", "addbar" },
             { "Delete Bar", "deletebar" },
+            { "-", "" },
+            { "Time Signature...", "timesig" },
+            { "Key Signature...",  "keysig" },
+            { "-", "" },
+            { "Open Repeat",  "repeatstart" },
+            { "Close Repeat", "repeatend" },
         } },
         { "Note", {
             { "Whole",      "dur:1" },
@@ -215,10 +404,25 @@ void MainComponent::buildMenus()
             { "Sixteenth",  "dur:16" },
             { "Thirty-second", "dur:32" },
             { "-", "" },
+            { "Triplet (3)", "tuplet:3" },
+            { "Quintuplet (5)", "tuplet:5" },
+            { "Sextuplet (6)",  "tuplet:6" },
+            { "Septuplet (7)",  "tuplet:7" },
+            { "Nonuplet (9)",   "tuplet:9" },
+            { "Triplet Feel (swing)", "tripletfeel" },
+            { "-", "" },
             { "Dotted",     "dot" },
             { "Tie",        "tie" },
             { "Rest",       "rest" },
             { "Dead Note",  "dead" },
+            { "-", "" },
+            { "Voice 1", "voice:1" },
+            { "Voice 2", "voice:2" },
+            { "Voice 3", "voice:3" },
+            { "Voice 4", "voice:4" },
+            { "-", "" },
+            { "Text...",    "text" },
+            { "Chord...",   "chord" },
         } },
         { "Effects", {
             { "Palm Mute",        "fx:palmmute" },
@@ -229,16 +433,69 @@ void MainComponent::buildMenus()
             { "Staccato",         "fx:staccato" },
             { "Accent",           "fx:accent" },
             { "Natural Harmonic", "fx:harmonic" },
+            { "Artificial Harmonic", "fx:artharmonic" },
+            { "Pinch Harmonic",   "fx:pinchharmonic" },
             { "Vibrato",          "fx:vibrato" },
+            { "Wide Vibrato",     "fx:widevibrato" },
+            { "-", "" },
+            { "Shift Slide",      "fx:shiftslide" },
+            { "Pick Slide Down",  "fx:pickslidedown" },
+            { "Pick Slide Up",    "fx:pickslideup" },
+            { "-", "" },
+            { "Brush Up",         "fx:brushup" },
+            { "Brush Down",       "fx:brushdown" },
+            { "Arpeggio Up",      "fx:arpup" },
+            { "Arpeggio Down",    "fx:arpdown" },
+            { "Pick Stroke Up",   "fx:pickup" },
+            { "Pick Stroke Down", "fx:pickdown" },
+            { "-", "" },
+            { "Tremolo Picking",  "fx:tremolo" },
+            { "Trill",            "fx:trill" },
+            { "Grace Note (before)", "fx:grace" },
+            { "Grace Note (on beat)", "fx:graceon" },
+            { "Slap",             "fx:slap" },
+            { "Pop",              "fx:pop" },
+            { "-", "" },
+            { "Fade In",          "fx:fadein" },
+            { "Fade Out",         "fx:fadeout" },
+            { "Volume Swell",     "fx:swell" },
         } },
-        { "Section", { { "(coming soon)", "" } } },
+        { "Section", {
+            { "Segno", "dir:TargetSegno" },
+            { "Coda",  "dir:TargetCoda" },
+            { "Fine",  "dir:TargetFine" },
+            { "-", "" },
+            { "Da Capo",          "dir:JumpDaCapo" },
+            { "Da Capo al Fine",  "dir:JumpDaCapoAlFine" },
+            { "Dal Segno",        "dir:JumpDalSegno" },
+            { "Dal Segno al Coda", "dir:JumpDalSegnoAlCoda" },
+            { "-", "" },
+            { "Fermata", "fermata" },
+        } },
         { "Tools",   { { "(coming soon)", "" } } },
         { "Sound", {
             { "Play / Stop", "play" },
+            { "Panic (All Notes Off)", "panic" },
+            { "-", "" },
+            { "Loop Selection", "loopsel" },
+            { "Clear Loop",     "loopclear" },
+            { "-", "" },
+            { "Metronome (toggle)", "metronome" },
+            { "Count-in (toggle)",  "countin" },
+            { "-", "" },
+            { "Live Input Monitor (toggle)", "liveinput" },
+            { "Load Input Plugin (AU/VST3)...", "loadplugin" },
+            { "Show Plugin Editor", "showplugineditor" },
+            { "Clear Input Plugin", "clearplugin" },
+            { "-", "" },
+            { "Record to WAV (toggle)...", "record" },
         } },
         { "View", {
             { "Zoom In",  "zoom:in" },
             { "Zoom Out", "zoom:out" },
+            { "-", "" },
+            { "Toggle Multitrack View", "toggleview" },
+            { "Go To Bar...", "gotobar" },
         } },
         { "Window", { { "Minimize", "" } } },
         { "Help",   { { "Gomidas - Guitar Pro-like editor", "" } } },
@@ -464,17 +721,24 @@ void MainComponent::handleSetSequence (const juce::var& payload)
 
 void MainComponent::timerCallback()
 {
-    // Only drive the playback cursor while actually playing — pushing into the
-    // WebView 30x/sec when idle starves editing/rendering and makes input lag.
-    if (webView == nullptr || ! engine.isPlaying())
+    // Only push into the WebView while playing or monitoring — doing it 30x/sec when
+    // idle starves editing/rendering and makes input lag.
+    if (webView == nullptr || ! (engine.isPlaying() || engine.isLiveInput()))
         return;
 
-    const double ticks = engine.getPositionTicks();
-    if (std::abs (ticks - lastPushedTicks) < 1.0)
-        return;
-    lastPushedTicks = ticks;
-    webView->evaluateJavascript ("window.gomidas && window.gomidas.onTick("
-                                 + juce::String (ticks, 1) + ");");
+    if (engine.isPlaying())
+    {
+        const double ticks = engine.getPositionTicks();
+        if (std::abs (ticks - lastPushedTicks) >= 1.0)
+        {
+            lastPushedTicks = ticks;
+            webView->evaluateJavascript ("window.gomidas && window.gomidas.onTick("
+                                         + juce::String (ticks, 1) + ");");
+        }
+    }
+    // Output level meter (peak 0..1).
+    webView->evaluateJavascript ("window.gomidasMeter && window.gomidasMeter("
+                                 + juce::String (engine.getOutputPeak(), 4) + ");");
 }
 
 void MainComponent::resized()
@@ -504,6 +768,10 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     else if (key == juce::KeyPress::returnKey) jsKey = "Enter";
     else if (key == juce::KeyPress::backspaceKey) jsKey = "Backspace";
     else if (key == juce::KeyPress::deleteKey) jsKey = "Delete";
+    else if (key == juce::KeyPress::homeKey)   jsKey = "Home";
+    else if (key == juce::KeyPress::endKey)    jsKey = "End";
+    else if (key == juce::KeyPress::tabKey)    jsKey = "Tab";
+    else if (key == juce::KeyPress::F3Key)     jsKey = "F3";
     else if (key == juce::KeyPress::spaceKey)  jsKey = " ";
     else
     {

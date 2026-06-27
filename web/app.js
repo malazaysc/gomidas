@@ -115,12 +115,78 @@ function masterBarTicks(score, i) {
   return Math.round(WHOLE_TICKS * num / den);
 }
 
+// First MIDI channel not used by any track (and not the percussion channel 9), for the
+// metronome's melodic wood-block. Returns -1 if all 16 are taken (then we use channel 9).
+function freeMelodicChannel(score) {
+  const used = new Set([9]);
+  for (const t of score.tracks) {
+    const c = t.playbackInfo && t.playbackInfo.primaryChannel;
+    if (c != null) used.add(c & 0x0f);
+  }
+  for (let c = 0; c < 16; c++) if (!used.has(c)) return c;
+  return -1;
+}
+
+// Expand repeat barlines AND D.C./D.S. jumps into the order master bars are actually
+// played. Repeat end (repeatCount>0) replays from the last repeat-start; a Da Capo /
+// Dal Segno jump (executed once) returns to the start / Segno, optionally stopping at
+// Fine. Alternate endings + al-Coda variants aren't handled. With no repeats/directions
+// this is just [0,1,…,n-1], so plain scores are unchanged.
+function computePlaybackOrder(score) {
+  const mbs = (score && score.masterBars) || [];
+  const D = (typeof alphaTab !== 'undefined' && alphaTab.model && alphaTab.model.Direction) || null;
+  const has = (mb, v) => !!(D && v != null && mb.directions && mb.directions.has && mb.directions.has(v));
+  // Marker bars (first occurrence).
+  let segnoBar = -1, fineBar = -1;
+  if (D) for (let k = 0; k < mbs.length; k++) {
+    if (segnoBar < 0 && has(mbs[k], D.TargetSegno)) segnoBar = k;
+    if (fineBar < 0 && has(mbs[k], D.TargetFine)) fineBar = k;
+  }
+  const order = [];
+  const passes = {};            // repeat-end bar index -> completed passes
+  let i = 0, repeatStart = 0, guard = 0;
+  let jumpUsed = false;         // a D.C./D.S. jump fires once
+  let fineActive = false;       // Fine stops the song only after an "al Fine" jump
+  while (i < mbs.length && guard++ < 50000) {
+    order.push(i);
+    const mb = mbs[i];
+    if (mb.isRepeatStart) repeatStart = i;
+    const rc = mb.repeatCount | 0;
+    if (rc > 0) {
+      passes[i] = (passes[i] || 0) + 1;
+      if (passes[i] < rc) { i = repeatStart; continue; }
+      passes[i] = 0;            // reset so an enclosing repeat can re-trigger this end
+    }
+    if (fineActive && fineBar === i) break;   // "al Fine" reached → stop
+    if (D && !jumpUsed) {
+      if (has(mb, D.JumpDaCapo))       { jumpUsed = true; i = 0; continue; }            // D.C.
+      if (has(mb, D.JumpDaCapoAlFine)) { jumpUsed = true; fineActive = true; i = 0; continue; } // D.C. al Fine
+      if (segnoBar >= 0 && has(mb, D.JumpDalSegno))       { jumpUsed = true; i = segnoBar; continue; }            // D.S.
+      if (segnoBar >= 0 && has(mb, D.JumpDalSegnoAlFine)) { jumpUsed = true; fineActive = true; i = segnoBar; continue; } // D.S. al Fine
+    }
+    i++;
+  }
+  return order.length ? order : mbs.map((_, k) => k);
+}
+
+let metronomeOn = false;
+// Toggle the metronome; rebuilds so the click events appear/disappear in the sequence.
+window.gomidasToggleMetronome = function () {
+  metronomeOn = !metronomeOn;
+  if (api && api.score) rebuildSequence();
+  return metronomeOn;
+};
+window.gomidasMetronomeOn = () => metronomeOn;
+// A free melodic channel for the count-in click (editor reads this).
+window.gomidasFreeClickChannel = function () { return (api && api.score) ? freeMelodicChannel(api.score) : 15; };
+
 function rebuildSequence() {
   const score = api.score;
   const events = [];
   const tickMap = [];               // [{tick, beat}] ascending, primary rendered track
   let lengthTicks = 0;
   const primaryTrack = renderedTracks[0] || score.tracks[0];
+  const playbackOrder = computePlaybackOrder(score);   // unroll repeat barlines
 
   // Mute/solo/volume are applied LIVE via per-channel gain (see applyMixer), not by
   // dropping events here — so toggling them takes effect instantly during playback.
@@ -134,8 +200,10 @@ function rebuildSequence() {
 
     for (const stave of track.staves) {
       let trackTick = 0;
-      let barIndex = 0;
-      for (const bar of stave.bars) {
+      const ringOff = {};   // note.string -> note-off of a let-ring note still sounding on that string
+      for (const mbIndex of playbackOrder) {
+        const bar = stave.bars[mbIndex];
+        if (!bar) continue;
         const barStart = trackTick;
         let barEnd = barStart;
         for (const voice of bar.voices) {
@@ -166,14 +234,20 @@ function rebuildSequence() {
                 if (note.isGhost) noteVel *= 0.55;
                 if (note.accentuated === 2) noteVel = Math.min(1, noteVel * 1.3);       // heavy accent
                 else if (note.accentuated === 1) noteVel = Math.min(1, noteVel * 1.15); // accent
-                if (note.isLetRing) noteDur = Math.max(noteDur, dur * 4); // approx: ring well past the beat
+                if (note.isHammerPullDestination) noteVel *= 0.7; // legato: hammered/pulled note isn't picked
                 const id = channel + ':' + key;
                 // Tie: don't re-trigger — extend the still-ringing note's note-off.
                 if (note.isTieDestination && lastOff[id]) { lastOff[id][0] = t + noteDur; continue; }
+                // A new note on a string cuts (or, for a let-ring note, extends) any
+                // let-ring note still sounding on that same string.
+                const stringNo = (!percussion && note.string != null) ? note.string : null;
+                if (stringNo != null && ringOff[stringNo]) { ringOff[stringNo][0] = t; ringOff[stringNo] = null; }
                 events.push([t, channel, key, noteVel, true, program, percussion]);
                 const off = [t + noteDur, channel, key, 0.0, false, program, percussion];
                 events.push(off);
                 lastOff[id] = off;
+                // Let ring: hold until the next note on this string (or the track end).
+                if (note.isLetRing && stringNo != null) ringOff[stringNo] = off;
               }
             }
             t += dur;
@@ -182,13 +256,41 @@ function rebuildSequence() {
         }
         // A bar always spans its full time-signature duration (silence-pad the
         // remainder) so the next bar starts on the downbeat — never early.
-        const capacity = masterBarTicks(score, barIndex);
+        const capacity = masterBarTicks(score, mbIndex);
         trackTick = barStart + Math.max(capacity, barEnd - barStart);
-        barIndex++;
       }
+      // Any let-ring note never cut by a later same-string note rings to the track end.
+      for (const k in ringOff) if (ringOff[k]) { ringOff[k][0] = Math.max(ringOff[k][0], trackTick); ringOff[k] = null; }
       if (trackTick > lengthTicks) lengthTicks = trackTick;
     }
   });
+
+  // Metronome: a wood-block click on each time-signature beat (downbeat accented),
+  // following the same unrolled playback order so it loops/repeats with the music.
+  // Uses a free melodic channel (GM Woodblock) when available, else percussion ch 9.
+  if (metronomeOn) {
+    const mch = freeMelodicChannel(score);
+    const melodic = (mch >= 0);
+    const ch = melodic ? mch : 9;
+    const prog = melodic ? 115 : 0;          // 115 = GM Woodblock
+    const perc = !melodic;
+    const hi = melodic ? 84 : 76, lo = melodic ? 72 : 77;
+    let mtick = 0;
+    for (const mbIndex of playbackOrder) {
+      const mb = score.masterBars[mbIndex];
+      const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
+      const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
+      const unit = WHOLE_TICKS / den;
+      for (let bi = 0; bi < num; bi++) {
+        const t = Math.round(mtick + bi * unit);
+        const key = (bi === 0) ? hi : lo;
+        const vel = (bi === 0) ? 1.0 : 0.7;
+        events.push([t, ch, key, vel, true, prog, perc]);
+        events.push([t + 30, ch, key, 0.0, false, prog, perc]);
+      }
+      mtick += masterBarTicks(score, mbIndex);
+    }
+  }
 
   tickMap.sort((a, b) => a.tick - b.tick);
   window.gomidasTickMap = tickMap;
@@ -196,6 +298,56 @@ function rebuildSequence() {
 }
 window.gomidasRebuild = rebuildSequence;
 window.gomidasGetRenderedTracks = () => renderedTracks;
+
+// Absolute tick of a cursor position, mirroring rebuildSequence's layout (each bar
+// spans max(time-signature capacity, its filled length); within a bar, beats sum by
+// duration). Used to start playback from the edit cursor instead of bar 1.
+function tickForCursor(trackIndex, barIdx, voiceIdx, beatIdx) {
+  if (!api || !api.score) return 0;
+  const score = api.score;
+  const track = score.tracks[trackIndex] || renderedTracks[0] || score.tracks[0];
+  const stave = track && track.staves[0];
+  if (!stave) return 0;
+  // Walk the unrolled playback order to the FIRST time this bar is played, so the
+  // seek lands at the right place even when earlier bars repeat.
+  const order = computePlaybackOrder(score);
+  let tick = 0;
+  for (const mbIndex of order) {
+    if (mbIndex === barIdx) break;
+    const bar = stave.bars[mbIndex];
+    let filled = 0;
+    if (bar) for (const v of bar.voices) {
+      let t = 0; for (const be of v.beats) t += beatTicks(be);
+      if (t > filled) filled = t;
+    }
+    tick += Math.max(masterBarTicks(score, mbIndex), filled);
+  }
+  const bar = stave.bars[barIdx];
+  const voice = bar && bar.voices[voiceIdx];
+  if (voice) for (let j = 0; j < beatIdx && j < voice.beats.length; j++) tick += beatTicks(voice.beats[j]);
+  return Math.round(tick);
+}
+// Seek the native transport to the edit cursor; returns the tick.
+window.gomidasSeekToCursor = function (trackIndex, barIdx, voiceIdx, beatIdx) {
+  const tick = tickForCursor(trackIndex | 0, barIdx | 0, voiceIdx | 0, beatIdx | 0);
+  nativeInvoke('seek', tick);
+  return tick;
+};
+
+// Set an A/B loop spanning a beat range [first..last] (inclusive) on one track/voice.
+// End tick = the last beat's start + its own duration. Returns {startTick, endTick}.
+window.gomidasSetLoopBars = function (trackIndex, bar0, voice0, beat0, bar1, voice1, beat1) {
+  if (!api || !api.score) return null;
+  const startTick = tickForCursor(trackIndex, bar0, voice0, beat0);
+  const track = api.score.tracks[trackIndex] || renderedTracks[0] || api.score.tracks[0];
+  const stave = track && track.staves[0];
+  const lastVoice = stave && stave.bars[bar1] && stave.bars[bar1].voices[voice1];
+  const lastBeat = lastVoice && lastVoice.beats[beat1];
+  const endTick = tickForCursor(trackIndex, bar1, voice1, beat1) + (lastBeat ? beatTicks(lastBeat) : WHOLE_TICKS);
+  nativeInvoke('setLoop', { start: startTick, end: endTick });
+  return { startTick, endTick };
+};
+window.gomidasClearLoop = function () { nativeInvoke('setLoop', { start: -1, end: -1 }); };
 
 // Push the loaded score's tempo to the native clock + the tempo field, so opening
 // a file plays at its own tempo instead of a hard-coded 120.
@@ -246,6 +398,12 @@ window.gomidasShowMulti = function () {
   viewMode = 'multi';
   renderView();
 };
+// GP F3: flip between the focused single track and the full multi-track view.
+window.gomidasToggleMultiView = function () {
+  if (viewMode === 'single') { window.gomidasShowMulti(); return; }
+  const st = window.GomidasEditor && window.GomidasEditor.getState && window.GomidasEditor.getState();
+  window.gomidasShowTrack(st ? st.curTrackIndex : 0);
+};
 
 function trackChannel(track) {
   const pb = track.playbackInfo || {};
@@ -263,7 +421,9 @@ function applyMixer() {
     const baseVol = (typeof f.vol === 'number') ? f.vol : ((pb.volume != null ? pb.volume : 12) / 16);
     const audible = anySolo ? !!f.soloed : !f.muted;
     const gain = audible ? Math.max(0, Math.min(1.5, baseVol)) : 0;
-    const pan = (pb.balance != null) ? Math.max(0, Math.min(1, pb.balance / 16)) : 0.5;
+    // Pan: track-list/inspector knob (flag) wins; else the file's balance; else center.
+    const pan = (typeof f.pan === 'number') ? Math.max(0, Math.min(1, f.pan))
+              : (pb.balance != null) ? Math.max(0, Math.min(1, pb.balance / 16)) : 0.5;
     nativeInvoke('setChannelMix', { channel: trackChannel(track), gain, pan });
   });
 }
@@ -283,7 +443,7 @@ function loadSample() { if (api) api.tex(SAMPLE_TEX); }
 // \instrument percussion → alphaTab builds drum articulations on-demand from notes,
 // so bar 1 hits every palette piece to register the kit (channel 9). The editor
 // clears this registration chord right after load (GomidasEditor.armDrumRegClear).
-const DRUM_REG = '(49 51 46 42 48 47 43 38 36).1';
+const DRUM_REG = '(49 55 52 51 53 46 42 44 48 47 43 38 37 39 54 56 36).1';
 const PROGRAMS = { guitar: 27, bass: 33 };
 // Tuning presets (alphaTex tokens, high→low string), shown in the New dialog + inspector.
 const TUNING_PRESETS = {
@@ -438,15 +598,216 @@ function openNewDialog(presetKind) {
 }
 window.gomidasOpenNew = openNewDialog;
 
+// GP8-style "Go To" (Cmd+G): jump the cursor to a bar number.
+function openGoToDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const st = E.getState ? E.getState() : null;
+  const nBars = (api && api.score) ? api.score.masterBars.length : 1;
+  const cur = st ? (parseInt((st.pos.match(/bar (\d+)/) || [])[1], 10) || 1) : 1;
+  modalBox.innerHTML =
+    '<div class="modal-h">Go to bar</div>' +
+    '<div class="modal-body"><div class="m-field"><label>Bar number (1–' + nBars + ')</label>' +
+      '<input type="number" id="gt-bar" min="1" max="' + nBars + '" value="' + cur + '"></div></div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="gt-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="gt-ok">Go</button>' +
+    '</div>';
+  showModal();
+  const input = document.getElementById('gt-bar');
+  if (input) { input.focus(); input.select(); }
+  const go = () => { const n = parseInt(input.value, 10); hideModal(); if (n >= 1) E.goToBar(n); };
+  document.getElementById('gt-cancel').onclick = hideModal;
+  document.getElementById('gt-ok').onclick = go;
+  input.onkeydown = (e) => { if (e.key === 'Enter') go(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenGoTo = openGoToDialog;
+
+// GP8 "Time Signature" (Cmd+T): set the current bar onward to a new time signature.
+function openTimeSigDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const st = E.getState ? E.getState() : null;
+  const num = st ? st.timeSigNum : 4, den = st ? st.timeSigDen : 4;
+  const bar = st ? (st.curBar + 1) : 1;
+  modalBox.innerHTML =
+    '<div class="modal-h">Time signature</div>' +
+    '<div class="modal-body"><div class="m-msg" style="margin-bottom:8px;color:var(--dim)">From bar ' + bar + ' to the end.</div>' +
+      '<div class="m-row"><div class="m-field"><label>Beats</label>' +
+        '<input type="number" id="ts-num" min="1" max="32" value="' + num + '" style="width:64px"></div>' +
+        '<span style="align-self:flex-end;padding-bottom:8px;color:var(--dim)">/</span>' +
+        '<div class="m-field"><label>Note value</label><select id="ts-den">' +
+          [1, 2, 4, 8, 16, 32].map(d => '<option' + (d === den ? ' selected' : '') + '>' + d + '</option>').join('') +
+        '</select></div></div></div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="ts-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="ts-ok">Apply</button>' +
+    '</div>';
+  showModal();
+  const numEl = document.getElementById('ts-num');
+  if (numEl) { numEl.focus(); numEl.select(); }
+  const apply = () => {
+    const n = parseInt(numEl.value, 10), d = parseInt(document.getElementById('ts-den').value, 10);
+    hideModal(); E.setTimeSignature(n, d);
+  };
+  document.getElementById('ts-cancel').onclick = hideModal;
+  document.getElementById('ts-ok').onclick = apply;
+  numEl.onkeydown = (e) => { if (e.key === 'Enter') apply(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenTimeSig = openTimeSigDialog;
+
+// GP8 "Key Signature" (Cmd+K): set the current bar onward. Value = accidental count
+// (−7..+7); a Minor checkbox flips the key type (relative minor shares the value).
+const KEY_NAMES = [
+  { v: -7, major: 'Cb', minor: 'Ab' }, { v: -6, major: 'Gb', minor: 'Eb' },
+  { v: -5, major: 'Db', minor: 'Bb' }, { v: -4, major: 'Ab', minor: 'F' },
+  { v: -3, major: 'Eb', minor: 'C' },  { v: -2, major: 'Bb', minor: 'G' },
+  { v: -1, major: 'F',  minor: 'D' },  { v: 0,  major: 'C',  minor: 'A' },
+  { v: 1,  major: 'G',  minor: 'E' },  { v: 2,  major: 'D',  minor: 'B' },
+  { v: 3,  major: 'A',  minor: 'F#' }, { v: 4,  major: 'E',  minor: 'C#' },
+  { v: 5,  major: 'B',  minor: 'G#' }, { v: 6,  major: 'F#', minor: 'D#' },
+  { v: 7,  major: 'C#', minor: 'A#' }
+];
+function keyOptions(value, minor) {
+  return KEY_NAMES.map(k => {
+    const name = (minor ? k.minor + 'm' : k.major) +
+      (k.v === 0 ? '' : ' (' + Math.abs(k.v) + (k.v > 0 ? '♯' : '♭') + ')');
+    return '<option value="' + k.v + '"' + (k.v === value ? ' selected' : '') + '>' + name + '</option>';
+  }).join('');
+}
+function openKeySigDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const st = E.getState ? E.getState() : null;
+  const value = st ? st.keySig : 0, minor = st ? st.keySigMinor : false;
+  const bar = st ? (st.curBar + 1) : 1;
+  function render() {
+    const min = document.getElementById('ks-minor') ? document.getElementById('ks-minor').checked : minor;
+    const val = document.getElementById('ks-key') ? parseInt(document.getElementById('ks-key').value, 10) : value;
+    modalBox.innerHTML =
+      '<div class="modal-h">Key signature</div>' +
+      '<div class="modal-body"><div class="m-msg" style="margin-bottom:8px;color:var(--dim)">From bar ' + bar + ' to the end.</div>' +
+        '<div class="m-field"><label>Key</label><select id="ks-key">' + keyOptions(val, min) + '</select></div>' +
+        '<label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="ks-minor"' + (min ? ' checked' : '') + '> Minor</label>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button class="m-btn ghost" id="ks-cancel">Cancel</button>' +
+        '<button class="m-btn primary" id="ks-ok">Apply</button>' +
+      '</div>';
+    document.getElementById('ks-minor').onchange = render; // re-label options major↔minor
+    document.getElementById('ks-cancel').onclick = hideModal;
+    document.getElementById('ks-ok').onclick = () => {
+      const v = parseInt(document.getElementById('ks-key').value, 10);
+      const m = document.getElementById('ks-minor').checked;
+      hideModal(); E.setKeySignature(v, m);
+    };
+  }
+  render();
+  showModal();
+}
+window.gomidasOpenKeySig = openKeySigDialog;
+
+// GP8 "Text" (T): attach a free-text annotation to the current beat (blank clears it).
+function openTextDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const cur = (E.getBeatText && E.getBeatText()) || '';
+  const safe = cur.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  modalBox.innerHTML =
+    '<div class="modal-h">Beat text</div>' +
+    '<div class="modal-body"><div class="m-field"><label>Text (blank to clear)</label>' +
+      '<input type="text" id="bt-text" value="' + safe + '" placeholder="e.g. Intro, x4, Solo"></div></div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="bt-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="bt-ok">Apply</button>' +
+    '</div>';
+  showModal();
+  const input = document.getElementById('bt-text');
+  if (input) { input.focus(); input.select(); }
+  const apply = () => { const v = input.value; hideModal(); E.setBeatText(v); };
+  document.getElementById('bt-cancel').onclick = hideModal;
+  document.getElementById('bt-ok').onclick = apply;
+  input.onkeydown = (e) => { if (e.key === 'Enter') apply(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenText = openTextDialog;
+
+// GP8 "Chord" (A): name the chord on the current beat, with an optional fret diagram
+// (comma/space-separated frets per string in alphaTab order; x or - = unplayed).
+function openChordDialog() {
+  const E = window.GomidasEditor;
+  if (!E || !E.getBeatChord) return;
+  const cur = E.getBeatChord() || { name: '', frets: [] };
+  const nameSafe = String(cur.name).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const fretsStr = (cur.frets || []).map(f => (f < 0 ? 'x' : f)).join(' ');
+  modalBox.innerHTML =
+    '<div class="modal-h">Chord</div>' +
+    '<div class="modal-body">' +
+      '<div class="m-field"><label>Name (blank to clear)</label><input type="text" id="ch-name" value="' + nameSafe + '" placeholder="e.g. Cmaj7"></div>' +
+      '<div class="m-field" style="margin-top:8px"><label>Frets per string — optional (e.g. x 3 2 0 1 0)</label>' +
+        '<input type="text" id="ch-frets" value="' + fretsStr + '" placeholder="x 3 2 0 1 0"></div>' +
+    '</div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="ch-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="ch-ok">Apply</button>' +
+    '</div>';
+  showModal();
+  const nameEl = document.getElementById('ch-name');
+  if (nameEl) { nameEl.focus(); nameEl.select(); }
+  const apply = () => {
+    const name = nameEl.value;
+    const raw = document.getElementById('ch-frets').value.trim();
+    const frets = raw ? raw.split(/[\s,]+/).map(t => (/^[x\-]$/i.test(t) ? -1 : (parseInt(t, 10)))).filter(n => !isNaN(n)) : [];
+    hideModal();
+    E.setBeatChord(name, frets);
+  };
+  document.getElementById('ch-cancel').onclick = hideModal;
+  document.getElementById('ch-ok').onclick = apply;
+  nameEl.onkeydown = (e) => { if (e.key === 'Enter') apply(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenChord = openChordDialog;
+
 // Keep keyboard focus in the score area so editor keys are received.
 function focusEditor() { try { window.focus(); document.getElementById('at-wrap').focus(); } catch (e) {} }
 
 // ---- project save / load (.gomidas = alphaTab score JSON) --------------------
+// Fold the live mixer's per-track volume/pan back into the score's playbackInfo so
+// they persist in the .gomidas (mute/solo/hidden are session-only and not saved).
+function syncMixerToScore() {
+  if (!api || !api.score) return;
+  const flags = window.gomidasTrackFlags || {};
+  api.score.tracks.forEach((t, i) => {
+    const f = flags[i];
+    if (!f || !t.playbackInfo) return;
+    if (typeof f.vol === 'number') t.playbackInfo.volume = Math.round(Math.max(0, Math.min(1, f.vol)) * 16);
+    if (typeof f.pan === 'number') t.playbackInfo.balance = Math.round(Math.max(0, Math.min(1, f.pan)) * 16);
+  });
+}
 function saveProject() {
+  syncMixerToScore();
   const json = window.GomidasEditor && window.GomidasEditor.snapshot();
   if (json) { nativeInvoke('saveProject', json); if (window.GomidasEditor.markClean) window.GomidasEditor.markClean(); }
 }
 function openProject() { nativeInvoke('openProject', 1); }
+// Export the current score to a Guitar Pro (.gp) file via alphaTab's Gp7Exporter,
+// then hand the bytes (base64) to the native save dialog.
+function exportGp() {
+  const Exp = alphaTab.exporter && alphaTab.exporter.Gp7Exporter;
+  if (!Exp || !api || !api.score) { setStatus('GP export unavailable'); return; }
+  try {
+    syncMixerToScore();
+    const exporter = new Exp();
+    const fn = exporter.export || exporter.exportScore;
+    const data = fn.call(exporter, api.score, api.settings);   // Uint8Array
+    const bytes = new Uint8Array(data);
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK)
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    nativeInvoke('saveBinary', { ext: 'gp', b64: btoa(bin) });
+    setStatus('Exported .gp (' + bytes.length + ' bytes)');
+  } catch (e) { setStatus('GP export failed: ' + e); nlog('exportGp: ' + (e && e.stack || e)); }
+}
+window.gomidasExportGp = exportGp;
 // Called by native after reading a .gomidas file.
 window.gomidasLoadProject = function (json) {
   if (window.GomidasEditor && window.GomidasEditor.loadProject(json)) focusEditor();
@@ -476,7 +837,7 @@ window.gomidasNativeKey = function (key, cmd, ctrl, shift, alt) {
 // Dispatch a native menu-bar action (MainComponent menuItemSelected → here).
 window.gomidasMenu = function (action) {
   const E = window.GomidasEditor;
-  if (!E && !/^(new|open|save|import|sample)/.test(action)) return;
+  if (!E && !/^(new|open|save|export|import|sample)/.test(action)) return;
   const i = action.indexOf(':');
   const cmd = i < 0 ? action : action.slice(0, i);
   const arg = i < 0 ? '' : action.slice(i + 1);
@@ -484,25 +845,65 @@ window.gomidasMenu = function (action) {
     case 'new': openNewDialog(arg); break;
     case 'open': confirmDiscard(() => nativeInvoke('openFile')); break;
     case 'save': saveProject(); break;
+    case 'exportgp': exportGp(); break;
     case 'sample': loadSample(); focusEditor(); break;
     case 'undo': E.undo(); break;
     case 'redo': E.redo(); break;
+    case 'selectall': E.selectAll(); break;
+    case 'copy': E.copySelection(); break;
+    case 'cut': E.cutSelection(); break;
+    case 'paste': E.pasteClipboard(); break;
     case 'addtrack': E.addTrack(arg); focusEditor(); break;
+    case 'deletetrack': E.deleteTrack(); break;
     case 'addbar': E.addBar(); break;
     case 'deletebar': E.deleteBar(); break;
+    case 'gotobar': openGoToDialog(); break;
+    case 'timesig': openTimeSigDialog(); break;
+    case 'keysig': openKeySigDialog(); break;
+    case 'repeatstart': E.toggleRepeatStart(); break;
+    case 'repeatend': E.toggleRepeatEnd(); break;
+    case 'tripletfeel': E.toggleTripletFeel(); break;
+    case 'dir': E.toggleDirection(arg); break;
+    case 'fermata': E.toggleFermata(); break;
     case 'dur': E.setDuration(parseInt(arg, 10)); break;
+    case 'voice': E.selectVoice(parseInt(arg, 10) - 1); break;
+    case 'tuplet': E.setTuplet(parseInt(arg, 10)); break;
     case 'dot': E.toggleDot(); break;
     case 'tie': E.tieNote(); break;
+    case 'text': openTextDialog(); break;
+    case 'chord': openChordDialog(); break;
     case 'rest': E.makeRest(); break;
     case 'dead': E.deadNote(); break;
     case 'fx': {
       const m = { palmmute: () => E.palmMute(), letring: () => E.letRing(), hammer: () => E.hammerPull(),
         slide: () => E.slideNote(false), ghost: () => E.ghostNote(), staccato: () => E.staccato(),
-        accent: () => E.accent(false), harmonic: () => E.naturalHarmonic(), vibrato: () => E.vibratoNote() };
+        accent: () => E.accent(false), harmonic: () => E.naturalHarmonic(), vibrato: () => E.vibratoNote(),
+        brushup: () => E.setBrush('up'), brushdown: () => E.setBrush('down'),
+        arpup: () => E.setBrush('arpup'), arpdown: () => E.setBrush('arpdown'),
+        pickup: () => E.setPickStroke(true), pickdown: () => E.setPickStroke(false),
+        tremolo: () => E.tremoloPicking(), trill: () => E.trillNote(),
+        grace: () => E.graceNote(false), graceon: () => E.graceNote(true),
+        widevibrato: () => E.wideVibrato(), slap: () => E.slapBeat(), pop: () => E.popBeat(),
+        fadein: () => E.setFade('in'), fadeout: () => E.setFade('out'), swell: () => E.setFade('swell'),
+        shiftslide: () => E.slideNote(true), pickslidedown: () => E.pickSlide(false), pickslideup: () => E.pickSlide(true),
+        artharmonic: () => E.artificialHarmonic(), pinchharmonic: () => E.pinchHarmonic() };
       (m[arg] || (() => {}))(); break;
     }
     case 'play': E.togglePlay(); break;
+    case 'panic': nativeInvoke('panic', 1); E.notifyStopped(); setStatus('All notes off'); break;
+    case 'loopsel': E.loopSelection(); break;
+    case 'loopclear': E.clearLoop(); break;
+    case 'metronome': { const on = window.gomidasToggleMetronome();
+      const b = document.getElementById('metro-btn'); if (b) b.classList.toggle('on', on); break; }
+    case 'countin': { const on = E.toggleCountIn();
+      const b = document.getElementById('countin-btn'); if (b) b.classList.toggle('on', on); break; }
+    case 'liveinput': toggleLiveInput(); break;
+    case 'loadplugin': nativeInvoke('loadInputPlugin', 1); break;
+    case 'showplugineditor': nativeInvoke('showPluginEditor', 1); break;
+    case 'clearplugin': nativeInvoke('clearInputPlugin', 1); setStatus('Input plugin cleared'); break;
+    case 'record': toggleRecord(); break;
     case 'zoom': window.gomidasZoom(arg === 'in' ? 1 : -1); break;
+    case 'toggleview': window.gomidasToggleMultiView(); break;
     default: break;
   }
   focusEditor();
@@ -536,11 +937,69 @@ onClick('zoom-out', () => window.gomidasZoom(-1));
 onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(); focusEditor(); });
 onClick('redo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.redo(); focusEditor(); });
 onClick('rewind-btn', () => { nativeInvoke('stop', 1); focusEditor(); });
+onClick('metro-btn', () => {
+  const on = window.gomidasToggleMetronome();
+  const b = document.getElementById('metro-btn'); if (b) b.classList.toggle('on', on);
+  focusEditor();
+});
+onClick('countin-btn', () => {
+  const on = window.GomidasEditor && window.GomidasEditor.toggleCountIn();
+  const b = document.getElementById('countin-btn'); if (b) b.classList.toggle('on', !!on);
+  focusEditor();
+});
+// Live input monitoring: reopens the device with a mic input and mixes it to output
+// (first time triggers the macOS mic-permission prompt). Optimistic UI toggle.
+let liveInputOn = false, inputGain = 1.0;
+function toggleLiveInput() {
+  liveInputOn = !liveInputOn;
+  nativeInvoke('setLiveInput', { enabled: liveInputOn, gain: inputGain });
+  const b = document.getElementById('liveinput-btn'); if (b) b.classList.toggle('on', liveInputOn);
+  if (!liveInputOn) window.gomidasMeter(0);   // reset the meter when monitoring stops
+}
+// Output level meter (native pushes peak 0..1 ~30Hz while playing or monitoring).
+window.gomidasMeter = function (peak) {
+  const f = document.getElementById('vu-fill');
+  if (!f) return;
+  f.style.width = Math.min(100, Math.round(peak * 100)) + '%';
+  f.style.background = peak > 0.92 ? '#e25' : (peak > 0.6 ? '#ec5' : '#5c8');
+};
+window.gomidasToggleLiveInput = toggleLiveInput;
+onClick('liveinput-btn', () => { toggleLiveInput(); focusEditor(); });
+
+// Record the output mix to a WAV (backing tracks + live input).
+let recording = false;
+function toggleRecord() {
+  if (recording) nativeInvoke('stopRecording', 1);
+  else nativeInvoke('startRecording', 1);   // opens a save dialog; state set in callback
+}
+window.gomidasToggleRecord = toggleRecord;
+onClick('record-btn', () => { toggleRecord(); focusEditor(); });
+// Native callback with the actual recording state.
+window.gomidasRecording = function (on, name) {
+  recording = !!on;
+  const b = document.getElementById('record-btn'); if (b) b.classList.toggle('rec', recording);
+  setStatus(recording ? ('Recording → ' + (name || 'WAV')) : (name ? '' : 'Recording stopped'));
+};
+// Native callback after a plugin-file is chosen (loaded into the live-input insert).
+window.gomidasInputPluginLoaded = function (ok, name) {
+  setStatus(ok ? ('Input plugin: ' + (name || 'loaded')) : 'Plugin load failed (not a valid AU/VST3)');
+};
 // Clicking anywhere in the score grabs keyboard focus for the editor.
 document.getElementById('at-wrap').addEventListener('mousedown', focusEditor);
 document.getElementById('tempo').addEventListener('change', (ev) => {
   const bpm = parseInt(ev.target.value, 10);
   if (bpm >= 40 && bpm <= 240) nativeInvoke('setTempo', bpm);
+});
+// Input gain for live-input monitoring (applied live when monitoring is on).
+document.getElementById('ingain').addEventListener('input', (ev) => {
+  inputGain = (parseInt(ev.target.value, 10) || 100) / 100;
+  if (liveInputOn) nativeInvoke('setLiveInput', { enabled: true, gain: inputGain });
+});
+// Practice speed: scales playback tempo (pitch unchanged — it's re-sequenced MIDI).
+document.getElementById('speed-select').addEventListener('change', (ev) => {
+  const rate = parseFloat(ev.target.value);
+  if (rate > 0) nativeInvoke('setPlaybackRate', rate);
+  focusEditor();
 });
 document.getElementById('file-input').addEventListener('change', (ev) => {
   const file = ev.target.files && ev.target.files[0];
