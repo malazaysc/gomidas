@@ -35,6 +35,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Click any beat in score (incl. empty bars) | mouse | — | ✅ `getBeatAtPos`; picks string from tab-staff Y |
 | Click a note | mouse | — | ✅ selects its string |
 | Click a track in multiview → switch controls | mouse | — | ✅ re-picks track by click Y (drum row → drum palette) |
+| Click a **bar square** in the track list | mouse | — | ✅ selects that track and jumps the edit cursor to that bar (`goToBar`) |
 
 ## Selection & clipboard
 | Feature | Gomidas key | GP8 | Notes |
@@ -68,11 +69,11 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Triplet (3 in space of 2) | `/` / toolbar `3` | same (Triolet) | 🟡 per-beat (spanning groups → backlog) |
 | Tuplets 5 / 6 / 7 / 9 | Note menu | same | ✅ `setTuplet(n)`; denom = nearest lower power of two; applies across the beat selection (spanning groups), toggles off when all selected already have it |
 | Rest | `R` / toolbar `R` | same | ✅ clears beat to a timed rest |
-| Insert beat after cursor | `⌃+`, toolbar `＋beat`, or `→` at end | `⌃+` | ✅ |
+| Insert beat after cursor | `⌃+`, toolbar `＋beat`, or `→` at end | `⌃+` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
 | Delete the beats | `⌘-` / toolbar `－beat` | `⌘-` | ✅ |
 | Insert bar (to all tracks) | `⌘+` / toolbar `＋bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
 | Delete bar (from all tracks) | `⌃-` / toolbar `－bar` | `⌃-` | ✅ JSON round-trip rebuild; keeps ≥1 bar |
-| Time signature | `⌘T` / menu Bar→Time Signature | same | ✅ modal (beats / note value); applies from the current bar to the end |
+| Time signature | `⌘T` / **click the time sig in the transport chip** / palette `4/4` / menu Bar→Time Signature | same | ✅ modal (beats / note value, incl. custom e.g. 3/4, 6/8); applies from the current bar to the end. The transport chip shows the current bar's time signature live |
 | Key signature | `⌘K` / menu Bar→Key Signature | same | ✅ modal (−7..+7 accidentals + major/minor); applies from the current bar to the end |
 | Open / close repeat | `[` / `]` / menu Bar | same | ✅ notation barline + **playback loops** (repeats unrolled into the event list; play cursor jumps back). Alternate endings → backlog |
 | Beat text | `T` / menu Note→Text | same | ✅ free-text annotation on the current beat (modal; blank clears) |
@@ -127,6 +128,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Play / stop | `Space` / toolbar `▶ Play` | ✅ native transport owns the clock (960 PPQ). **Starts from the edit cursor** (seeks the transport to the cursor's tick before playing), not bar 1. Space is ignored while typing in a field / modal |
 | Edit + play cursors over tab & notation | automatic | ✅ follow native transport |
 | Auto-scroll during playback | automatic | ✅ keeps the play cursor in view (GP-style page turn); only scrolls near an edge. Toggle: `GomidasEditor.setAutoScroll(bool)` |
+| Auto-scroll to the **edit** cursor | automatic | ✅ as you navigate/edit, the score scrolls to keep the edit cursor in view (edge-triggered, instant; stands down during playback). Same `setAutoScroll` toggle |
 | A/B loop | `⌘L` / menu Sound→Loop Selection | — | ✅ loops the beat selection (or current bar) via `AudioEngine::setLoopRange`; `⌘L` again or Clear Loop turns it off; cleared on score load |
 | Metronome | transport `♩` toggle / menu Sound→Metronome | — | ✅ wood-block click on the time-signature grid (downbeat accented), on a free melodic channel; injected into the sequence so it loops/repeats with the music |
 | Practice speed (tempo slow-down) | transport speed select (25–150%) | — | ✅ `AudioEngine::setPlaybackRate` scales playback tempo without changing pitch or the notated tempo |
@@ -144,13 +146,19 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Feature | How | Notes |
 | --- | --- | --- |
 | GP8-style dark layout | — | transport · left palette · score · right SONG/TRACK inspector · bottom track list |
+| **SVG icon set** (GP8-style) | — | ✅ inline `<symbol>` sprite + `Icons.use(name)` helper in `index.html` (~50 monochrome `currentColor` icons). Replaced all emoji/unicode glyphs across transport, palette, track list, inspector |
+| **Track timeline (bar squares)** | bottom track list | ✅ per-track row of small fixed-width per-bar blocks, filled in the track color where the bar has notes, current bar outlined; **click a square to jump to that bar** of that track. Bar-number ruler in the header. (Long scores currently clip — horizontal scroll TODO) |
+| Track row controls | bottom track list | ✅ color swatch · instrument icon · name · show/hide · mute · solo · volume fader + value · **pan knob** (drag; double-click = center) · EQ button (placeholder) |
+| **Master row** | bottom track list | 🟡 shown (volume fader / pan / EQ); controls are visual placeholders |
+| **Expanded left palette** | left palette | 🟡 GP8 sections: voice tabs 1–4 (live), Lyrics/Chords, bar & signatures, octave/clef, durations, tuplets, dynamics, articulation grid (~30 effects, wired where the engine supports them), bars & beats. Dynamics / octave / clef / lyrics render as dimmed **placeholders** (no engine backing yet) |
 | Native macOS menu bar | menu bar | File / Edit / Track / Bar / Note / Effects / Section / Tools / Sound / View / Window / Help |
 | Track mute / solo | track-list M / S | ✅ live via per-channel gain in `AudioEngine` (`setChannelMix`); solo overrides mute; takes effect instantly during playback |
 | Track volume (mixer) | track-list slider | ✅ per-track linear gain (0–100%), live; defaults from `playbackInfo.volume` |
 | Track pan (mixer) | inspector TRACK→Mixer slider | ✅ per-track pan (L/C/R), live via `setChannelMix`; defaults from `playbackInfo.balance` |
 | Track show / hide | track-list 👁 | ✅ toggles the track in the score (multi-track view); does not mute it |
 | Single-track focus | click a track row / `track-select` | ✅ shows that track alone (GP-style); eye control returns to multi-track view |
-| Inspector — TRACK (live) | right panel | ✅ editable name · Score/Tab notation toggles · tuning preset picker · GM sound picker. Interpretation sliders still visual placeholders |
+| Inspector — TRACK (live) | right panel | ✅ color swatch + instrument icon + short-name badge · editable name · **notation icon toggles** (staff/tab) · tuning preset picker · GM sound picker · pan. RSE/MIDI pill, sound-chain icons, Interpretation sliders + Stringed toggle are visual placeholders |
+| Transport view clusters | transport | 🟡 page-view toggles (page/vert/wide) + right instrument cluster (audio/guitar/keys/drums) are single-select **visual** toggles; loop / speed / tuner cluster (tuner + print are placeholders) |
 | Inspector — SONG (live) | right panel `SONG` tab | ✅ editable title + tempo |
 | Zoom | transport `−` / `＋` or `⌘<` / `⌘>` | ✅ rescales the score |
 | Multitrack view toggle | `F3` / menu View→Toggle Multitrack View | ✅ flips focused single track ↔ all non-hidden tracks |
@@ -164,6 +172,8 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 ---
 ### Notes / minor divergences from GP8
 - Keymap follows GP8. Extras on top of GP: `PageUp`/`PageDown` alias `⌘↑`/`⌘↓` (track nav), and
-  `→` at the **last beat of the last bar** appends a new beat (convenience; GP uses `⌃+`).
+  `→` at the **last beat of the last bar** always appends/extends a beat (convenience; GP uses `⌃+`).
+  Beat insertion is capacity-aware — a full bar **flows into the next bar** instead of overfilling.
+  (Holding `→` keeps spawning beats, one per repeat; undo / `−beat` reverse an overshoot.)
 - Triplets apply **per beat**, not yet as a GP-style spanning tuplet group.
 - Let ring now sustains until the next note on the same string (or the track end), per GP.

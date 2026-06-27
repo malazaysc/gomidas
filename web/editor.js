@@ -73,11 +73,11 @@
       const s = staff();
       if (cur.bar < s.bars.length - 1) { cur.bar++; if (!voice()) cur.voice = 0; cur.beat = 0; }
       else {
-        // Last beat of the last bar: append ONE trailing rest you can fill (GP-style),
-        // but don't keep piling rests — if the last beat is already an empty rest, stop.
-        const last = v.beats[v.beats.length - 1];
-        if (last && !last.isRest) { insertBeatAfter(); return; }
-        // else: already a trailing empty beat → stay put (use ＋bar to continue)
+        // Last beat of the last bar: always extend on →. insertBeatAfter appends a
+        // beat within the bar, or flows into a new bar when this one is full —
+        // including after a silence, so you can keep adding beats freely (GP-style).
+        insertBeatAfter();
+        return;
       }
     } else {
       cur.beat = nb;
@@ -482,11 +482,53 @@
     applyEdit(true);
   }
 
+  // ---- bar capacity (ticks) — keep bars within their time signature ----------
+  const WHOLE_TICKS = 3840;        // PPQ(960) * 4; mirrors app.js
+  function beatTicksOf(b) {
+    let t = WHOLE_TICKS / b.duration;
+    if (b.dots) t *= (2 - Math.pow(0.5, b.dots));
+    if (b.tupletNumerator && b.tupletNumerator > 0) t *= b.tupletDenominator / b.tupletNumerator;
+    return t;
+  }
+  function barCapacityTicks(barIndex) {
+    const mb = api.score.masterBars[barIndex];
+    const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
+    const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
+    return WHOLE_TICKS * num / den;
+  }
+  function barFilledTicks(barIndex, voiceIndex) {
+    const st = staff(); const bar = st && st.bars[barIndex];
+    const v = bar && bar.voices[voiceIndex || 0];
+    if (!v) return 0;
+    return v.beats.reduce((s, b) => s + beatTicksOf(b), 0);
+  }
+  // A bar is "full" once its beats occupy its whole time-signature length.
+  function barIsFull(barIndex, voiceIndex) {
+    return barFilledTicks(barIndex, voiceIndex) >= barCapacityTicks(barIndex) - 1;
+  }
+  // Flow entry into the next bar (creating one if at the end). The landing beat
+  // becomes a rest of `dur` so the new bar starts underfilled and accepts entry.
+  function startNextBarForEntry(dur) {
+    const s = staff();
+    if (cur.bar >= s.bars.length - 1) addBar(); // creates the bar + lands cursor on its beat 0
+    else { cur.bar += 1; cur.voice = 0; cur.beat = 0; }
+    const b = beat();
+    if (b && b.isRest) { b.duration = dur || 4; b.isEmpty = false; applyEdit(true); }
+    refreshCursor();
+  }
+
   function insertBeatAfter() {
     const v = voice();
     if (!v) return;
+    const dur = beat() ? beat().duration : 4;
+    // Appending past the end of a full bar flows into the next bar (GP-style),
+    // instead of overfilling the current one beyond its time signature.
+    if (cur.beat >= v.beats.length - 1 && barIsFull(cur.bar, cur.voice)) {
+      startNextBarForEntry(dur);
+      return;
+    }
     const nb = new alphaTab.model.Beat();
-    nb.duration = beat() ? beat().duration : 4;
+    nb.duration = dur;
     nb.voice = v;          // splice bypasses voice.addBeat(), which sets this back-ref
     nb.isEmpty = false;    // show as a rest, not a blank
     v.beats.splice(cur.beat + 1, 0, nb);
@@ -1267,6 +1309,30 @@
   }
 
   // Snapshot for the visual UI (fretboard + duration toolbar).
+  // Track accent color: prefer the GP-authored color, else a stable palette by index.
+  const TRACK_PALETTE = ['#e08a6e', '#6ec6e0', '#9ad06e', '#e0cf6e', '#c98ae0',
+                         '#e06e9a', '#6e9ae0', '#e0a96e', '#7ad0b0', '#d07a7a'];
+  function trackColor(t, i) {
+    const c = t && t.color;
+    if (c && typeof c.r === 'number') return 'rgb(' + (c.r | 0) + ',' + (c.g | 0) + ',' + (c.b | 0) + ')';
+    return TRACK_PALETTE[i % TRACK_PALETTE.length];
+  }
+  // Per-master-bar "does this track have any sounding note in this bar?" (for the bar-block timeline).
+  function trackBarFill(t) {
+    const st = t && t.staves && t.staves[0];
+    const n = api.score.masterBars.length;
+    const out = new Array(n).fill(false);
+    if (!st) return out;
+    for (let bi = 0; bi < n && bi < st.bars.length; bi++) {
+      const bar = st.bars[bi];
+      if (!bar) continue;
+      for (const v of bar.voices) {
+        if (v.beats && v.beats.some(be => !be.isRest && be.notes && be.notes.length)) { out[bi] = true; break; }
+      }
+    }
+    return out;
+  }
+
   function getState() {
     if (!api || !api.score) return null;
     const s = staff();
@@ -1329,12 +1395,16 @@
       })(),
       showStandard: !!(s && s.showStandardNotation),
       showTab: !!(s && s.showTablature),
+      barCount: api.score.masterBars.length,
       allTracks: api.score.tracks.map((t, i) => ({
         index: i,
         name: t.name || ('Track ' + (i + 1)),
+        shortName: t.shortName || '',
         isPercussion: !!(t.staves[0] && t.staves[0].isPercussion),
         program: (t.playbackInfo ? t.playbackInfo.program | 0 : 0),
         volume: (t.playbackInfo && t.playbackInfo.volume != null) ? (t.playbackInfo.volume / 16) : 0.75,
+        color: trackColor(t, i),
+        bars: trackBarFill(t),
         current: i === cur.track
       }))
     };
@@ -1487,6 +1557,7 @@
       stringCursorEl.style.display = 'none';
     }
     renderSelection();
+    autoScrollToEditCursor();
     const st = document.getElementById('status');
     if (st) st.textContent = `${track() ? track().name : ''} · bar ${cur.bar + 1} · beat ${cur.beat + 1} · string ${cur.string + 1}`
       + (cur.voice > 0 ? ` · voice ${cur.voice + 1}` : '')
@@ -1519,26 +1590,34 @@
   // when the cursor nears an edge, so it doesn't yank on every beat. Uses the
   // already-positioned cursor element's rect, so it's robust to offsetParent quirks.
   let autoScrollOn = true;
-  function autoScrollToPlayCursor() {
+  // Edge-triggered scroll to keep a cursor element in view (vertical always;
+  // horizontal only in horizontal layouts). Used for both the play and edit cursors.
+  function autoScrollToCursor(el, smooth) {
     const wrap = document.getElementById('at-wrap');
-    if (!wrap || !playCursorEl || playCursorEl.style.display === 'none') return;
+    if (!wrap || !el || el.style.display === 'none') return;
     const wrapRect = wrap.getBoundingClientRect();
-    const curRect = playCursorEl.getBoundingClientRect();
+    const curRect = el.getBoundingClientRect();
     const m = 56; // edge margin
+    const behavior = smooth ? 'smooth' : 'auto';
     const relTop = curRect.top - wrapRect.top;
     const relBottom = curRect.bottom - wrapRect.top;
     if (relTop < m || relBottom > wrap.clientHeight - m) {
-      const target = wrap.scrollTop + relTop - wrap.clientHeight * 0.35;
-      wrap.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+      const target = wrap.scrollTop + relTop - wrap.clientHeight * 0.4;
+      wrap.scrollTo({ top: Math.max(0, target), behavior });
     }
     if (wrap.scrollWidth > wrap.clientWidth + 1) { // horizontal layouts only
       const relLeft = curRect.left - wrapRect.left;
       const relRight = curRect.right - wrapRect.left;
       if (relLeft < m || relRight > wrap.clientWidth - m) {
-        const target = wrap.scrollLeft + relLeft - wrap.clientWidth * 0.35;
-        wrap.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+        const target = wrap.scrollLeft + relLeft - wrap.clientWidth * 0.4;
+        wrap.scrollTo({ left: Math.max(0, target), behavior });
       }
     }
+  }
+  function autoScrollToPlayCursor() { autoScrollToCursor(playCursorEl, true); }
+  // Keep the edit cursor in view as you navigate/edit (instant; only when not playing).
+  function autoScrollToEditCursor() {
+    if (autoScrollOn && !isPlaying) autoScrollToCursor(editCursorEl, false);
   }
   function setAutoScroll(on) { autoScrollOn = !!on; }
 

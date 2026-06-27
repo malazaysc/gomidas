@@ -59,6 +59,7 @@ src/engine/AudioEngine.*    device, transport, scheduler, Sequence hand-off
 src/synth/SoundFontSynth.*  TinySoundFont wrapper
 src/synth/tsf/tsf.h         vendored TinySoundFont (MIT)
 web/index.html              GP8-style dark 4-panel layout (transport / palette / center / inspector / tracks)
+                            + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here
 web/app.js                  alphaTab host, model→MIDI (self-computed ticks), bridge
 web/editor.js               tab editor: cursor/nav/entry, mouse select, edit+play cursors
 web/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
@@ -97,8 +98,14 @@ visual placeholders. The panel skips rebuild while a text field is focused so ty
 bottom **track list** (`buildTrackList` — row click → `selectTrack`→`gomidasShowTrack` focuses that track
 **alone**; **mute/solo are live via per-channel gain** (`applyMixer`→native `setChannelMix`, solo overrides
 mute, instant during playback); **volume slider** per row = linear gain; **eye** toggles the track in the
-multi-track view, hide ≠ mute). `getState()` also returns `allTracks` (each with `volume`), `title`,
-`artist`, `songTempo`, `curTrackIndex`, `trackProgram`, `showStandard/showTab`.
+multi-track view, hide ≠ mute). Each row also has a **per-bar square timeline** (small fixed-width blocks,
+filled in the track color where the bar has notes, current bar outlined; **click a square → `selectTrack` +
+`goToBar`**), a **pan knob** (drag/dbl-click-center), an EQ button (placeholder), and a **Master row**
+(placeholder controls). `getState()` also returns `allTracks` (each with `volume`, `color`, `shortName`,
+`bars[]` content map), `barCount`, `title`, `artist`, `songTempo`, `curTrackIndex`, `trackProgram`,
+`showStandard/showTab`. **Bar capacity:** beat insertion is capacity-aware (`barCapacityTicks` vs
+`barFilledTicks` in `editor.js`) — a full bar flows into the next; `→` at the score end always extends.
+**Auto-scroll:** `autoScrollToCursor` keeps both the play and **edit** cursors in view (edge-triggered).
 **New-score dialog + unsaved-changes guard:** `New…`/menu→`window.gomidasOpenNew` opens a GP8-style modal
 (title/tempo/time-sig/add-remove tracks + tuning presets) → `createNewFromConfig` builds alphaTex. A dirty
 flag (`GomidasEditor.isDirty`, set on every commit, cleared on fresh load + Save) drives `confirmDiscard`

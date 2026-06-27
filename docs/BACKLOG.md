@@ -8,6 +8,30 @@ Priority: **P1** core editing parity · **P2** expressive effects · **P3** app/
 
 ---
 
+## GP8 UI replication pass (user, 2026-06-27)
+- [x] **SVG icon set** — inline `<symbol>` sprite + `Icons.use(name)` helper in `index.html` (~50 icons,
+  `currentColor`). Replaced all emoji/unicode glyphs in transport, palette, track list, inspector.
+- [x] **Track section + bar squares** — GP8 track panel: bar-number ruler + per-track row of small **fixed-width
+  per-bar blocks** (filled in the track color, current bar outlined, **click to jump to that bar**), pan knob,
+  EQ button, Master row. `getState()` now returns `barCount` + per-track `color`/`shortName`/`bars[]`.
+- [x] **Left palette buildout** — voice tabs, Lyrics/Chords, signatures, octave/clef, tuplets, dynamics,
+  articulation grid (~30 effects wired through `gomidasMenu`). Engine-less items (dynamics/octave/clef/lyrics) are
+  dimmed placeholders.
+- [x] **Transport + inspector polish** — icon-ified transport, multi-line info chip with **live, clickable time
+  signature**, loop/speed/tuner cluster, view/instrument clusters; inspector color swatch + short label +
+  notation icon toggles + RSE/MIDI + sound-chain + Stringed.
+- [x] **Beat add after a silence** — `→` at the last beat of the last bar always extends (removed an
+  over-aggressive anti-runaway guard that blocked extending past a rest).
+- [x] **Beats overfilling one bar** — beat insertion is now **capacity-aware** (`barCapacityTicks` vs
+  `barFilledTicks`): a full bar flows into the next bar (created if at the end).
+- [x] **Auto-scroll to the edit cursor** — `refreshCursor` now keeps the edit cursor in view (generalised the
+  play-cursor edge-scroll into `autoScrollToCursor`; instant, stands down during playback).
+- [ ] **Timeline horizontal scroll** — bar squares clip on long scores; add GP-style synced horizontal scroll
+  (ruler + all rows) when the timeline exceeds the panel width.
+- [ ] **Placeholder controls** — dynamics / octave / clef / lyrics palette items, inspector RSE + Interpretation +
+  Stringed, EQ / print / tuner buttons, Master row, and the view/instrument clusters are visual-only; wire when
+  the engine/model supports them.
+
 ## Reported issues (user, 2026-06-27)
 - [x] **Play started from bar 1, not the cursor** — `AudioEngine::stop()` rewinds `seekRequest` to 0 and
   nothing exposed `seekTicks` to JS. Added a native `seek` function; `togglePlay` now computes the cursor's
@@ -91,10 +115,12 @@ Drums:
 ## GP8 UI shell — wiring (layout shipped)
 - [x] Track list mute / solo / show-hide; native menu bar (File/Edit/…)
 - [x] Track list **volume** per row (per-channel gain in the engine: `AudioEngine::setChannelMix`)
-- [x] Inspector: editable track name, tuning picker, sound/program selector; SONG tab (title + tempo); **per-track pan** (Mixer section)
-- [ ] Inspector Interpretation: real Palm-mute / Accentuation / Auto-let-ring / Auto-brush controls (still placeholders)
-- [~] Transport: rewind/forward seek, **loop** (A/B `⌘L`) + **metronome** (`♩`) + **count-in** (`⏱`) + **practice speed** done; view-layout toggles pending
-- [ ] Fill out the left palette toward GP's full icon set (clefs, key/time sig, more effects)
+- [x] Track list **bar-square timeline** (per-bar content blocks, click to jump) + pan knob; Master row (visual)
+- [x] Inspector: editable track name, tuning picker, sound/program selector; SONG tab (title + tempo); **per-track pan** (Mixer section); GP8 visual chrome (swatch, short label, notation icon toggles, RSE/MIDI, sound-chain)
+- [ ] Inspector Interpretation: real Palm-mute / Accentuation / Auto-let-ring / Auto-brush / Stringed controls (still placeholders)
+- [x] **SVG icon set** across the whole UI (inline sprite + `Icons.use`)
+- [x] Transport: rewind/forward seek, **loop** (A/B `⌘L`) + **metronome** (`♩`) + **count-in** (`⏱`) + **practice speed**; icon-ified, live time-signature chip. View-layout / instrument clusters are **visual** single-select toggles (no layout backing yet)
+- [x] Left palette filled toward GP's icon set (voices, signatures, octave, dynamics, tuplets, articulation grid); dynamics/octave/clef/lyrics are placeholders pending engine support
 
 ## P3 — App / UX polish
 - [x] Multitrack view toggle — GP `F3` (flips focused single track ↔ full multi-track view; View menu too)
