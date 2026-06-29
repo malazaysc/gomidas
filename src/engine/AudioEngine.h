@@ -21,6 +21,11 @@ struct NoteEvent
     bool   on = false;
     int    program = 0;
     bool   percussion = false;
+    // kind 0 = note (key/velocity/on). kind 1 = pitch-bend (value 0..16383, 8192 = centre).
+    // kind 2 = control change (key = CC number, value = 0..127). Default keeps the legacy
+    // 7-element event shape working as plain notes.
+    int    kind = 0;
+    int    value = 0;
 };
 
 struct Sequence : public juce::ReferenceCountedObject

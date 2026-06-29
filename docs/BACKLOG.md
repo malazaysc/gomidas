@@ -171,10 +171,14 @@ Drums:
   post-render since sfizz bypasses TSF volume/pan)
 - [~] Prove end-to-end: builds, links, app launches clean. **Audio not yet runtime-verified** — needs GUI:
   Sound → Load SFZ Instrument for Track → `~/Music/GomidasTest/test.sfz` → play
-- [ ] Extend the event format with `kind`+`value` (pitch-bend/CC) — JS array `[…,kind,value]` + `NoteEvent`
-  (`AudioEngine.h:14-30`); dispatch to instruments + TSF (`tsf_channel_set_pitchwheel`/`_midi_control`).
-  **Bonus: makes slides/bends audible** (currently notation-only). _Not started — `SfzSynth` already has the
-  `pitchWheel`/`controlChange` methods ready._
+- [x] **Event-format plumbing**: `NoteEvent` gains `kind`+`value` (0=note, 1=pitch-bend, 2=CC); native parses
+  the optional 8th/9th array elements; `applyEvent` dispatches to TSF (`tsf_channel_set_pitchwheel`/`_midi_control`,
+  bend range widened to ±12) and sfizz (`pitchWheel`/`cc`; bundled SFZs given `bend_up/down=1200`). Additive —
+  no behavior change until JS emits pitch-bend/CC events.
+- [ ] **Emit** pitch-bend for slides/bends in `rebuildSequence` (~`app.js:251`). _Deliberately deferred:_ a
+  mis-ordered bend-reset detunes the whole channel for following notes, so this needs **ear verification** before
+  shipping. Design: ramp center→Δsemitones over the slide note (Δ scaled to ±12), reset to centre at the target
+  onset (use a fractional tick so the reset sorts before the next note-on). Watch legato (no re-pick) vs shift.
 
 **Phase A — bundled SFZ default (build first):**
 - [x] `SfzSynth` per-channel sfizz backend (load/note/bend/cc/render/clear) — see Phase 0

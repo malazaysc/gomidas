@@ -833,6 +833,12 @@ void MainComponent::handleSetSequence (const juce::var& payload)
                     n.on         = (bool)   (*ev)[4];
                     n.program    = (int)    (*ev)[5];
                     n.percussion = (bool)   (*ev)[6];
+                    // Optional 8th/9th elements: kind + value (pitch-bend / CC). Absent = note.
+                    if (ev->size() >= 9)
+                    {
+                        n.kind  = (int) (*ev)[7];
+                        n.value = (int) (*ev)[8];
+                    }
                     seq->events.push_back (n);
                 }
             }

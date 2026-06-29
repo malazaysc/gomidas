@@ -5,6 +5,9 @@
 <global>
  //+ Instrument: Classical guitar
  ampeg_release=1.5
+ // Gomidas: widen pitch-bend to +/-12 semitones (slides/bends), matching the TSF engine.
+ bend_up=1200
+ bend_down=-1200
 
 <group>
  loop_mode=no_loop

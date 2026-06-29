@@ -2,6 +2,11 @@
 //+ Date: 2019-09-30
 //+ URL: http://freepats.zenvoid.org/ElectricGuitar/clean-electric-bass.html#BassYR
 
+// Gomidas: widen pitch-bend to +/-12 semitones (slides/bends), matching the TSF engine.
+<global>
+ bend_up=1200
+ bend_down=-1200
+
 <group>
 ampeg_decay=0.5
 ampeg_release=0.3

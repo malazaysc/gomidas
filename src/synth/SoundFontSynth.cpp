@@ -79,6 +79,9 @@ void SoundFontSynth::prepare (double sampleRate)
         {
             tsf_set_output (chan[i], TSF_STEREO_INTERLEAVED, (int) sampleRate, 0.0f);
             tsf_set_volume (chan[i], 1.0f);
+            // Widen pitch-bend to +/-12 semitones so slides/bends up to an octave work
+            // (default is +/-2). Notes that don't bend keep the wheel centred (no effect).
+            tsf_channel_set_pitchrange (chan[i], i, 12.0f);
         }
     ready.store (true);
 }
@@ -102,6 +105,18 @@ void SoundFontSynth::noteOff (int channel, int key)
     tsf_channel_note_off (chan[channel], channel, key);
 }
 
+void SoundFontSynth::pitchWheel (int channel, int value14)
+{
+    if (channel < 0 || channel >= kNumChannels || chan[channel] == nullptr) return;
+    tsf_channel_set_pitchwheel (chan[channel], channel, juce::jlimit (0, 16383, value14));
+}
+
+void SoundFontSynth::controlChange (int channel, int cc, int value)
+{
+    if (channel < 0 || channel >= kNumChannels || chan[channel] == nullptr) return;
+    tsf_channel_midi_control (chan[channel], channel, cc, juce::jlimit (0, 127, value));
+}
+
 void SoundFontSynth::setChannelVolume (int channel, float volume)
 {
     if (channel < 0 || channel >= kNumChannels || chan[channel] == nullptr) return;
@@ -117,7 +132,11 @@ void SoundFontSynth::setChannelPan (int channel, float pan)
 void SoundFontSynth::allNotesOff()
 {
     for (int i = 0; i < kNumChannels; ++i)
-        if (chan[i] != nullptr) tsf_note_off_all (chan[i]);
+        if (chan[i] != nullptr)
+        {
+            tsf_note_off_all (chan[i]);
+            tsf_channel_set_pitchwheel (chan[i], i, 8192);   // clear any leftover bend
+        }
 }
 
 bool SoundFontSynth::renderChannel (int channel, juce::AudioBuffer<float>& stereo, int numSamples)

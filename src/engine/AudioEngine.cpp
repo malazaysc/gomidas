@@ -258,7 +258,22 @@ void AudioEngine::applyEvent (const NoteEvent& e)
 {
     // Channels backed by an SFZ instrument are routed to sfizz (never to TSF). cbSfzMask
     // is read lock-free; we only touch instances when we hold the lock (cbSfzLocked).
-    if (e.channel >= 0 && e.channel < 16 && ((cbSfzMask >> e.channel) & 1) != 0)
+    const bool useSfz = (e.channel >= 0 && e.channel < 16 && ((cbSfzMask >> e.channel) & 1) != 0);
+
+    if (e.kind == 1)   // pitch-bend
+    {
+        if (useSfz) { if (cbSfzLocked) sfz.pitchWheel (e.channel, e.value); }
+        else        synth.pitchWheel (e.channel, e.value);
+        return;
+    }
+    if (e.kind == 2)   // control change (key = CC number)
+    {
+        if (useSfz) { if (cbSfzLocked) sfz.controlChange (e.channel, e.key, e.value); }
+        else        synth.controlChange (e.channel, e.key, e.value);
+        return;
+    }
+
+    if (useSfz)
     {
         if (cbSfzLocked)
         {
