@@ -140,9 +140,26 @@
               width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff;
               display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; z-index: 1; }
     /* ===== Drum KIT VIEW panel (shown for percussion tracks) ===== */
-    #fretboard.kit { max-height: 452px; background: #14141a; padding: 0; }
-    .drumpanel { display: flex; flex-direction: column; height: 448px; }
-    .dp-tabs { display: flex; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
+    /* Height is user-adjustable (--drum-h, set/persisted in JS) so the score can breathe
+       on small screens; the score (#at-wrap, flex:1) takes whatever's left. */
+    #fretboard.kit { height: var(--drum-h, 360px); max-height: none; background: #14141a;
+                     padding: 0; position: relative; }
+    #fretboard.kit.collapsed { height: 38px; overflow: hidden; }
+    #fretboard.kit.collapsed .dp-body, #fretboard.kit.collapsed .pattern-lib { display: none; }
+    .drumpanel { display: flex; flex-direction: column; height: 100%; }
+    /* draggable splitter on the top edge — drag to resize, dbl-click to collapse */
+    .dp-splitter { position: absolute; top: 0; left: 0; right: 0; height: 8px; cursor: row-resize; z-index: 6; }
+    .dp-splitter::after { content: ''; position: absolute; left: 50%; top: 2px; transform: translateX(-50%);
+                          width: 48px; height: 3px; border-radius: 3px; background: var(--line2); }
+    .dp-splitter:hover::after { background: var(--accent); }
+    body.dp-resizing { cursor: row-resize; user-select: none; }
+    /* drum-panel header controls (right side of the tab row) */
+    .dp-ctl { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 0 4px 4px 0; }
+    .dp-hbtn { background: var(--ctrl); color: var(--dim); border: 1px solid var(--line); border-radius: 6px;
+               height: 24px; min-width: 26px; padding: 0 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .dp-hbtn:hover { color: var(--text); }
+    .dp-hbtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .dp-tabs { display: flex; align-items: flex-end; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
     .dp-tab { background: transparent; color: var(--dim); border: none; border-radius: 8px 8px 0 0;
               padding: 8px 18px; font-size: 12px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
     .dp-tab:hover { color: var(--text); }

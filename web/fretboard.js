@@ -234,7 +234,53 @@
   let paletteMode = null;     // 'fretboard' | 'drums'
   let drumPanelEl = null;
   let kitMode = 'draw';       // select | draw | erase | paint
-  let drumTab = 'kit';        // kit | groove | mixer
+  // On tight screens (13"), default to the compact step-grid editor + a shorter panel
+  // so the score stays visible; roomier screens keep the photo KIT VIEW.
+  const SMALL_SCREEN = (typeof window !== 'undefined' && window.innerHeight > 0 && window.innerHeight < 880);
+  let drumTab = SMALL_SCREEN ? 'groove' : 'kit';   // kit | groove | mixer
+
+  // ---- drum panel sizing (resizable / collapsible, persisted) ----------------
+  const DRUM_H_KEY = 'gomidasDrumH';
+  function drumDefaultH() { return SMALL_SCREEN ? 240 : 360; }
+  function clampDrumH(px) {
+    const max = Math.max(180, Math.round((window.innerHeight || 800) * 0.62));
+    return Math.max(120, Math.min(max, Math.round(px)));
+  }
+  function savedDrumH() {
+    let v = NaN; try { v = parseInt(localStorage.getItem(DRUM_H_KEY), 10); } catch (e) {}
+    return clampDrumH(Number.isFinite(v) ? v : drumDefaultH());
+  }
+  function applyDrumH(px) {
+    const fb = document.getElementById('fretboard'); if (!fb) return;
+    const v = clampDrumH(px);
+    fb.style.setProperty('--drum-h', v + 'px');
+    try { localStorage.setItem(DRUM_H_KEY, String(v)); } catch (e) {}
+  }
+  function setDrumCollapsed(on) {
+    const fb = document.getElementById('fretboard'); if (!fb) return;
+    fb.classList.toggle('collapsed', on);
+    const ch = fb.querySelector('.dp-collapse');
+    if (ch) { ch.textContent = on ? '▴' : '▾'; ch.classList.toggle('on', on); }
+  }
+  function toggleDrumCollapse() {
+    const fb = document.getElementById('fretboard'); if (!fb) return;
+    setDrumCollapsed(!fb.classList.contains('collapsed')); refocus();
+  }
+  function startDrumDrag(e) {
+    e.preventDefault();
+    const fb = document.getElementById('fretboard'); if (!fb) return;
+    setDrumCollapsed(false);
+    const startY = e.clientY, startH = fb.getBoundingClientRect().height;
+    document.body.classList.add('dp-resizing');
+    function move(ev) { applyDrumH(startH + (startY - ev.clientY)); }   // drag up = grow
+    function up() {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.classList.remove('dp-resizing'); refocus();
+    }
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  }
   let selPiece = 'snare';     // selected kit piece (drives the articulation panel)
   const pieceArtic = {};      // pieceId -> chosen articulation index
 
@@ -278,6 +324,19 @@
       t.addEventListener('click', () => { drumTab = id; renderDrumPalette(E.getState()); refocus(); });
       tabs.appendChild(t);
     });
+    // header controls: height presets + collapse (more score)
+    const ctl = el('div', 'dp-ctl');
+    [['S', 200], ['M', 340], ['L', 480]].forEach(([lbl, h]) => {
+      const b = el('button', 'dp-hbtn', lbl);
+      b.title = lbl + ' drum panel height';
+      b.addEventListener('click', () => { setDrumCollapsed(false); applyDrumH(h); refocus(); });
+      ctl.appendChild(b);
+    });
+    const col = el('button', 'dp-hbtn dp-collapse', '▾');
+    col.title = 'Collapse drum panel — give the score more room';
+    col.addEventListener('click', toggleDrumCollapse);
+    ctl.appendChild(col);
+    tabs.appendChild(ctl);
     panel.appendChild(tabs);
 
     const body = el('div', 'dp-body');
@@ -339,6 +398,14 @@
     panel.appendChild(body);
     panel.appendChild(buildPatternLib());
     fb.appendChild(panel);
+
+    const split = el('div', 'dp-splitter');
+    split.title = 'Drag to resize · double-click to collapse';
+    split.addEventListener('mousedown', startDrumDrag);
+    split.addEventListener('dblclick', toggleDrumCollapse);
+    fb.appendChild(split);
+
+    applyDrumH(savedDrumH());
     drumPanelEl = panel;
   }
 
@@ -525,7 +592,7 @@
   function renderFretboard(s) {
     if (paletteMode !== 'fretboard') {
       paletteMode = 'fretboard'; gridStrings = -1;
-      const fb = document.getElementById('fretboard'); fb.classList.remove('kit'); drumPanelEl = null;
+      const fb = document.getElementById('fretboard'); fb.classList.remove('kit', 'collapsed'); drumPanelEl = null;
     }
     if (s.stringCount !== gridStrings) buildFretboard(s.stringCount, s.tuningNames);
 
