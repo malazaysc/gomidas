@@ -26,11 +26,17 @@ Priority: **P1** core editing parity · **P2** expressive effects · **P3** app/
   `barFilledTicks`): a full bar flows into the next bar (created if at the end).
 - [x] **Auto-scroll to the edit cursor** — `refreshCursor` now keeps the edit cursor in view (generalised the
   play-cursor edge-scroll into `autoScrollToCursor`; instant, stands down during playback).
-- [ ] **Timeline horizontal scroll** — bar squares clip on long scores; add GP-style synced horizontal scroll
-  (ruler + all rows) when the timeline exceeds the panel width.
-- [ ] **Placeholder controls** — dynamics / octave / clef / lyrics palette items, inspector RSE + Interpretation +
-  Stringed, EQ / print / tuner buttons, Master row, and the view/instrument clusters are visual-only; wire when
-  the engine/model supports them.
+- [x] **Timeline horizontal scroll** — bar squares scroll horizontally (ruler + all rows scroll-synced; controls
+  column frozen); the timeline follows the current bar (2026-06-28).
+- [x] **Placeholder controls** — wired the dead buttons (2026-06-28): dynamics / octave-clef / lyrics palette,
+  crescendo·diminuendo, track-options ⋮ menu, **per-track + master EQ** (synth re-architected into per-channel
+  buses so each track has a real 3-band EQ), master volume/pan, Print, Tools (Transpose + practice tools),
+  Window→Minimize, Help→About. **Deferred (greyed out via `.gd-soon`):** RSE engine, Interpretation
+  (guitar-playing sim), Tuner. See [`DEAD_BUTTONS.md`](./DEAD_BUTTONS.md).
+- [ ] **EQ persistence** — track/master EQ is session-live but not saved to `.gomidas` (no alphaTab model
+  field; needs a project-format envelope). Vol/pan already persist via `playbackInfo`.
+- [ ] **Crescendo/diminuendo playback** — the hairpin marking is set, but no velocity ramp across the span yet.
+- [ ] **Tuner** — chromatic tuner from the live input (pitch detection + needle UI).
 
 ## Reported issues (user, 2026-06-27)
 - [x] **Play started from bar 1, not the cursor** — `AudioEngine::stop()` rewinds `seekRequest` to 0 and

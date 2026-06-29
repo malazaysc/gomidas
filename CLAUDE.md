@@ -152,12 +152,25 @@ track whose staff bounds contain the click Y (`getBeatAtPos` alone returns the w
 **Fretboard** (auto-sized to the track tuning): click a fret to place/toggle a note on the
 current beat; inlay dots; note badges show the current beat. **Click any beat in the score**
 (incl. empty bars) to move the cursor — uses `boundsLookup.getBeatAtPos`.
-**Drums:** on a percussion track (`staff.isPercussion`) the fretboard is replaced by a **drum pad
-palette** (`fretboard.js renderDrumPalette`); click a pad to toggle a hit. `New… → Drums/Full Band`
-and `+Track… → Drums` create drum tracks. Gotcha: alphaTab builds `percussionArticulations`
+**Drums — KIT VIEW** (reference redesign 2026-06-28; `fretboard.js renderDrumPalette` builds it,
+shown when `staff.isPercussion`): a 3-tab panel **KIT VIEW / GROOVE EDITOR / MIXER** in `#fretboard`
+(`.kit` class makes it taller). KIT VIEW = `web/drumkit.png` (bundled; served `/drumkit.png`) with
+percent-positioned **hotspots** (`KIT_PIECES`) → click toggles `toggleDrum(midi)` on the current beat
+per the **Quick Tools** mode (draw/erase/paint/select) + Accent/Ghost/Repeat/Tie actions; an
+**Articulation** panel picks each piece's GM key + a velocity→dynamic slider. A **Pattern Library**
+(grooves in `web/grooves.js`, keyed by category, 16-step lanes; favourites + user grooves in
+localStorage) inserts via `E.insertGroove` (writes sixteen 16th-step beats; Replace-Bar/Append per
+`gomidasInsertMode`, target `cur.voice`). **GROOVE EDITOR** = step grid over `E.readBarGrid`/
+`toggleGridCell`. **Generate Variation** (`E.generateVariation`, seeded) humanizes the current bar.
+**MIXER** = per-piece level → `window.gomidasDrumGains[midi]` scales hit velocity in `rebuildSequence`.
+Kit picker (inspector) = drum **program** (Standard/Room/Rock/…). `New… → Drums/Full Band` and
+`+Track… → Drums` create drum tracks. Gotcha: alphaTab builds `percussionArticulations`
 **lazily from drum notes**, not from `\instrument percussion` alone — so templates/`addDrumTrack`
 play a registration chord of every palette piece (GM keys 49,51,46,42,48,47,43,38,36 = the tex drum
-numbers) then clear it. Palette pieces resolve to the articulation index by `outputMidiNumber`.
+numbers) then clear it. Kit pieces resolve to the articulation index by `outputMidiNumber`
+(`drumArtIndex`). **Theme:** the app uses a purple accent (`--accent #7b5cff`); track colors are
+kind-based (drums purple / bass blue / guitar orange) and the bottom timeline is a continuous
+colored band per track.
 **Feedback:** clicking a fret auditions the note/chord (native `preview`). Edit + play cursors
 span notation+tab and follow the native transport.
 
@@ -213,6 +226,20 @@ and/or a bar-window render (`settings.display.startBar`/`barCount`) around the c
   state-save, loop/overdub recording.
 - **Phase 3:** `.gp` export (Gp7Exporter) **DONE**; **TODO:** stem-sync (reuse Conduit `build-stems`).
 
+### Per-track audio buses + EQ (2026-06-28)
+To give each track its own EQ, `SoundFontSynth` now keeps **one TSF instance per MIDI channel**
+(`chan[16]`, created with `tsf_copy` from a shared template — refcounts the soundfont samples, so the
+copies are cheap). `renderChannel(ch, …)` renders one channel's bus and **skips channels with no active
+voices** (`tsf_active_voice_count`), so CPU scales with *audible* tracks, not a fixed 16. `AudioEngine`
+loops the channels: render → per-channel **3-band EQ** (low-shelf/mid-peak/high-shelf, manual transposed
+DF-II biquad, allocation-free) → sum → **master EQ** → master gain/balance-pan → output. EQ coeffs are
+computed on the message thread (`juce::dsp::IIR::Coefficients`, 5 normalized floats) and handed to the
+audio thread under `eqLock` + `eqDirty` (mirrors the `Sequence`/`mixDirty` swap). Native bridge:
+`setTrackEq`/`setMasterEq`/`setMasterMix`. JS: track-list EQ buttons + Master row → `gomidasOpenEq` popup
+(Low/Mid/High −12..+12 dB); values live in `gomidasTrackFlags[i].eq` / `gomidasMaster` (**session-only —
+not yet saved to `.gomidas`**; vol/pan still persist via `playbackInfo`).
+
 ### Real-time-safety caveats (milestone-1; harden before shipping)
-TSF voice alloc + the `Sequence` swap, **and the input-plugin swap/free + `processBlock`**, all happen on the
-audio thread under a `SpinLock` (tryEnter). Fine for a dev build; revisit for production.
+TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, and **the EQ
+coeff swap (`eqLock`)**, all happen on the audio thread under a `SpinLock` (tryEnter). Fine for a dev
+build; revisit for production.

@@ -1,12 +1,29 @@
 #include "AudioEngine.h"
 #include "GomidasAssets.h" // embedded binary data (juce_add_binary_data)
+#include <juce_dsp/juce_dsp.h>
+#include <cmath>
 
 namespace gomidas
 {
+// Compute one normalized biquad band on the message thread. type: 0=low-shelf,
+// 1=mid-peak, 2=high-shelf. JUCE stores biquad coeffs as 5 normalized floats
+// (b0,b1,b2,a1,a2 with a0 == 1), which map straight onto EqBiquad.
+static EqBiquad makeBand (int type, double sr, float freq, float q, float db)
+{
+    const float gain = juce::Decibels::decibelsToGain (db);
+    juce::dsp::IIR::Coefficients<float>::Ptr c;
+    if (type == 0)      c = juce::dsp::IIR::Coefficients<float>::makeLowShelf  (sr, freq, q, gain);
+    else if (type == 1) c = juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, freq, q, gain);
+    else                c = juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, freq, q, gain);
+    const auto* r = c->getRawCoefficients();
+    return { r[0], r[1], r[2], r[3], r[4] };
+}
+
 AudioEngine::AudioEngine()
 {
     for (auto& p : currentProgram) p = -1;
     for (int i = 0; i < 16; ++i) { channelGain[i].store (1.0f); channelPan[i].store (0.5f); }
+    for (int i = 0; i < 16; ++i) stagingChanFlat[i] = true;
 }
 
 AudioEngine::~AudioEngine()
@@ -180,6 +197,41 @@ void AudioEngine::setChannelMix (int channel, float gain, float pan)
     channelGain[channel].store (juce::jmax (0.0f, gain));
     channelPan[channel].store (juce::jlimit (0.0f, 1.0f, pan));
     mixDirty.store (true);
+}
+
+void AudioEngine::setMasterMix (float gain, float pan)
+{
+    masterGain.store (juce::jmax (0.0f, gain));
+    masterPan.store  (juce::jlimit (0.0f, 1.0f, pan));
+}
+
+void AudioEngine::setMasterEq (float lowDb, float midDb, float highDb)
+{
+    const double sr = (sampleRate > 0.0 ? sampleRate : 44100.0);
+    const EqBiquad lo  = makeBand (0, sr, 120.0f,  0.7071f, lowDb);
+    const EqBiquad mid = makeBand (1, sr, 1000.0f, 0.9f,    midDb);
+    const EqBiquad hi  = makeBand (2, sr, 6000.0f, 0.7071f, highDb);
+    const bool flat = (std::abs (lowDb) < 0.01f && std::abs (midDb) < 0.01f && std::abs (highDb) < 0.01f);
+
+    const juce::SpinLock::ScopedLockType sl (eqLock);
+    stagingMasterEq[0] = lo; stagingMasterEq[1] = mid; stagingMasterEq[2] = hi;
+    stagingMasterFlat = flat;
+    eqDirty.store (true);
+}
+
+void AudioEngine::setTrackEq (int channel, float lowDb, float midDb, float highDb)
+{
+    if (channel < 0 || channel > 15) return;
+    const double sr = (sampleRate > 0.0 ? sampleRate : 44100.0);
+    const EqBiquad lo  = makeBand (0, sr, 120.0f,  0.7071f, lowDb);
+    const EqBiquad mid = makeBand (1, sr, 1000.0f, 0.9f,    midDb);
+    const EqBiquad hi  = makeBand (2, sr, 6000.0f, 0.7071f, highDb);
+    const bool flat = (std::abs (lowDb) < 0.01f && std::abs (midDb) < 0.01f && std::abs (highDb) < 0.01f);
+
+    const juce::SpinLock::ScopedLockType sl (eqLock);
+    stagingChanEq[channel][0] = lo; stagingChanEq[channel][1] = mid; stagingChanEq[channel][2] = hi;
+    stagingChanFlat[channel] = flat;
+    eqDirty.store (true);
 }
 
 void AudioEngine::previewNotes (int channel, int program, bool percussion, std::vector<int> keys)
@@ -358,10 +410,74 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         positionTicks = endTick;
     }
 
-    // Render the synth into our stereo scratch buffer then copy to outputs.
+    // Pick up freshly-computed EQ coefficients without blocking the message thread.
+    if (eqDirty.load() && eqLock.tryEnter())
+    {
+        for (int c = 0; c < 16; ++c)
+        {
+            for (int b = 0; b < 3; ++b) channelEq[c].band[b] = stagingChanEq[c][b];
+            channelEq[c].flat = stagingChanFlat[c];
+        }
+        for (int b = 0; b < 3; ++b) masterEq.band[b] = stagingMasterEq[b];
+        masterEq.flat = stagingMasterFlat;
+        eqDirty.store (false);
+        eqLock.exit();
+    }
+
+    // Render each channel into its own stereo bus, EQ it, then sum into the master.
+    // tsf_active_voice_count lets renderChannel skip silent tracks, so cost scales
+    // with the number of *audible* tracks, not a fixed 16.
     renderBuffer.setSize (2, numSamples, false, false, true);
     renderBuffer.clear();
-    synth.renderAdding (renderBuffer, 0, numSamples);
+    channelBuffer.setSize (2, numSamples, false, false, true);
+
+    for (int c = 0; c < SoundFontSynth::kNumChannels; ++c)
+    {
+        if (! synth.renderChannel (c, channelBuffer, numSamples))
+            continue;
+
+        if (! channelEq[c].flat)
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* d = channelBuffer.getWritePointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float x = d[i];
+                    x = channelEq[c].process (0, ch, x);
+                    x = channelEq[c].process (1, ch, x);
+                    x = channelEq[c].process (2, ch, x);
+                    d[i] = x;
+                }
+            }
+
+        renderBuffer.addFrom (0, 0, channelBuffer, 0, 0, numSamples);
+        renderBuffer.addFrom (1, 0, channelBuffer, 1, 0, numSamples);
+    }
+
+    // Master EQ on the summed mix.
+    if (! masterEq.flat)
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* d = renderBuffer.getWritePointer (ch);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float x = d[i];
+                x = masterEq.process (0, ch, x);
+                x = masterEq.process (1, ch, x);
+                x = masterEq.process (2, ch, x);
+                d[i] = x;
+            }
+        }
+
+    // Master gain + balance pan (unity at centre; pan attenuates the opposite side).
+    {
+        const float mg = masterGain.load();
+        const float mp = masterPan.load();
+        const float lGain = mg * (mp > 0.5f ? (1.0f - (mp - 0.5f) * 2.0f) : 1.0f);
+        const float rGain = mg * (mp < 0.5f ? (mp * 2.0f) : 1.0f);
+        renderBuffer.applyGain (0, 0, numSamples, lGain);
+        renderBuffer.applyGain (1, 0, numSamples, rGain);
+    }
 
     for (int ch = 0; ch < numOutputChannels; ++ch)
         if (outputChannelData[ch] != nullptr)

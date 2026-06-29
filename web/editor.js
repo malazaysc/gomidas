@@ -111,12 +111,18 @@
     refreshCursor();
   }
 
-  // ---- selection + clipboard (beat range on voice 0 of the current track) -----
+  // ---- selection + clipboard (voice-0 beat range, or a cross-track whole-bar block) ----
   // GP: ⇧→/⇧← extend, ⌘A select all, ⌘C/⌘X/⌘V copy/cut/paste, C copy last beat.
-  const sel = { active: false, anchor: null, head: null }; // anchor/head = {bar, beat}
-  let clipboard = null;     // array of serialized beats (plain objects, see serializeBeat)
+  const sel = { active: false, anchor: null, head: null }; // anchor/head = {track, bar, beat}
+  let clipboard = null;     // { kind:'beats'|'block', ... } (see copySelection)
 
   function clearSelection() { sel.active = false; sel.anchor = null; sel.head = null; }
+
+  // A selection spanning more than one track is a GP-style whole-bar BLOCK; within one
+  // track it's a beat range (existing behaviour).
+  function isBlockSelection() { return !!(sel.active && sel.anchor && sel.head && sel.anchor.track !== sel.head.track); }
+  function selectionTrackRange() { const a = sel.anchor.track | 0, b = sel.head.track | 0; return [Math.min(a, b), Math.max(a, b)]; }
+  function selectionBarRange() { const a = sel.anchor.bar | 0, b = sel.head.bar | 0; return [Math.min(a, b), Math.max(a, b)]; }
 
   // Flat ordered list of every (bar,beat) on voice 0 of the current track's staff.
   function beatPositions() {
@@ -162,20 +168,38 @@
   function extendSelection(delta) {
     const positions = beatPositions();
     if (!positions.length) return;
-    if (!sel.active) { sel.active = true; sel.anchor = { bar: cur.bar, beat: cur.beat }; }
+    if (!sel.active) { sel.active = true; sel.anchor = { track: cur.track, bar: cur.bar, beat: cur.beat }; }
     let idx = posIndex(positions, { bar: cur.bar, beat: cur.beat });
     if (idx < 0) idx = 0;
     idx = Math.max(0, Math.min(positions.length - 1, idx + delta));
     cur.bar = positions[idx].bar; cur.beat = positions[idx].beat;
-    sel.head = { bar: cur.bar, beat: cur.beat };
+    sel.head = { track: cur.track, bar: cur.bar, beat: cur.beat };
     refreshCursor();
   }
   // GP: ⌘A — select every beat in the current track.
   function selectAll() {
     const positions = beatPositions();
     if (!positions.length) return;
-    sel.active = true; sel.anchor = positions[0]; sel.head = positions[positions.length - 1];
+    sel.active = true;
+    sel.anchor = { track: cur.track, bar: positions[0].bar, beat: positions[0].beat };
+    sel.head = { track: cur.track, bar: positions[positions.length - 1].bar, beat: positions[positions.length - 1].beat };
     cur.bar = sel.head.bar; cur.beat = sel.head.beat;
+    refreshCursor();
+  }
+
+  // Select whole bars [bar0..bar1] on a track (used by shift-clicking the track-list
+  // bar squares). Single-track whole-bar range.
+  function selectBars(trackIndex, bar0, bar1) {
+    const t = api.score.tracks[trackIndex]; if (!t) return;
+    const st = t.staves[0]; if (!st) return;
+    const lo = Math.max(0, Math.min(bar0, bar1));
+    const hi = Math.min(st.bars.length - 1, Math.max(bar0, bar1));
+    const v1 = st.bars[hi] && st.bars[hi].voices[0];
+    const lastBeat = v1 ? Math.max(0, v1.beats.length - 1) : 0;
+    cur.track = trackIndex; cur.voice = 0; cur.bar = hi; cur.beat = lastBeat;
+    sel.active = true;
+    sel.anchor = { track: trackIndex, bar: lo, beat: 0 };
+    sel.head = { track: trackIndex, bar: hi, beat: lastBeat };
     refreshCursor();
   }
 
@@ -215,30 +239,87 @@
     return nb;
   }
 
-  // GP: ⌘C — copy the selection (or the current beat if nothing is selected).
+  // GP: ⌘C — copy the selection. A within-track selection copies a beat list; a
+  // cross-track selection copies a whole-bar block (per track × per bar).
   function copySelection() {
+    if (isBlockSelection()) { copyBlock(); return; }
     const s = staff(); if (!s) return;
     const ps = selectedPositions();
     const list = ps.length ? ps : [{ bar: cur.bar, beat: cur.beat }];
-    clipboard = list.map(p => {
+    clipboard = { kind: 'beats', beats: list.map(p => {
       const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
       const b = v && v.beats[p.beat];
       return b ? serializeBeat(b) : null;
-    }).filter(Boolean);
+    }).filter(Boolean) };
   }
-  // GP: ⌘V — insert the clipboard's beats right after the cursor (current bar/voice).
+  function copyBlock() {
+    const [t0, t1] = selectionTrackRange();
+    const [b0, b1] = selectionBarRange();
+    const tracks = [];
+    for (let ti = t0; ti <= t1; ti++) {
+      const st = api.score.tracks[ti] && api.score.tracks[ti].staves[0];
+      const bars = [];
+      for (let bi = b0; bi <= b1; bi++) {
+        const v = st && st.bars[bi] && st.bars[bi].voices[0];
+        bars.push(v ? v.beats.map(serializeBeat) : []);
+      }
+      tracks.push({ bars });
+    }
+    clipboard = { kind: 'block', trackCount: t1 - t0 + 1, barCount: b1 - b0 + 1, tracks };
+  }
+  // GP: ⌘V — paste. Beat-list: insert after the cursor (current bar/voice). Block: write
+  // each captured track/bar into the destination tracks/bars from the cursor (replacing
+  // those bars' voice-0 beats), clamped to the available tracks/bars.
   function pasteClipboard() {
-    if (!clipboard || !clipboard.length) return;
+    if (!clipboard) return;
+    if (clipboard.kind === 'block') { pasteBlock(); return; }
+    const beats = clipboard.beats || [];
+    if (!beats.length) return;
     const v = voice(); if (!v) return;
     let at = cur.beat + 1;
-    for (const sb of clipboard) { v.beats.splice(at, 0, deserializeBeat(sb, v)); at++; }
+    for (const sb of beats) { v.beats.splice(at, 0, deserializeBeat(sb, v)); at++; }
     cur.beat = at - 1;
     clearSelection();
     applyEdit(true);
     previewBeat();
   }
-  // GP: ⌘X — copy the selection then remove those beats (keeping ≥1 beat per bar).
+  function replaceBarBeats(v, sbs) {
+    v.beats.length = 0;
+    if (sbs && sbs.length) { for (const sb of sbs) v.beats.push(deserializeBeat(sb, v)); }
+    else { const nb = new alphaTab.model.Beat(); nb.voice = v; nb.duration = 4; nb.isEmpty = false; v.beats.push(nb); }
+  }
+  function pasteBlock() {
+    const startTrack = cur.track, startBar = cur.bar;
+    for (let ti = 0; ti < clipboard.tracks.length; ti++) {
+      const st = api.score.tracks[startTrack + ti] && api.score.tracks[startTrack + ti].staves[0];
+      if (!st) continue;
+      const capBars = clipboard.tracks[ti].bars;
+      for (let bi = 0; bi < capBars.length; bi++) {
+        const v = st.bars[startBar + bi] && st.bars[startBar + bi].voices[0];
+        if (v) replaceBarBeats(v, capBars[bi]);
+      }
+    }
+    clearSelection();
+    commitStructuralAll();   // multi-track change → re-render all tracks (one undo step)
+    previewBeat();
+  }
+  // GP: ⌘X — copy the selection then remove it. Block cut clears the covered bars; a
+  // within-track cut removes the selected beats (keeping ≥1 beat per bar).
   function cutSelection() {
+    if (isBlockSelection()) {
+      copyBlock();
+      const [t0, t1] = selectionTrackRange();
+      const [b0, b1] = selectionBarRange();
+      for (let ti = t0; ti <= t1; ti++) {
+        const st = api.score.tracks[ti] && api.score.tracks[ti].staves[0]; if (!st) continue;
+        for (let bi = b0; bi <= b1; bi++) {
+          const v = st.bars[bi] && st.bars[bi].voices[0]; if (v) replaceBarBeats(v, null);
+        }
+      }
+      clearSelection();
+      commitStructuralAll();
+      return;
+    }
     copySelection();
     const ps = selectedPositions();
     if (!ps.length) { removeBeat(); return; }
@@ -267,26 +348,63 @@
     previewBeat();
   }
 
-  // Draw a highlight rect over each selected beat column (pool of .sel-cell divs).
+  // The beat objects to highlight: a beat range on the current track, or — for a
+  // cross-track block — every voice-0 beat of the covered bars on each covered track
+  // that is currently rendered.
+  function selectionHighlightBeats() {
+    const out = [];
+    if (isBlockSelection()) {
+      const [t0, t1] = selectionTrackRange();
+      const [b0, b1] = selectionBarRange();
+      for (const t of window.gomidasGetRenderedTracks()) {
+        if (t.index < t0 || t.index > t1) continue;
+        const st = t.staves && t.staves[0]; if (!st) continue;
+        for (let bi = b0; bi <= b1; bi++) {
+          const v = st.bars[bi] && st.bars[bi].voices[0];
+          if (!v) continue;
+          for (const be of v.beats) out.push(be);
+        }
+      }
+      return out;
+    }
+    const ps = selectedPositions();
+    const s = staff();
+    if (!s) return out;
+    for (const p of ps) {
+      const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
+      const be = v && v.beats[p.beat];
+      if (be) out.push(be);
+    }
+    return out;
+  }
+  // Draw the selection as continuous bands (GP-style): merge the selected beat columns
+  // that share a staff row (same y/height) into one rectangle spanning them, rather than
+  // one box per beat. Different systems (wrapped lines) and different tracks naturally
+  // fall into separate rows. Pool of .sel-cell divs.
   let selOverlayEls = [];
   function renderSelection() {
-    const ps = selectedPositions();
+    const beats = selectionHighlightBeats();
     const at = document.getElementById('at');
-    const s = staff();
-    let k = 0;
-    if (ps.length && at && s) {
-      for (const p of ps) {
-        const v = s.bars[p.bar] && s.bars[p.bar].voices[0];
-        const b = v && v.beats[p.beat];
+    const rows = {}; // key (rounded y:h) -> merged {x0,x1,y,h}
+    if (at) {
+      for (const b of beats) {
         const col = beatColumn(b);
         if (!col) continue;
-        let el = selOverlayEls[k];
-        if (!el) { el = document.createElement('div'); el.className = 'sel-cell'; at.appendChild(el); selOverlayEls[k] = el; }
-        el.style.display = 'block';
-        el.style.left = col.x + 'px'; el.style.top = col.y + 'px';
-        el.style.width = col.w + 'px'; el.style.height = col.h + 'px';
-        k++;
+        const key = Math.round(col.y) + ':' + Math.round(col.h);
+        const r = rows[key];
+        if (!r) rows[key] = { x0: col.x, x1: col.x + col.w, y: col.y, h: col.h };
+        else { r.x0 = Math.min(r.x0, col.x); r.x1 = Math.max(r.x1, col.x + col.w); }
       }
+    }
+    let k = 0;
+    for (const key in rows) {
+      const r = rows[key];
+      let el = selOverlayEls[k];
+      if (!el) { el = document.createElement('div'); el.className = 'sel-cell'; at.appendChild(el); selOverlayEls[k] = el; }
+      el.style.display = 'block';
+      el.style.left = r.x0 + 'px'; el.style.top = r.y + 'px';
+      el.style.width = (r.x1 - r.x0) + 'px'; el.style.height = r.h + 'px';
+      k++;
     }
     for (; k < selOverlayEls.length; k++) selOverlayEls[k].style.display = 'none';
   }
@@ -875,6 +993,108 @@
     applyEdit(true);
   }
 
+  // ---- drum grooves: pattern insert, step-grid read/write, variation ----------
+  function artMidi(t, ai) { const arts = t && t.percussionArticulations; return (arts && arts[ai]) ? arts[ai].outputMidiNumber : null; }
+  function midiToLane(midi) { const M = window.GomidasGrooves && window.GomidasGrooves.LANE_MIDI; if (!M) return null; for (const k in M) if (M[k] === midi) return k; return null; }
+
+  // Build a Beat for one 16-step slot from a {lane:flag} map (flag 1/2/3 = normal/accent/ghost).
+  function grooveStepBeat(t, v, laneFlags) {
+    const G = window.GomidasGrooves;
+    const nb = new alphaTab.model.Beat(); nb.voice = v; nb.duration = 16; nb.isEmpty = false;
+    for (const lane in laneFlags) {
+      const flag = laneFlags[lane]; if (!flag) continue;
+      const midi = G.LANE_MIDI[lane]; if (midi == null) continue;
+      const ai = drumArtIndex(t, midi); if (ai < 0) continue;
+      const n = new alphaTab.model.Note(); n.percussionArticulation = ai;
+      if (flag === 2) n.accentuated = 1; else if (flag === 3) n.isGhost = true;
+      nb.addNote(n);
+    }
+    return nb;
+  }
+
+  // Insert a groove from the cursor bar onward, replacing each covered bar's beats with
+  // sixteen 16th-note steps. Adds bars if the groove is longer than the song's tail.
+  function insertGroove(groove) {
+    if (!isPercussionTrack() || !window.GomidasGrooves) return;
+    const t = track(), st = staff(); if (!t || !st) return;
+    const bars = groove.bars || [{ lanes: groove.lanes }];
+    // Insert mode: 'replace' (default) overwrites from the cursor bar; 'append' writes
+    // into new bars at the end of the song.
+    const startBar = (window.gomidasInsertMode === 'append') ? st.bars.length : cur.bar;
+    for (let bi = 0; bi < bars.length; bi++) {
+      const targetBar = startBar + bi;
+      while (st.bars.length <= targetBar) addBar();
+      const bar = st.bars[targetBar];
+      const v = bar.voices[Math.min(cur.voice, bar.voices.length - 1)] || bar.voices[0];
+      if (!v) continue;
+      v.beats.length = 0;
+      for (let s = 0; s < 16; s++) {
+        const slot = {};
+        for (const lane in bars[bi].lanes) slot[lane] = bars[bi].lanes[lane][s];
+        v.beats.push(grooveStepBeat(t, v, slot));
+      }
+    }
+    cur.bar = startBar; cur.beat = 0;
+    commitStructuralAll();
+  }
+
+  // Read the current bar into a 16-step lane grid (snaps each beat to the nearest 16th).
+  function readBarGrid() {
+    const G = window.GomidasGrooves;
+    const grid = {}; (G ? G.LANE_ORDER : []).forEach(l => grid[l] = new Array(16).fill(0));
+    const t = track(), v = voice();
+    if (!t || !v || !G) return { steps: 16, lanes: grid };
+    const stepTicks = WHOLE_TICKS / 16;
+    let tick = 0;
+    for (const b of v.beats) {
+      const step = Math.round(tick / stepTicks);
+      if (step >= 0 && step < 16 && !b.isRest) {
+        for (const n of b.notes) {
+          const lane = midiToLane(artMidi(t, n.percussionArticulation | 0));
+          if (lane && grid[lane]) grid[lane][step] = n.isGhost ? 3 : (n.accentuated ? 2 : 1);
+        }
+      }
+      tick += beatTicksOf(b);
+    }
+    return { steps: 16, lanes: grid };
+  }
+
+  // Rewrite the current bar from a 16-step grid (sixteen 16th beats).
+  function writeBarGrid(grid) {
+    const t = track(), v = voice(); if (!t || !v) return;
+    v.beats.length = 0;
+    for (let s = 0; s < 16; s++) {
+      const slot = {};
+      for (const lane in grid.lanes) slot[lane] = grid.lanes[lane][s];
+      v.beats.push(grooveStepBeat(t, v, slot));
+    }
+    cur.beat = Math.min(cur.beat, 15);
+    applyEdit(true);
+  }
+  function toggleGridCell(lane, step, flag) {
+    const grid = readBarGrid();
+    if (!grid.lanes[lane]) grid.lanes[lane] = new Array(16).fill(0);
+    const cur0 = grid.lanes[lane][step] | 0;
+    grid.lanes[lane][step] = (flag != null) ? (cur0 === flag ? 0 : flag) : (cur0 ? 0 : 1);
+    writeBarGrid(grid);
+  }
+
+  // Generate a musical variation of the current bar (seeded; successive calls differ).
+  let _varSeed = 0x2545f;
+  function _rnd() { _varSeed = (_varSeed * 1103515245 + 12345) & 0x7fffffff; return _varSeed / 0x7fffffff; }
+  function generateVariation() {
+    if (!isPercussionTrack()) return;
+    const grid = readBarGrid();
+    const hat = grid.lanes.hihat || (grid.lanes.hihat = new Array(16).fill(0));
+    const snare = grid.lanes.snare || (grid.lanes.snare = new Array(16).fill(0));
+    const kick = grid.lanes.kick || (grid.lanes.kick = new Array(16).fill(0));
+    for (let s = 0; s < 16; s++) if (hat[s] === 1 && _rnd() < 0.18) hat[s] = 3;       // some hats → ghosts
+    for (let s = 0; s < 16; s++) if (!snare[s] && s % 4 !== 0 && _rnd() < 0.12) snare[s] = 3; // ghost snares
+    for (let s = 2; s < 16; s += 4) if (!kick[s] && _rnd() < 0.4) kick[s] = 1;        // extra off-beat kicks
+    [4, 12].forEach(s => { if (snare[s]) snare[s] = 2; });                            // accent the backbeat
+    writeBarGrid(grid);
+  }
+
   // Set (or toggle off) a fret on a given string row (0 = top string) of the current beat.
   // finish() converts a rest beat into a note beat and recomputes layout/playback.
   function setFret(row, fret) {
@@ -1174,6 +1394,76 @@
     applyEdit(true);
   }
 
+  // GP: Dynamics (ppp..fff) — beat-level loudness; mapped to MIDI velocity by
+  // rebuildSequence (dynamicsToVelocity). Re-applying the same value clears it.
+  function setDynamics(name) {
+    const b = beat(); if (!b) return;
+    const DY = alphaTab.model && alphaTab.model.Dynamics;
+    if (!DY) return;
+    const want = DY[String(name).toUpperCase()];
+    if (want == null) return;
+    b.dynamics = want; // dynamics has no "none" state; always set the chosen level
+    applyEdit(true);
+  }
+
+  // GP: Crescendo (<) / Diminuendo (>) — beat-level hairpin marking. Toggles off.
+  // (Notation marking; a velocity ramp across the hairpin span is a follow-up.)
+  function setCrescendo(kind) {
+    const b = beat(); if (!b) return;
+    const CT = alphaTab.model && alphaTab.model.CrescendoType;
+    if (!CT) return;
+    const want = (kind === 'dim') ? CT.Decrescendo : CT.Crescendo;
+    const none = (CT.None != null) ? CT.None : 0;
+    b.crescendo = (b.crescendo === want) ? none : want;
+    applyEdit(true);
+  }
+
+  // GP: Octave / clef line (8va/8vb/15ma/15mb) — beat-level ottava. rebuildSequence
+  // shifts the MIDI octave to match the displayed line. Toggles off.
+  function setOttava(kind) {
+    const b = beat(); if (!b) return;
+    const OT = alphaTab.model && alphaTab.model.Ottava;
+    if (!OT) return;
+    const map = { '8va': OT.Va8, '8vb': OT.Vb8, '15ma': OT.Ma15, '15mb': OT.Mb15 };
+    const want = map[kind];
+    if (want == null) return;
+    const none = (OT.Regular != null) ? OT.Regular : 0;
+    b.ottava = (b.ottava === want) ? none : want;
+    applyEdit(true);
+  }
+
+  // GP: Lyrics — set/clear the current beat's lyric syllable (blank clears).
+  function setLyrics(text) {
+    const b = beat(); if (!b) return;
+    text = (text == null) ? '' : String(text).trim();
+    b.lyrics = text ? [text] : null;
+    applyEdit(true);
+  }
+  function getLyrics() { const b = beat(); return (b && b.lyrics && b.lyrics[0]) ? b.lyrics[0] : ''; }
+
+  // Tools → Transpose: shift pitches by N semitones. scope 'track' = the whole current
+  // track, otherwise just the current beat. Tab tracks shift the fret (keeping the
+  // string); percussion staves are skipped. Clamps fret to 0..36.
+  function transpose(semitones, scope) {
+    semitones = semitones | 0;
+    if (!semitones) return;
+    const t = track(); if (!t) return;
+    const shift = (n) => { if (typeof n.fret === 'number') n.fret = Math.max(0, Math.min(36, n.fret + semitones)); };
+    if (scope === 'track') {
+      for (const st of t.staves) {
+        if (st.isPercussion) continue;
+        for (const bar of st.bars)
+          for (const v of bar.voices)
+            for (const bt of v.beats)
+              for (const n of bt.notes) shift(n);
+      }
+    } else {
+      const b = beat(); if (!b) return;
+      for (const n of b.notes) shift(n);
+    }
+    applyEdit(true);
+  }
+
   // GP: Rest (R) — clear the beat's notes so it renders/plays as a rest (keeps its duration).
   function makeRest() {
     const b = beat();
@@ -1313,6 +1603,14 @@
   const TRACK_PALETTE = ['#e08a6e', '#6ec6e0', '#9ad06e', '#e0cf6e', '#c98ae0',
                          '#e06e9a', '#6e9ae0', '#e0a96e', '#7ad0b0', '#d07a7a'];
   function trackColor(t, i) {
+    // GP-style fixed scheme by kind (matches the timeline in the reference design):
+    // drums/percussion = purple, bass = blue, guitar = orange; others keep their file
+    // colour or cycle the palette.
+    const st = t && t.staves && t.staves[0];
+    if (st && st.isPercussion) return '#7b5cff';
+    const name = ((t && t.name) || '').toLowerCase();
+    if (/\bbass\b/.test(name)) return '#3a6ad0';
+    if (/guitar|gtr|guit/.test(name)) return '#d4673e';
     const c = t && t.color;
     if (c && typeof c.r === 'number') return 'rgb(' + (c.r | 0) + ',' + (c.g | 0) + ',' + (c.b | 0) + ')';
     return TRACK_PALETTE[i % TRACK_PALETTE.length];
@@ -1413,10 +1711,34 @@
   // ---- transport -------------------------------------------------------------
   // ---- count-in --------------------------------------------------------------
   let countInOn = false, countInRunning = false, countInTimers = [];
+  let countInBars = 1; // GP-style count-in length (1 or 2 bars)
   function setCountIn(on) { countInOn = !!on; }
   function toggleCountIn() { countInOn = !countInOn; return countInOn; }
   function isCountIn() { return countInOn; }
-  function cancelCountIn() { countInRunning = false; countInTimers.forEach(clearTimeout); countInTimers = []; }
+  function setCountInBars(n) { countInBars = (n === 2) ? 2 : 1; return countInBars; }
+  function getCountInBars() { return countInBars; }
+  function cancelCountIn() { countInRunning = false; countInTimers.forEach(clearTimeout); countInTimers = []; hideCountdownOverlay(); }
+
+  // Big centered count-down number over the score during the count-in.
+  let countdownEl = null;
+  function countdownOverlay() {
+    if (!countdownEl) {
+      countdownEl = document.createElement('div');
+      countdownEl.id = 'countdown-ov';
+      const host = document.getElementById('at-wrap') || document.body;
+      host.appendChild(countdownEl);
+    }
+    return countdownEl;
+  }
+  function showCountdownNumber(n) {
+    const el = countdownOverlay();
+    el.textContent = String(n);
+    el.classList.remove('pulse');
+    void el.offsetWidth;      // restart the CSS pulse animation
+    el.style.display = 'flex';
+    el.classList.add('pulse');
+  }
+  function hideCountdownOverlay() { if (countdownEl) { countdownEl.style.display = 'none'; countdownEl.classList.remove('pulse'); } }
   // Reflect a forced stop (e.g. Panic) in the UI without sending another transport msg.
   function notifyStopped() { cancelCountIn(); isPlaying = false; refreshCursor(); }
 
@@ -1443,19 +1765,24 @@
     const unitMs = Math.max(80, (60000 / bpm) * (4 / den) / rate);
     let ch = 15;
     if (window.gomidasFreeClickChannel) { const c = window.gomidasFreeClickChannel(); if (c >= 0) ch = c; }
+    const totalBeats = num * Math.max(1, countInBars);
     let i = 0;
     const step = () => {
       if (!countInRunning) return;
+      const beatInBar = i % num;
       if (window.gomidasNativeInvoke)
-        window.gomidasNativeInvoke('preview', { channel: ch, program: 115, percussion: false, keys: [(i === 0) ? 84 : 72] });
+        window.gomidasNativeInvoke('preview', { channel: ch, program: 115, percussion: false, keys: [(beatInBar === 0) ? 84 : 72] });
+      // Visual count: count up within each bar (1..num), GP-style.
+      showCountdownNumber(beatInBar + 1);
       i++;
-      const next = (i < num) ? step : () => { if (countInRunning) startPlayback(); };
+      const next = (i < totalBeats) ? step : () => { hideCountdownOverlay(); if (countInRunning) startPlayback(); };
       countInTimers.push(setTimeout(next, unitMs));
     };
     step();
   }
 
   function togglePlay() {
+    if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); // stop any groove audition
     flushHeavy(); // make sure native has the latest edited MIDI before playing
     if (countInRunning) { cancelCountIn(); return; }     // pressing play during count-in aborts it
     if (!isPlaying && countInOn) { playWithCountIn(); return; }
@@ -1801,15 +2128,18 @@
 
   // Select the beat under a score click — works on empty/rest beats (unlike
   // beatMouseDown, which only fires on actual note/beat glyphs).
-  function selectBeatAt(clientX, clientY) {
+  // Resolve the (track,bar,voice,beat[,string]) under a client point WITHOUT moving the
+  // cursor — so click, drag-select and block-select can share one hit-test. Returns null
+  // if the point isn't over a beat.
+  function beatPosAt(clientX, clientY) {
     const at = document.getElementById('at');
     const bl = api.boundsLookup;
-    if (!bl || !at) return false;
+    if (!bl || !at) return null;
     const rect = at.getBoundingClientRect();
     const off = surfaceOffset();
     const xs = clientX - rect.left - off.x, ys = clientY - rect.top - off.y;
     const hit = bl.getBeatAtPos(xs, ys);
-    if (!hit) return false;
+    if (!hit) return null;
     // getBeatAtPos resolves the system + column, but in multiview returns a beat
     // without distinguishing which track's staff was clicked (it keys off the whole
     // system's Y). Re-pick the track whose staff bounds actually contain the click Y,
@@ -1831,37 +2161,73 @@
       }
       if (inY) { b = be; break; }
     }
-    cur.track = b.voice.bar.staff.track.index;
-    cur.bar = b.voice.bar.index;
-    cur.voice = b.voice.index;
-    cur.beat = b.index;
-    // If the click landed on the tablature staff, pick the string from its Y.
-    const s = staff();
-    if (s && s.showTablature) {
+    const pos = { track: b.voice.bar.staff.track.index, bar: b.voice.bar.index,
+                  voice: b.voice.index, beat: b.index, string: null };
+    // If the click landed on the (resolved track's) tablature staff, pick the string from Y.
+    const ts = api.score.tracks[pos.track] && api.score.tracks[pos.track].staves[0];
+    if (ts && ts.showTablature) {
       const all = bl.findBeats(b);
       if (all && all.length) {
         let tab = all[0];
         for (const bb of all) if (bb.barBounds.realBounds.y > tab.barBounds.realBounds.y) tab = bb;
         const r = tab.barBounds.realBounds;
         if (all.length === 1 || (ys >= r.y - 8 && ys <= r.y + r.h + 8)) {
-          const sc = stringCount();
+          const sc = (ts.tuning && ts.tuning.length) ? ts.tuning.length : stringCount();
           const row = Math.round((ys - r.y) / (r.h / Math.max(1, sc - 1)));
-          cur.string = Math.max(0, Math.min(sc - 1, row));
+          pos.string = Math.max(0, Math.min(sc - 1, row));
         }
       }
     }
+    return pos;
+  }
+  // Commit a resolved position to the cursor.
+  function commitPos(pos) {
+    if (!pos) return false;
+    cur.track = pos.track; cur.bar = pos.bar; cur.voice = pos.voice; cur.beat = pos.beat;
+    if (pos.string != null) cur.string = pos.string;
     refreshCursor();
     return true;
   }
+  function selectBeatAt(clientX, clientY) { return commitPos(beatPosAt(clientX, clientY)); }
 
   function init(apiGetter) {
     api = apiGetter();
     window.addEventListener('keydown', onKey, true);
-    // Click anywhere in the score to move the cursor to that beat (incl. empty bars).
-    // selectBeatAt is authoritative — it re-picks the correct track by click Y in
-    // multiview. (alphaTab's beatMouseDown returns the wrong track there, so we don't
-    // let it set the cursor or it would override selectBeatAt.)
-    document.getElementById('at').addEventListener('mousedown', (e) => selectBeatAt(e.clientX, e.clientY));
+    // Click moves the cursor to that beat (incl. empty bars); click-drag selects a beat
+    // range — and dragging across staves selects a cross-track block. beatPosAt re-picks
+    // the correct track by click Y in multiview (alphaTab's beatMouseDown returns the
+    // wrong track there, so we don't let it set the cursor).
+    {
+      const atEl = document.getElementById('at');
+      let dragging = false, dragMoved = false;
+      atEl.addEventListener('mousedown', (e) => {
+        const pos = beatPosAt(e.clientX, e.clientY);
+        if (!pos) return;
+        commitPos(pos);
+        sel.anchor = { track: pos.track, bar: pos.bar, beat: pos.beat };
+        sel.head = { track: pos.track, bar: pos.bar, beat: pos.beat };
+        sel.active = false; // not a selection until the mouse actually moves
+        dragging = true; dragMoved = false;
+        const mv = (ev) => {
+          if (!dragging) return;
+          const p2 = beatPosAt(ev.clientX, ev.clientY);
+          if (!p2) return;
+          if (p2.track !== sel.head.track || p2.bar !== sel.head.bar || p2.beat !== sel.head.beat) {
+            sel.head = { track: p2.track, bar: p2.bar, beat: p2.beat };
+            sel.active = true; dragMoved = true;
+            commitPos(p2); // moves the cursor + re-renders the selection
+          }
+        };
+        const up = () => {
+          dragging = false;
+          document.removeEventListener('mousemove', mv);
+          document.removeEventListener('mouseup', up);
+          if (!dragMoved) { clearSelection(); refreshCursor(); } // a plain click clears any selection
+        };
+        document.addEventListener('mousemove', mv);
+        document.addEventListener('mouseup', up);
+      });
+    }
     api.noteMouseDown.on((n) => {
       try { cur.string = stringNoToRow(n.string | 0); clampString(); refreshCursor(); }
       catch (err) { nlog('noteMouseDown: ' + err); }
@@ -1875,16 +2241,18 @@
     tieNote, tieBeat, hammerPull, slideNote, toggleDrum, armDrumRegClear,
     ghostNote, staccato, accent, naturalHarmonic, artificialHarmonic, pinchHarmonic, vibratoNote, transposeNote,
     setBrush, setPickStroke, wideVibrato, tremoloPicking, trillNote, graceNote, slapBeat, popBeat, setFade, pickSlide,
+    setDynamics, setCrescendo, setOttava, setLyrics, getLyrics, transpose,
+    insertGroove, readBarGrid, toggleGridCell, generateVariation, isPercussion: isPercussionTrack,
     move: (d) => moveBeat(d), moveString: (d) => moveString(d), moveTrack: (d) => moveTrack(d),
     selectTrack, selectVoice, deleteTrack, goToBar, moveToBarEdge, moveToScoreEdge,
     setTimeSignature, setKeySignature, toggleRepeatStart, toggleRepeatEnd, toggleTripletFeel,
     toggleDirection, toggleFermata,
-    selectAll, copySelection, cutSelection, pasteClipboard, copyLastBeat, extendSelection,
+    selectAll, selectBars, copySelection, cutSelection, pasteClipboard, copyLastBeat, extendSelection,
     loopSelection, clearLoop, toggleLoop, isLoopActive,
     insertBeat: insertBeatAfter, removeBeat, deleteBar, togglePlay, getState,
     setTrackName, setTrackProgram, toggleNotation, setTuningPreset, setSongTitle, setSongTempo,
     setBeatText, getBeatText, setBeatChord, getBeatChord,
-    isDirty, markClean, setAutoScroll, setCountIn, toggleCountIn, isCountIn, notifyStopped,
+    isDirty, markClean, setAutoScroll, setCountIn, toggleCountIn, isCountIn, setCountInBars, getCountInBars, notifyStopped,
     undo, redo, snapshot, loadProject: loadProjectJson, addTrack: addTrackOfKind,
     canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0
   };

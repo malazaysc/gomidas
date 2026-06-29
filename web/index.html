@@ -7,9 +7,10 @@
   <style>
     :root {
       color-scheme: dark;
-      --chrome: #2b2b30; --chrome2: #242428; --panel: #2e2e34; --panel2: #333339;
-      --line: #15151a; --line2: #3c3c44; --text: #d7d7dc; --dim: #9a9aa3;
-      --accent: #3a6ad0; --accent2: #2b53a8; --hover: #3a3a42;
+      --chrome: #1f1f27; --chrome2: #151519; --panel: #1e1e25; --panel2: #26262f;
+      --line: #0e0e12; --line2: #33333d; --text: #e4e4ea; --dim: #9a9aa6;
+      --accent: #7b5cff; --accent2: #5b3fd6; --hover: #2d2d37;
+      --ctrl: #2a2a33;            /* neutral control background */
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--chrome2); color: var(--text);
@@ -19,13 +20,13 @@
 
     /* ---------- top transport ---------- */
     #transport { flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
-                 padding: 6px 8px; background: linear-gradient(#303036, #26262b);
-                 border-bottom: 1px solid var(--line); overflow: hidden; }
-    .tp-group { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+                 padding: 6px 8px; background: linear-gradient(#24242c, #191920);
+                 border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .tp-group { display: flex; align-items: center; gap: 3px; flex: 0 1 auto; flex-wrap: wrap; }
     .tp-center { margin: 0 auto; }
     .tp-right { margin-left: auto; min-width: 0; }
     .tp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-              background: #3a3a42; color: var(--text); border: 1px solid var(--line);
+              background: var(--ctrl); color: var(--text); border: 1px solid var(--line);
               border-radius: 6px; min-width: 30px; height: 28px; padding: 0 7px; cursor: pointer;
               font-size: 13px; flex: 0 0 auto; }
     .tp-btn:hover { background: var(--hover); }
@@ -39,8 +40,8 @@
     #vu { width: 60px; height: 10px; background: #2a2a30; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
     #vu-fill { height: 100%; width: 0%; background: #5c8; transition: width .05s linear; }
     .tp-play { background: var(--accent); border-color: var(--accent2); min-width: 40px; font-size: 16px; }
-    .tp-play:hover { background: #4778df; }
-    #transport select, #transport input { background: #3a3a42; color: var(--text);
+    .tp-play:hover { background: #9476ff; }
+    #transport select, #transport input { background: var(--ctrl); color: var(--text);
               border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 8px; cursor: pointer; }
     #transport input[type=number] { width: 60px; cursor: text; }
     #tp-trackchip { display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -58,7 +59,7 @@
     .tp-speed { display: flex; align-items: center; gap: 4px; color: var(--dim); }
     #tp-track-line { display: flex; align-items: center; gap: 6px; }
     .tp-btn[disabled] { opacity: .4; cursor: default; }
-    .tp-btn[disabled]:hover { background: #3a3a42; }
+    .tp-btn[disabled]:hover { background: var(--ctrl); }
 
     /* ---------- main row ---------- */
     #main { flex: 1 1 auto; display: flex; min-height: 0; }
@@ -72,7 +73,7 @@
     .eb-group:last-child { border-bottom: none; }
     .eb-label { width: 100%; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
                 color: var(--dim); margin-bottom: 2px; }
-    .eb-btn { background: #34343b; color: var(--text); border: 1px solid var(--line);
+    .eb-btn { background: var(--ctrl); color: var(--text); border: 1px solid var(--line);
               border-radius: 6px; min-width: 30px; height: 28px; padding: 0 7px; cursor: pointer; font-size: 13px; line-height: 1; }
     .eb-btn:hover { background: var(--hover); }
     .eb-btn.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
@@ -80,13 +81,34 @@
     .eb-btn.eb-wide { flex: 1; }
     .eb-btn.eb-dyn { min-width: 26px; width: 26px; padding: 0; font-style: italic; font-weight: 700; font-size: 11px; }
     .eb-btn.eb-todo { opacity: .42; cursor: default; }
-    .eb-btn.eb-todo:hover { background: #34343b; }
-    .eb-voice.active { background: #d98b2a; border-color: #b06f17; color: #1b1b1f; }
+    .eb-btn.eb-todo:hover { background: var(--ctrl); }
+    /* Deferred (not-yet-implemented) controls: dimmed + non-interactive, with a "soon" tag. */
+    .gd-soon { opacity: .4; pointer-events: none; }
+    .gd-soon-tag { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim);
+                   border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; margin-left: 6px; opacity: .7; }
+    .eb-voice.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
 
     /* center */
     #center { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
-    #at-wrap { flex: 1 1 auto; overflow: auto; background: #3a3a40; padding: 22px;
+    #at-wrap { flex: 1 1 auto; overflow: auto; background: #2a2a31; padding: 22px;
                outline: none; }
+    /* Panel collapse / full-view (session view state; toggled via transport + View menu). */
+    body.hide-palette #palette { display: none; }
+    body.hide-inspector #inspector { display: none; }
+    body.hide-tracks #tracks { display: none; }
+    body.hide-fretboard #fretboard { display: none; }
+    body.fullscore #palette, body.fullscore #inspector,
+    body.fullscore #tracks, body.fullscore #fretboard { display: none; }
+    .tp-btn.on { background: var(--accent); color: #fff; }
+    .tp-glyph { font-size: 15px; line-height: 1; }
+    /* count-in visual countdown (big centered number over the score) */
+    #countdown-ov { position: fixed; left: 50%; top: 46%; transform: translate(-50%, -50%);
+      display: none; align-items: center; justify-content: center; font-size: 140px; font-weight: 800;
+      color: rgba(255,255,255,.92); text-shadow: 0 4px 28px rgba(0,0,0,.7); pointer-events: none; z-index: 9999; }
+    #countdown-ov.pulse { animation: cd-pulse .45s ease-out; }
+    @keyframes cd-pulse { 0% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+      30% { opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1); opacity: .9; } }
+    .countin-bars { width: 42px; font-size: 11px; } /* count-in length selector */
     #at { padding: 24px; position: relative; background: #fff; color: #111; border-radius: 3px;
           box-shadow: 0 6px 30px rgba(0,0,0,.5); min-height: 100%; }
     #edit-cursor { position: absolute; pointer-events: none; display: none; z-index: 4;
@@ -117,17 +139,120 @@
     .fb-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
               width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff;
               display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; z-index: 1; }
-    .dp-grid { display: flex; gap: 8px; flex-wrap: wrap; }
-    .dp-pad { min-width: 88px; height: 50px; display: flex; align-items: center; justify-content: center;
-              background: #2a231b; border: 1px solid #4a3d2c; border-radius: 8px; cursor: pointer;
-              color: #d8c9a8; font-weight: 600; user-select: none; }
-    .dp-pad { gap: 7px; }
-    .dp-key { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
-              padding: 0 4px; border-radius: 4px; background: #1b1610; border: 1px solid #4a3d2c;
-              color: #9a8a6a; font-size: 11px; font-weight: 700; }
-    .dp-pad:hover { background: #4a3d2c; }
-    .dp-pad.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
-    .dp-pad.active .dp-key { background: rgba(0,0,0,.25); border-color: rgba(255,255,255,.3); color: #fff; }
+    /* ===== Drum KIT VIEW panel (shown for percussion tracks) ===== */
+    #fretboard.kit { max-height: 452px; background: #14141a; padding: 0; }
+    .drumpanel { display: flex; flex-direction: column; height: 448px; }
+    .dp-tabs { display: flex; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
+    .dp-tab { background: transparent; color: var(--dim); border: none; border-radius: 8px 8px 0 0;
+              padding: 8px 18px; font-size: 12px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
+    .dp-tab:hover { color: var(--text); }
+    .dp-tab.active { background: var(--accent); color: #fff; }
+    .dp-body { flex: 1 1 auto; display: flex; gap: 10px; padding: 10px; min-height: 0; }
+    .dp-pane { display: none; flex: 1 1 auto; min-width: 0; gap: 10px; }
+    .dp-pane.active { display: flex; }
+    .dp-placeholder { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+                      color: var(--dim); font-size: 13px; border: 1px dashed var(--line2); border-radius: 10px; }
+
+    /* Quick Tools rail */
+    .kit-tools { flex: 0 0 156px; background: #1b1b22; border: 1px solid var(--line2); border-radius: 10px;
+                 padding: 10px; display: flex; flex-direction: column; gap: 3px; }
+    .kit-h { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-bottom: 6px; }
+    .qtool { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 8px; cursor: pointer;
+             color: var(--text); font-size: 12px; user-select: none; }
+    .qtool:hover { background: var(--hover); }
+    .qtool.active { background: var(--accent); color: #fff; }
+    .qtool .qk { margin-left: auto; font-size: 10px; color: var(--dim); }
+    .qtool.active .qk { color: #e8e0ff; }
+    .qtool svg { width: 15px; height: 15px; }
+
+    /* Kit stage + hotspots */
+    .kit-stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+                 background: #0c0c10; border-radius: 10px; min-width: 0; overflow: hidden; }
+    .kit-frame { position: relative; height: 100%; aspect-ratio: 1536 / 1024; max-width: 100%; }
+    .kit-frame img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+    .kit-hot { position: absolute; transform: translate(-50%, -50%); border-radius: 50%;
+               border: 2px solid transparent; cursor: pointer; }
+    .kit-hot:hover { border-color: #ffffff66; background: #ffffff12; }
+    .kit-hot.hit { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 24%, transparent); }
+    .kit-hot.sel { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+    .kit-lbl { position: absolute; left: 50%; bottom: -2px; transform: translate(-50%, 100%);
+               background: #000a; color: #fff; font-size: 10px; font-weight: 600; padding: 1px 6px;
+               border-radius: 4px; white-space: nowrap; opacity: 0; pointer-events: none; }
+    .kit-hot:hover .kit-lbl, .kit-hot.sel .kit-lbl { opacity: 1; }
+
+    /* Articulation panel */
+    .kit-artic { flex: 0 0 210px; background: #1b1b22; border: 1px solid var(--line2); border-radius: 10px;
+                 padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+    .kit-artic .apiece { font-size: 14px; font-weight: 700; }
+    .artic-opt { padding: 8px 10px; border-radius: 8px; background: #24242c; border: 1px solid var(--line2);
+                 cursor: pointer; font-size: 12px; }
+    .artic-opt:hover { background: var(--hover); }
+    .artic-opt.active { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .kit-srow { margin-top: 8px; }
+    .kit-srow .lab { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim);
+                     display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .kit-srow input[type=range] { width: 100%; }
+
+    /* Pattern library (always-visible row under the kit) */
+    .pattern-lib { flex: 0 0 130px; display: flex; gap: 10px; padding: 0 10px 10px; min-height: 0; }
+    .pl-cats { flex: 0 0 156px; background: #1b1b22; border: 1px solid var(--line2); border-radius: 10px;
+               padding: 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+    .pl-cats input { background: #14141a; border: 1px solid var(--line2); border-radius: 6px; color: var(--text);
+                     padding: 5px 8px; font-size: 11px; margin-bottom: 6px; }
+    .pl-cat { padding: 5px 8px; border-radius: 6px; font-size: 12px; color: var(--dim); cursor: pointer; }
+    .pl-cat:hover { background: var(--hover); color: var(--text); }
+    .pl-cat.active { background: var(--accent); color: #fff; }
+    .pl-cards { flex: 1 1 auto; display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; min-width: 0; }
+    .pl-card { flex: 0 0 132px; background: #1b1b22; border: 1px solid var(--line2); border-radius: 10px;
+               padding: 9px; display: flex; flex-direction: column; gap: 7px; cursor: pointer; }
+    .pl-card:hover { border-color: #6a6a78; }
+    .pl-card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .pl-card .pl-name { font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .pl-card .pl-fav { cursor: pointer; color: var(--dim); font-size: 13px; }
+    .pl-card .pl-fav.on { color: #e0556e; }
+    .pl-dots { display: flex; flex-direction: column; gap: 3px; }
+    .pl-dotrow { display: flex; gap: 2px; }
+    .pl-dot { width: 6px; height: 6px; border-radius: 2px; background: #2f2f38; }
+    .pl-dot.on { background: var(--accent); }
+    .pl-dot.on.k { background: #d4673e; }
+    .pl-card .pl-foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; }
+    .pl-play { width: 24px; height: 24px; border-radius: 6px; background: var(--ctrl); border: 1px solid var(--line);
+               display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text); }
+    .pl-play:hover { background: var(--hover); }
+    .pl-play.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    .pl-add { flex: 0 0 92px; border: 1px dashed var(--line2); border-radius: 10px; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 4px; color: var(--dim); cursor: pointer; font-size: 12px; }
+    .pl-add:hover { color: var(--text); border-color: #6a6a78; }
+
+    /* Groove step-grid editor */
+    .ge { flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+    .ge-row { display: flex; align-items: center; gap: 6px; }
+    .ge-lane { flex: 0 0 64px; font-size: 11px; color: var(--dim); text-align: right; }
+    .ge-cells { display: flex; gap: 2px; }
+    .ge-cell { width: 20px; height: 18px; border-radius: 3px; background: #24242c; border: 1px solid var(--line2); cursor: pointer; }
+    .ge-cell:hover { border-color: #6a6a78; }
+    .ge-cell.beat { background: #2b2b35; }            /* downbeat column tint */
+    .ge-cell.on { background: var(--accent); border-color: var(--accent2); }
+    .ge-cell.on.acc { background: #9476ff; }
+    .ge-cell.on.gho { background: color-mix(in srgb, var(--accent) 45%, #14141a); }
+
+    /* inspector drum extras (Generate Variation, Insert Options) */
+    .insp-bigbtn { width: 100%; padding: 9px; border-radius: 8px; background: var(--ctrl); color: var(--text);
+                   border: 1px solid var(--line2); cursor: pointer; font-size: 12px; font-weight: 600; }
+    .insp-bigbtn:hover { background: var(--hover); }
+    .insp-bigbtn.primary { background: var(--accent); border-color: var(--accent2); color: #fff; margin-top: 8px; }
+    .insp-bigbtn.primary:hover { background: #9476ff; }
+    .insp-voices { display: flex; gap: 4px; }
+    .insp-voices .iv { width: 26px; height: 24px; display: flex; align-items: center; justify-content: center;
+                       border-radius: 6px; background: var(--ctrl); border: 1px solid var(--line2); cursor: pointer; font-size: 12px; }
+    .insp-voices .iv.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
+
+    /* kit MIXER tab */
+    .kit-mixer { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; overflow-y: auto; }
+    .km-row { display: flex; align-items: center; gap: 10px; }
+    .km-name { flex: 0 0 88px; font-size: 12px; color: var(--text); }
+    .km-row input[type=range] { flex: 1 1 auto; }
+    .kmv { flex: 0 0 42px; text-align: right; font-size: 11px; color: var(--dim); }
 
     /* right inspector */
     #inspector { flex: 0 0 250px; background: var(--chrome); border-left: 1px solid var(--line);
@@ -142,7 +267,7 @@
     .insp-row .v { color: var(--text); }
     .insp-name { background: #1d1d21; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-weight: 600; }
     .insp-pill { display: inline-flex; gap: 6px; }
-    .insp-pill span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 5px; background: #34343b; font-size: 11px; }
+    .insp-pill span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--ctrl); font-size: 11px; }
     .insp-pill span.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
     .insp-tuning { font-family: ui-monospace, monospace; letter-spacing: .12em; background: #1d1d21;
                    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
@@ -177,7 +302,7 @@
     .tk-name { flex: 1; font-weight: 600; font-size: 13px; }
     .tk-badge { font-size: 10px; color: var(--dim); }
     .tk-ctl { display: flex; gap: 4px; }
-    .tk-mini { width: 22px; height: 22px; border-radius: 4px; background: #34343b; border: 1px solid var(--line);
+    .tk-mini { width: 22px; height: 22px; border-radius: 4px; background: var(--ctrl); border: 1px solid var(--line);
                display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); cursor: pointer; }
     .tk-mini:hover { background: var(--hover); }
     .tk-mini.on { color: #cfe0ff; }
@@ -202,14 +327,17 @@
     .tk-collabels span { text-align: center; font-size: 10px; }
     .tk-cl-vol { width: 92px; } .tk-cl-pan { width: 34px; } .tk-cl-eq { width: 30px; }
     .tk-ruler { flex: 1 1 auto; display: grid; gap: 1px; padding: 0 6px; align-items: center;
-               justify-content: start; min-width: 0; overflow: hidden; }
+               justify-content: start; min-width: 0; overflow-x: auto; overflow-y: hidden; }
     .tk-ruler span { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: visible; }
+    /* the ruler carries the visible horizontal scrollbar for the whole timeline */
+    .tk-ruler::-webkit-scrollbar { height: 8px; }
+    .tk-ruler::-webkit-scrollbar-thumb { background: #4a4a52; border-radius: 4px; }
 
     .tk-row2 { display: flex; align-items: stretch; border-bottom: 1px solid var(--line2);
                cursor: pointer; min-height: 40px; }
     .tk-row2:hover { background: #2c2c32; }
-    .tk-row2.current { background: #233153; }
-    .tk-row2.master { background: #1d1d21; cursor: default; }
+    .tk-row2.current { background: #2a2440; }
+    .tk-row2.master { background: #1a1a20; cursor: default; }
     .tk-ctrls { flex: 0 0 var(--tk-ctrlw, 392px); display: flex; align-items: center; gap: 6px;
                padding: 4px 8px; border-right: 1px solid var(--line2); min-width: 0; }
     .tk-swatch { flex: 0 0 5px; align-self: stretch; border-radius: 2px; margin: 5px 0; background: #555; }
@@ -223,22 +351,27 @@
                border-radius: 50%; background: var(--accent); cursor: pointer; }
     .tk-fader .v { width: 24px; font-size: 10px; color: var(--dim); text-align: right; }
     .tk-knob { flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
-               background: #34343b; position: relative; cursor: pointer; }
+               background: var(--ctrl); position: relative; cursor: pointer; }
     .tk-knob::after { content: ''; position: absolute; left: 50%; top: 3px; width: 2px; height: 8px;
                background: var(--text); border-radius: 1px; transform-origin: 1px 10px; transform: translateX(-1px) rotate(var(--ang, 0deg)); }
     .tk-eq { flex: 0 0 26px; }
 
     .tk-bars { flex: 1 1 auto; display: grid; gap: 1px; padding: 6px; align-content: center;
-               justify-content: start; min-width: 0; overflow: hidden; }
-    .tk-bar { height: 18px; border-radius: 2px; background: #2a2a30; cursor: pointer; }
-    .tk-bar:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+               justify-content: start; min-width: 0; overflow-x: auto; overflow-y: hidden;
+               scrollbar-width: none; }
+    .tk-bars::-webkit-scrollbar { display: none; } /* rows scroll-sync to the ruler; hide their bars */
+    /* Continuous colored band per track: empty bars show a dim tint of the track color,
+       bars with notes show the full color (GP-style timeline). */
+    .tk-bar { height: 20px; border-radius: 2px; cursor: pointer;
+              background: color-mix(in srgb, var(--bc, #555) 26%, #14141a); }
+    .tk-bar:hover { outline: 1px solid #fff5; outline-offset: -1px; }
     .tk-bar.fill { background: var(--bc, var(--accent)); }
     .tk-bar.cur { box-shadow: inset 0 0 0 1.5px #fff; }
 
     /* editable inspector controls */
     .insp-input { background: #1d1d21; border: 1px solid var(--line); border-radius: 6px;
                padding: 6px 10px; color: var(--text); font-weight: 600; width: 100%; }
-    .insp-select { background: #34343b; border: 1px solid var(--line); border-radius: 6px;
+    .insp-select { background: var(--ctrl); border: 1px solid var(--line); border-radius: 6px;
                padding: 5px 8px; color: var(--text); font-size: 12px; }
     .insp-tab { cursor: pointer; }
     .insp-pill span { cursor: pointer; user-select: none; }
@@ -265,17 +398,17 @@
     .m-track { display: flex; gap: 8px; align-items: center; background: #26262b;
                border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
     .m-track select { flex: 1; }
-    .m-del { background: #3a3a42; border: 1px solid var(--line); border-radius: 6px; color: var(--dim);
+    .m-del { background: var(--ctrl); border: 1px solid var(--line); border-radius: 6px; color: var(--dim);
                width: 28px; height: 28px; cursor: pointer; }
     .m-del:hover { background: #c0533a; color: #fff; }
-    .m-add { align-self: flex-start; background: #34343b; border: 1px solid var(--line);
+    .m-add { align-self: flex-start; background: var(--ctrl); border: 1px solid var(--line);
                border-radius: 6px; color: var(--text); padding: 6px 12px; cursor: pointer; }
     .m-add:hover { background: var(--hover); }
     .m-btn { border-radius: 6px; padding: 8px 16px; cursor: pointer; font-weight: 600; border: 1px solid var(--line); }
-    .m-btn.ghost { background: #34343b; color: var(--text); }
+    .m-btn.ghost { background: var(--ctrl); color: var(--text); }
     .m-btn.ghost:hover { background: var(--hover); }
     .m-btn.primary { background: var(--accent); border-color: var(--accent2); color: #fff; }
-    .m-btn.primary:hover { background: #4778df; }
+    .m-btn.primary:hover { background: #9476ff; }
     .m-msg { color: var(--text); line-height: 1.5; }
 
     /* ---------- SVG icons ---------- */
@@ -361,7 +494,12 @@
       <span class="tp-sep"></span>
       <button class="tp-btn" title="Undo (⌘Z)" id="undo-btn"><svg class="ic"><use href="#ic-undo"></use></svg></button>
       <button class="tp-btn" title="Redo (⌘⇧Z)" id="redo-btn"><svg class="ic"><use href="#ic-redo"></use></svg></button>
-      <button class="tp-btn" title="Print (coming soon)" id="print-btn" disabled><svg class="ic"><use href="#ic-print"></use></svg></button>
+      <button class="tp-btn" title="Print" id="print-btn"><svg class="ic"><use href="#ic-print"></use></svg></button>
+      <span class="tp-sep"></span>
+      <button class="tp-btn on tp-glyph" title="Toggle left palette" data-act="toggle:palette">◧</button>
+      <button class="tp-btn on tp-glyph" title="Toggle right inspector" data-act="toggle:inspector">◨</button>
+      <button class="tp-btn on tp-glyph" title="Toggle track list" data-act="toggle:tracks">▤</button>
+      <button class="tp-btn tp-glyph" id="fullscore-btn" title="Full view (F11)" data-act="fullscore">⛶</button>
     </div>
 
     <div class="tp-group tp-center">
@@ -371,7 +509,8 @@
       <span class="tp-sep"></span>
       <button class="tp-btn" id="record-btn" title="Record output to WAV"><svg class="ic"><use href="#ic-record"></use></svg></button>
       <button class="tp-btn" id="metro-btn" title="Metronome (click track)"><svg class="ic"><use href="#ic-metronome"></use></svg></button>
-      <button class="tp-btn" id="countin-btn" title="Count-in (one bar of clicks before play)"><svg class="ic"><use href="#ic-timer"></use></svg></button>
+      <button class="tp-btn" id="countin-btn" title="Count-in (clicks + visual countdown before play)"><svg class="ic"><use href="#ic-timer"></use></svg></button>
+      <select id="countin-bars" class="countin-bars" title="Count-in length"><option value="1">1 bar</option><option value="2">2 bars</option></select>
       <button class="tp-btn" id="liveinput-btn" title="Live input monitor (play on top of the tracks)"><svg class="ic"><use href="#ic-mic"></use></svg></button>
       <input type="range" id="ingain" min="0" max="200" value="100" title="Input gain" style="width:60px">
       <div id="vu" title="Output level"><div id="vu-fill"></div></div>
@@ -392,7 +531,7 @@
           <option value="1.5">150%</option>
         </select>
       </span>
-      <button class="tp-btn" id="tuner-btn" title="Tuner (coming soon)" disabled><svg class="ic"><use href="#ic-tuner"></use></svg></button>
+      <button class="tp-btn gd-soon" id="tuner-btn" title="Tuner (coming soon)" disabled><svg class="ic"><use href="#ic-tuner"></use></svg></button>
     </div>
 
     <div class="tp-group tp-right">
@@ -481,6 +620,7 @@
   </script>
   <script src="juce_native_interop.js"></script>
   <script src="alphaTab.min.js"></script>
+  <script src="grooves.js"></script>
   <script src="editor.js"></script>
   <script src="fretboard.js"></script>
   <script src="app.js"></script>

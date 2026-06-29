@@ -32,10 +32,12 @@ const Asset kAssets[] = {
     { "/app.js",         "app_js",          "text/javascript" },
     { "/editor.js",      "editor_js",       "text/javascript" },
     { "/fretboard.js",   "fretboard_js",    "text/javascript" },
+    { "/grooves.js",     "grooves_js",      "text/javascript" },
     { "/juce_native_interop.js", "juce_native_interop_js", "text/javascript" },
     { "/alphaTab.min.js","alphaTab_min_js", "text/javascript" },
     { "/Bravura.woff2",  "Bravura_woff2",   "font/woff2" },
     { "/Bravura.woff",   "Bravura_woff",    "font/woff" },
+    { "/drumkit.png",    "drumkit_png",     "image/png" },
 };
 } // namespace
 
@@ -294,6 +296,56 @@ MainComponent::MainComponent()
                                               obj->hasProperty ("pan") ? (float) (double) obj->getProperty ("pan") : 0.5f);
                 completion (juce::var());
             })
+        .withNativeFunction ("setMasterMix",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        engine.setMasterMix ((float) (double) obj->getProperty ("gain"),
+                                             obj->hasProperty ("pan") ? (float) (double) obj->getProperty ("pan") : 0.5f);
+                completion (juce::var());
+            })
+        .withNativeFunction ("setMasterEq",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        engine.setMasterEq ((float) (double) obj->getProperty ("low"),
+                                            (float) (double) obj->getProperty ("mid"),
+                                            (float) (double) obj->getProperty ("high"));
+                completion (juce::var());
+            })
+        .withNativeFunction ("setTrackEq",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        engine.setTrackEq ((int) obj->getProperty ("channel"),
+                                           (float) (double) obj->getProperty ("low"),
+                                           (float) (double) obj->getProperty ("mid"),
+                                           (float) (double) obj->getProperty ("high"));
+                completion (juce::var());
+            })
+        .withNativeFunction ("minimizeWindow",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (auto* peer = getPeer()) peer->setMinimised (true);
+                completion (juce::var());
+            })
+        .withNativeFunction ("showAbout",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                juce::NativeMessageBox::showMessageBoxAsync (
+                    juce::MessageBoxIconType::InfoIcon, "Gomidas",
+                    "Gomidas - a Guitar Pro-like tab editor.\n\n(c) 2026 Alexis Giovoglanian.",
+                    this);
+                completion (juce::var());
+            })
         .withNativeFunction ("openFile",
             [this] (const juce::Array<juce::var>&,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
@@ -366,6 +418,7 @@ void MainComponent::buildMenus()
             { "Open... (.gp / .gomidas / MusicXML)", "open" },
             { "Save...",        "save" },
             { "Export Guitar Pro (.gp)...", "exportgp" },
+            { "Print...",          "print" },
             { "-", "" },
             { "Load Sample",       "sample" },
         } },
@@ -472,7 +525,13 @@ void MainComponent::buildMenus()
             { "-", "" },
             { "Fermata", "fermata" },
         } },
-        { "Tools",   { { "(coming soon)", "" } } },
+        { "Tools", {
+            { "Transpose...", "transpose" },
+            { "-", "" },
+            { "Metronome (toggle)", "metronome" },
+            { "Count-in (toggle)",  "countin" },
+            { "Panic (All Notes Off)", "panic" },
+        } },
         { "Sound", {
             { "Play / Stop", "play" },
             { "Panic (All Notes Off)", "panic" },
@@ -496,9 +555,14 @@ void MainComponent::buildMenus()
             { "-", "" },
             { "Toggle Multitrack View", "toggleview" },
             { "Go To Bar...", "gotobar" },
+            { "-", "" },
+            { "Toggle Left Palette", "toggle:palette" },
+            { "Toggle Right Inspector", "toggle:inspector" },
+            { "Toggle Track List", "toggle:tracks" },
+            { "Full View", "fullscore" },
         } },
-        { "Window", { { "Minimize", "" } } },
-        { "Help",   { { "Gomidas - Guitar Pro-like editor", "" } } },
+        { "Window", { { "Minimize", "minimize" } } },
+        { "Help",   { { "About Gomidas", "about" } } },
     };
 }
 

@@ -29,6 +29,27 @@ struct Sequence : public juce::ReferenceCountedObject
     double lengthTicks = 0.0;
 };
 
+// One normalized biquad band (a0 == 1). Default = identity passthrough.
+struct EqBiquad { float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f; };
+
+// A 3-band EQ (low-shelf / mid-peak / high-shelf), stereo. Coefficients are produced
+// on the message thread; `state`/processing live on the audio thread. `flat` lets the
+// audio thread skip the whole unit when every band is ~0 dB.
+struct EqUnit
+{
+    EqBiquad band[3];
+    float    z[3][2][2] = {};   // [band][stereoChannel][z1,z2] — transposed direct form II
+    bool     flat = true;
+
+    inline float process (int b, int ch, float x) noexcept
+    {
+        const float y = band[b].b0 * x + z[b][ch][0];
+        z[b][ch][0] = band[b].b1 * x - band[b].a1 * y + z[b][ch][1];
+        z[b][ch][1] = band[b].b2 * x - band[b].a2 * y;
+        return y;
+    }
+};
+
 // Owns the audio device, the SoundFont synth, the transport clock and the
 // playback scheduler. The active Sequence is produced on the message thread
 // (from alphaTab's score model) and swapped in lock-free on the audio thread.
@@ -65,6 +86,13 @@ public:
     // Per-track mixer: gain is a linear scale (1.0 = unity, 0.0 = silent → mute/solo),
     // pan is 0..1 (0.5 = centre). Keyed by MIDI channel; applied on the audio thread.
     void setChannelMix (int channel, float gain, float pan);
+
+    // Master + per-track 3-band EQ (low/mid/high in dB) and master gain/pan. Coefficients
+    // are computed on the message thread and handed to the audio thread under eqLock
+    // (mirrors the Sequence swap). gain is linear, pan 0..1 (0.5 = centre, balance law).
+    void setMasterMix (float gain, float pan);
+    void setMasterEq (float lowDb, float midDb, float highDb);
+    void setTrackEq (int channel, float lowDb, float midDb, float highDb);
 
     // Live input monitoring: reopen the device with an input bus and mix the input into
     // the output. Reverts to output-only if the input device can't open (e.g. permission
@@ -129,6 +157,21 @@ private:
     std::atomic<float>  channelGain[16];
     std::atomic<float>  channelPan[16];
     std::atomic<bool>   mixDirty { false };
+
+    // master output mix
+    std::atomic<float>  masterGain { 1.0f };
+    std::atomic<float>  masterPan  { 0.5f };
+
+    // EQ: staging (message thread, guarded by eqLock) -> active (audio thread).
+    juce::SpinLock      eqLock;
+    std::atomic<bool>   eqDirty { false };
+    EqBiquad            stagingChanEq[16][3];
+    bool                stagingChanFlat[16] = {};
+    EqBiquad            stagingMasterEq[3];
+    bool                stagingMasterFlat = true;
+    EqUnit              channelEq[16];   // audio-thread owned
+    EqUnit              masterEq;        // audio-thread owned
+    juce::AudioBuffer<float> channelBuffer; // per-channel render scratch (stereo)
 
     // live input monitoring (audio thread reads; message thread reopens the device)
     std::atomic<bool>   liveInputOn { false };

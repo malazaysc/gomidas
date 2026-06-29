@@ -42,10 +42,12 @@ juce_add_binary_data(GomidasAssets
     web/app.js
     web/editor.js
     web/fretboard.js
+    web/grooves.js
     web/juce_native_interop.js
     web/alphaTab.min.js
     web/Bravura.woff2
     web/Bravura.woff
+    web/drumkit.png
     assets/soundfont/sonivox.sf2)
 
 target_sources(Gomidas PRIVATE

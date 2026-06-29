@@ -3,6 +3,7 @@
 Status of the tab editor + playback engine. Keyboard column shows the **Gomidas** key and,
 where it differs, the **GP8** equivalent (see `references/gp8-keyboard-shortcuts.md`).
 Not-yet-built features and the full GP parity gap live in [`BACKLOG.md`](./BACKLOG.md).
+Buttons that render but aren't wired yet are inventoried in [`DEAD_BUTTONS.md`](./DEAD_BUTTONS.md).
 
 Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 
@@ -42,13 +43,16 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | --- | --- | --- | --- |
 | Extend selection by a beat | `⇧→` / `⇧←` | same | ✅ beat range on voice 0 of the current track, across bars; amber highlight |
 | Select all | `⌘A` | same | ✅ every beat in the current track |
-| Copy | `⌘C` / menu Edit→Copy | same | ✅ copies the selection (or current beat) to a plain-object clipboard (duration, dots, tuplet, notes + effect flags) |
-| Cut | `⌘X` / menu Edit→Cut | same | ✅ copy + remove the selected beats (keeps ≥1 beat per bar) |
-| Paste | `⌘V` / menu Edit→Paste | same | ✅ inserts the clipboard beats after the cursor (current bar/voice) |
+| **Mouse click-drag select** | drag in the score | — | ✅ drag across beats/bars selects a range; a plain click clears it. Crossing into another track's staff makes it a **cross-track block** |
+| **Cross-track block selection** | drag across staves | GP block | ✅ bar range × track range (whole bars); highlights span every covered staff in multi-track view |
+| **Select whole bars** | shift-click track-list bar squares | — | ✅ shift-click a second bar square selects that bar range on the track (`selectBars`) |
+| Copy | `⌘C` / menu Edit→Copy | same | ✅ within-track → beat list; cross-track → **whole-bar block** (`{kind:'beats'|'block'}` clipboard) |
+| Cut | `⌘X` / menu Edit→Cut | same | ✅ within-track removes beats (≥1/bar); block clears the covered bars |
+| **Paste (incl. multi-track)** | `⌘V` / menu Edit→Paste | same | ✅ beat list inserts after the cursor; **block** writes each captured track/bar from the cursor down, clamped to range (one undo step) |
 | Copy last beat | `C` | same | ✅ duplicates the previous beat at the cursor |
 
-> Selection is per-track on voice 0 and clears on any edit or plain navigation. Vertical range
-> (`⇧↑↓`), cross-track paste, and bar-reflow on overfull paste are still backlog.
+> Selection is voice-0. Single-track = beat range; cross-track = whole-bar block. Clears on any
+> edit or plain navigation. Vertical `⇧↑↓` range and bar-reflow on overfull paste are still backlog.
 
 ## Note entry
 | Feature | Gomidas key | GP8 | Notes |
@@ -110,6 +114,21 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Slap / pop | `$` / menu (pop) | same | 🟡 bass; notation; MIDI plain |
 | Fade in / out / volume swell | `<` / `>` / menu (swell) | `<` / `>` / `⌥<` | 🟡 notation; MIDI plain |
 
+## Drum view (KIT VIEW / GROOVE EDITOR / MIXER) — reference redesign (2026-06-28)
+| Feature | How | Notes |
+| --- | --- | --- |
+| Purple theme + colored timeline | app-wide | ✅ reference palette; track-kind colors (drums purple / bass blue / guitar orange); continuous per-track timeline bands |
+| **KIT VIEW** | drum track, bottom panel | ✅ photoreal kit (`web/drumkit.png`) with clickable hotspots per piece → toggle hit on the current beat + select; hit pieces ring purple |
+| Quick Tools | KIT VIEW rail | ✅ Select/Draw/Erase/Paint entry modes + Accent/Ghost/Repeat/Tie actions |
+| Articulation panel | KIT VIEW right | ✅ per-piece GM articulation (Hi-Hat Closed/Open/Pedal, Snare Center/Side-stick, Ride/Bell…) + Velocity→dynamic |
+| **Pattern Library** | row under the kit | ✅ categories + search, groove cards with dot-grid preview, ▶ audition, ＋ insert, ♡ favourite (localStorage); **Add Pattern** captures the current bar as a User Groove |
+| **Groove insert** | card ＋ / dbl-click / Insert Pattern | ✅ writes the groove as sixteen 16th-steps; honours accents/ghosts; Replace-Bar or Append-Bars (Insert Options) + target Voice |
+| **GROOVE EDITOR** | drum tab | ✅ step-sequencer grid (lanes × 16); click toggles, Shift=accent, Alt=ghost; edits rewrite the bar live |
+| **Generate Variation** | inspector button / `E.generateVariation()` | ✅ seeded musical variation (ghost hats/snares, off-beat kicks, accented backbeat) |
+| Kit picker | inspector SOUNDS | ✅ Standard/Room/Rock/Electronic/808/Jazz/Brush/Orchestra → drum program (kit) |
+| **MIXER tab** | drum tab | ✅ per-piece level sliders → scale hit velocity in `rebuildSequence` (`gomidasDrumGains`) |
+| Insert Options | inspector | ✅ Insert mode (Replace/Append) + Voices 1–4 |
+
 ## Drums
 | Feature | How | Notes |
 | --- | --- | --- |
@@ -132,7 +151,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | A/B loop | `⌘L` / menu Sound→Loop Selection | — | ✅ loops the beat selection (or current bar) via `AudioEngine::setLoopRange`; `⌘L` again or Clear Loop turns it off; cleared on score load |
 | Metronome | transport `♩` toggle / menu Sound→Metronome | — | ✅ wood-block click on the time-signature grid (downbeat accented), on a free melodic channel; injected into the sequence so it loops/repeats with the music |
 | Practice speed (tempo slow-down) | transport speed select (25–150%) | — | ✅ `AudioEngine::setPlaybackRate` scales playback tempo without changing pitch or the notated tempo |
-| Count-in | transport `⏱` toggle / menu Sound→Count-in | — | ✅ one bar of wood-block clicks at the playback tempo (preview path, free channel) before the transport starts; press play again to abort |
+| Count-in | transport `⏱` toggle + 1/2-bar selector / menu Sound→Count-in | — | ✅ **1 or 2 bars** of wood-block clicks at the playback tempo before the transport starts, with a **big on-screen countdown** number over the score; press play again to abort |
 | Live input monitor | transport `🎤` toggle / menu Sound→Live Input | — | 🟡 reopens the device with a mic bus and mixes input→output (first toggle triggers the macOS mic prompt) |
 | Input plugin insert (AU/VST3) | menu Sound→Load/Clear Input Plugin | — | 🟡 hosts one VST3/AU effect/instrument on the live input; **plugin editor window** (Show Plugin Editor, auto-opens on load). No per-track chains / state-save yet; needs runtime verification |
 | Input gain | transport slider (next to `🎤`) | — | ✅ live monitoring gain (0–200%) → `setLiveInput` gain |
@@ -147,18 +166,25 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | --- | --- | --- |
 | GP8-style dark layout | — | transport · left palette · score · right SONG/TRACK inspector · bottom track list |
 | **SVG icon set** (GP8-style) | — | ✅ inline `<symbol>` sprite + `Icons.use(name)` helper in `index.html` (~50 monochrome `currentColor` icons). Replaced all emoji/unicode glyphs across transport, palette, track list, inspector |
-| **Track timeline (bar squares)** | bottom track list | ✅ per-track row of small fixed-width per-bar blocks, filled in the track color where the bar has notes, current bar outlined; **click a square to jump to that bar** of that track. Bar-number ruler in the header. (Long scores currently clip — horizontal scroll TODO) |
-| Track row controls | bottom track list | ✅ color swatch · instrument icon · name · show/hide · mute · solo · volume fader + value · **pan knob** (drag; double-click = center) · EQ button (placeholder) |
-| **Master row** | bottom track list | 🟡 shown (volume fader / pan / EQ); controls are visual placeholders |
-| **Expanded left palette** | left palette | 🟡 GP8 sections: voice tabs 1–4 (live), Lyrics/Chords, bar & signatures, octave/clef, durations, tuplets, dynamics, articulation grid (~30 effects, wired where the engine supports them), bars & beats. Dynamics / octave / clef / lyrics render as dimmed **placeholders** (no engine backing yet) |
+| **Track timeline (bar squares)** | bottom track list | ✅ per-track row of small fixed-width per-bar blocks, filled in the track color where the bar has notes, current bar outlined; **click a square to jump to that bar**, **shift-click to select a bar range**. Bar-number ruler in the header. **Horizontal scroll**: ruler + all rows scroll-synced (controls frozen-left); the timeline follows the current bar |
+| **Collapse / expand panels** | transport ◧ ◨ ▤ buttons / View menu | — | ✅ toggle the left palette / right inspector / track list individually; score reflows |
+| **Full view** | transport ⛶ / `F11` / `Esc` / View→Full View | — | ✅ hides all chrome (palette, inspector, tracks, fretboard) leaving transport + score; `Esc` or toggle exits |
+| Track row controls | bottom track list | ✅ color swatch · instrument icon · name · show/hide · mute · solo · volume fader + value · **pan knob** (drag; double-click = center) · **EQ button** (3-band per-track EQ popup) · **⋮ track-options menu** (rename / mute / solo / hide / add / delete) |
+| **Per-track + master EQ** | track-list EQ buttons / Master row | ✅ 3-band EQ (low/mid/high, −12..+12 dB) per track and on the master, live. Synth re-architected into **per-channel audio buses** (`tsf_copy`) so each track EQs independently. **Session-only** — not yet saved to `.gomidas` |
+| **Master row** | bottom track list | ✅ live master volume + balance pan + EQ |
+| **Expanded left palette** | left palette | ✅ GP8 sections: voice tabs 1–4, Lyrics/Chords, bar & signatures, octave/clef (8va/8vb/15ma/15mb → `beat.ottava`, shifts playback octave), durations, tuplets, **dynamics ppp–fff** (→ velocity), **crescendo/diminuendo** (notation marking), articulation grid (~30 effects), bars & beats |
 | Native macOS menu bar | menu bar | File / Edit / Track / Bar / Note / Effects / Section / Tools / Sound / View / Window / Help |
 | Track mute / solo | track-list M / S | ✅ live via per-channel gain in `AudioEngine` (`setChannelMix`); solo overrides mute; takes effect instantly during playback |
 | Track volume (mixer) | track-list slider | ✅ per-track linear gain (0–100%), live; defaults from `playbackInfo.volume` |
 | Track pan (mixer) | inspector TRACK→Mixer slider | ✅ per-track pan (L/C/R), live via `setChannelMix`; defaults from `playbackInfo.balance` |
 | Track show / hide | track-list 👁 | ✅ toggles the track in the score (multi-track view); does not mute it |
 | Single-track focus | click a track row / `track-select` | ✅ shows that track alone (GP-style); eye control returns to multi-track view |
-| Inspector — TRACK (live) | right panel | ✅ color swatch + instrument icon + short-name badge · editable name · **notation icon toggles** (staff/tab) · tuning preset picker · GM sound picker · pan. RSE/MIDI pill, sound-chain icons, Interpretation sliders + Stringed toggle are visual placeholders |
-| Transport view clusters | transport | 🟡 page-view toggles (page/vert/wide) + right instrument cluster (audio/guitar/keys/drums) are single-select **visual** toggles; loop / speed / tuner cluster (tuner + print are placeholders) |
+| Inspector — TRACK (live) | right panel | ✅ color swatch + instrument icon + short-name badge · editable name · **notation icon toggles** (staff/tab) · tuning preset picker · GM sound picker · pan. **Deferred (greyed `.gd-soon`):** RSE pill segment + Interpretation section (playing-style sim) |
+| Transport view clusters | transport | 🟡 page-view toggles (page/vert/wide) + right instrument cluster (audio/guitar/keys/drums) are single-select **visual** toggles. **Print** works (`window.print()`); **Tuner** is deferred (greyed) |
+| Print | transport `🖨` / menu File→Print | ✅ prints the rendered score via the WebView |
+| Transpose | menu Tools→Transpose | ✅ shift current beat or whole track by ±24 semitones (tab: shifts frets) |
+| Lyrics | palette `Lyrics` | ✅ per-beat lyric syllable (`beat.lyrics`) |
+| Window / Help | menu Window→Minimize, Help→About | ✅ native minimise + About box |
 | Inspector — SONG (live) | right panel `SONG` tab | ✅ editable title + tempo |
 | Zoom | transport `−` / `＋` or `⌘<` / `⌘>` | ✅ rescales the score |
 | Multitrack view toggle | `F3` / menu View→Toggle Multitrack View | ✅ flips focused single track ↔ all non-hidden tracks |

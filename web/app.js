@@ -105,6 +105,18 @@ function dynamicsToVelocity(dyn) {
   return Math.max(0.2, Math.min(1.0, 0.3 + dyn * 0.1));
 }
 
+// Octave/clef line → MIDI semitone offset, so playback matches the displayed octave.
+// alphaTab Ottava: Regular=0, Va8=+8va, Vb8=-8vb, Ma15=+15ma, Mb15=-15mb.
+function ottavaSemitones(ott) {
+  const OT = (window.alphaTab && alphaTab.model && alphaTab.model.Ottava) || null;
+  if (!OT || typeof ott !== 'number' || ott === OT.Regular) return 0;
+  if (ott === OT.Va8) return 12;
+  if (ott === OT.Vb8) return -12;
+  if (ott === OT.Ma15) return 24;
+  if (ott === OT.Mb15) return -24;
+  return 0;
+}
+
 // Builds the native sequence AND a tick->beat map (primary track) for the cursor.
 // Full duration of master bar i from its time signature (a bar always occupies
 // its time-signature length; underfilled bars are padded with silence).
@@ -213,6 +225,7 @@ function rebuildSequence() {
             if (isPrimary && voice.index === 0) tickMap.push({ tick: t, beat });
             if (!beat.isEmpty && !beat.isRest) {
               const vel = dynamicsToVelocity(beat.dynamics);
+              const ottava = percussion ? 0 : ottavaSemitones(beat.ottava);
               for (const note of beat.notes) {
                 let key;
                 if (percussion) {
@@ -222,7 +235,7 @@ function rebuildSequence() {
                   key = (arts && arts[ai] && arts[ai].outputMidiNumber != null)
                         ? arts[ai].outputMidiNumber : note.realValue;
                 } else {
-                  key = note.realValue;
+                  key = note.realValue + ottava;
                 }
                 if (key == null || key < 0 || key > 127) continue;
                 // Articulation → audible MIDI shape: dead = short percussive thunk,
@@ -235,6 +248,11 @@ function rebuildSequence() {
                 if (note.accentuated === 2) noteVel = Math.min(1, noteVel * 1.3);       // heavy accent
                 else if (note.accentuated === 1) noteVel = Math.min(1, noteVel * 1.15); // accent
                 if (note.isHammerPullDestination) noteVel *= 0.7; // legato: hammered/pulled note isn't picked
+                // Per-piece drum level (set by the kit MIXER tab): scales the hit velocity.
+                if (percussion && window.gomidasDrumGains) {
+                  const g = window.gomidasDrumGains[key];
+                  if (g != null) noteVel = Math.max(0, Math.min(1, noteVel * g));
+                }
                 const id = channel + ':' + key;
                 // Tie: don't re-trigger — extend the still-ringing note's note-off.
                 if (note.isTieDestination && lastOff[id]) { lastOff[id][0] = t + noteDur; continue; }
@@ -424,12 +442,32 @@ function applyMixer() {
     // Pan: track-list/inspector knob (flag) wins; else the file's balance; else center.
     const pan = (typeof f.pan === 'number') ? Math.max(0, Math.min(1, f.pan))
               : (pb.balance != null) ? Math.max(0, Math.min(1, pb.balance / 16)) : 0.5;
-    nativeInvoke('setChannelMix', { channel: trackChannel(track), gain, pan });
+    const ch = trackChannel(track);
+    nativeInvoke('setChannelMix', { channel: ch, gain, pan });
+    if (f.eq) nativeInvoke('setTrackEq', { channel: ch, low: f.eq.low || 0, mid: f.eq.mid || 0, high: f.eq.high || 0 });
   });
+  applyMaster();
 }
 window.gomidasApplyMixer = applyMixer;
 // Back-compat: the track list calls this after toggling eye/mute/solo/volume.
 window.gomidasApplyTrackFlags = function () { window.gomidasShowMulti(); applyMixer(); };
+
+// Master output: volume (linear) + balance pan + 3-band EQ (dB). Persisted in
+// gomidasMaster and pushed to the engine.
+window.gomidasMaster = window.gomidasMaster || { vol: 1, pan: 0.5, eq: { low: 0, mid: 0, high: 0 } };
+function applyMaster() {
+  const m = window.gomidasMaster;
+  nativeInvoke('setMasterMix', { gain: Math.max(0, Math.min(1.5, m.vol)), pan: Math.max(0, Math.min(1, m.pan)) });
+  nativeInvoke('setMasterEq', { low: m.eq.low || 0, mid: m.eq.mid || 0, high: m.eq.high || 0 });
+}
+window.gomidasApplyMaster = applyMaster;
+// Direct EQ setters (used by the EQ popups for live feedback while dragging).
+window.gomidasSetTrackEq = function (channel, low, mid, high) {
+  nativeInvoke('setTrackEq', { channel, low, mid, high });
+};
+window.gomidasSetMasterEq = function (low, mid, high) {
+  nativeInvoke('setMasterEq', { low, mid, high });
+};
 
 // ---- sample / file loading ---------------------------------------------------
 const SAMPLE_TEX = `\\title "Gomidas Test" \\tempo 120 .
@@ -497,6 +535,81 @@ function createNewFromConfig(cfg) {
   api.tex(buildTexFromConfig(cfg));
   focusEditor();
 }
+
+// ---- panel collapse / full-view (session view state) ------------------------
+// alphaTab doesn't always reflow on container resize; force a re-render shortly
+// after a layout change so the score uses the new width.
+function reflowScore() { setTimeout(() => { try { if (api) api.render(); } catch (e) {} }, 40); }
+const PANEL_CLASS = { palette: 'hide-palette', inspector: 'hide-inspector', tracks: 'hide-tracks', fretboard: 'hide-fretboard' };
+function togglePanel(which) {
+  const cls = PANEL_CLASS[which]; if (!cls) return;
+  const hidden = document.body.classList.toggle(cls);
+  const btn = document.querySelector('#transport [data-act="toggle:' + which + '"]');
+  if (btn) btn.classList.toggle('on', !hidden); // .on = panel visible
+  reflowScore();
+}
+function toggleFullScore() {
+  const on = document.body.classList.toggle('fullscore');
+  const btn = document.getElementById('fullscore-btn');
+  if (btn) btn.classList.toggle('on', on);
+  reflowScore();
+}
+window.gomidasTogglePanel = togglePanel;
+window.gomidasToggleFullScore = toggleFullScore;
+
+// ---- drum groove preview + capture (pattern library) ------------------------
+// The card ▶ loops the groove as an audition; clicking it again (or starting transport
+// playback) stops it. gomidasGroovePreviewName drives the ▶/■ state on the cards.
+let groovePreviewTimers = [];
+let groovePreviewName = null;
+function refreshGrooveUI() {
+  if (window.GomidasUI && window.GomidasEditor && window.GomidasEditor.getState)
+    window.GomidasUI.refresh(window.GomidasEditor.getState());
+}
+function stopGroovePreview() {
+  if (!groovePreviewTimers.length && groovePreviewName == null) return;
+  groovePreviewTimers.forEach(clearTimeout); groovePreviewTimers = [];
+  groovePreviewName = null;
+  nativeInvoke('preview', { channel: 9, program: 0, percussion: true, keys: [] }); // silence ringing hits
+  refreshGrooveUI();
+}
+window.gomidasStopGroovePreview = stopGroovePreview;
+window.gomidasGroovePreviewName = function () { return groovePreviewName; };
+window.gomidasPreviewGroove = function (groove) {
+  const G = window.GomidasGrooves;
+  if (!G || !groove) return;
+  if (groovePreviewName === groove.name) { stopGroovePreview(); return; } // toggle off
+  groovePreviewTimers.forEach(clearTimeout); groovePreviewTimers = [];
+  groovePreviewName = groove.name;
+  const lanes = (groove.bars ? groove.bars[0].lanes : groove.lanes) || {};
+  const tf = document.getElementById('tempo');
+  const bpm = (tf && parseInt(tf.value, 10)) || 120;
+  const stepMs = Math.max(45, (60000 / bpm) / 4); // 16th-note step
+  const playOnce = () => {
+    groovePreviewTimers = []; // previous bar's timers have all fired by now
+    for (let s = 0; s < 16; s++) {
+      const keys = [];
+      for (const lane in lanes) { if (lanes[lane][s]) { const m = G.LANE_MIDI[lane]; if (m != null) keys.push(m); } }
+      if (keys.length)
+        groovePreviewTimers.push(setTimeout(() => nativeInvoke('preview', { channel: 9, program: 0, percussion: true, keys }), s * stepMs));
+    }
+    groovePreviewTimers.push(setTimeout(() => { if (groovePreviewName) playOnce(); }, stepMs * 16)); // loop the bar
+  };
+  playOnce();
+  refreshGrooveUI();
+};
+// "Add Pattern": capture the current bar as a reusable User Groove.
+window.gomidasAddGrooveFromBar = function () {
+  const E = window.GomidasEditor, G = window.GomidasGrooves;
+  if (!E || !G) return;
+  if (!E.isPercussion || !E.isPercussion()) { setStatus('Add Pattern: select a drum track first'); return; }
+  const grid = E.readBarGrid();
+  const name = (window.prompt && window.prompt('Name this groove:', 'My Groove')) || '';
+  if (!name.trim()) return;
+  G.addUserGroove(name.trim(), grid.lanes);
+  if (window.GomidasUI && E.getState) window.GomidasUI.refresh(E.getState());
+  setStatus('Saved groove "' + name.trim() + '"');
+};
 
 // ---- modal (New dialog + unsaved-changes confirm) ---------------------------
 const modalOverlay = document.getElementById('modal-overlay');
@@ -731,6 +844,159 @@ function openTextDialog() {
 }
 window.gomidasOpenText = openTextDialog;
 
+// Lyrics: attach a lyric syllable to the current beat (blank clears it).
+function openLyricsDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const cur = (E.getLyrics && E.getLyrics()) || '';
+  const safe = cur.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  modalBox.innerHTML =
+    '<div class="modal-h">Lyrics</div>' +
+    '<div class="modal-body"><div class="m-field"><label>Syllable for this beat (blank to clear)</label>' +
+      '<input type="text" id="ly-text" value="' + safe + '" placeholder="e.g. love"></div></div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="ly-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="ly-ok">Apply</button>' +
+    '</div>';
+  showModal();
+  const input = document.getElementById('ly-text');
+  if (input) { input.focus(); input.select(); }
+  const apply = () => { const v = input.value; hideModal(); E.setLyrics(v); };
+  document.getElementById('ly-cancel').onclick = hideModal;
+  document.getElementById('ly-ok').onclick = apply;
+  input.onkeydown = (e) => { if (e.key === 'Enter') apply(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenLyrics = openLyricsDialog;
+
+// Tools → Transpose: shift the current beat or the whole track by N semitones.
+function openTransposeDialog() {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  modalBox.innerHTML =
+    '<div class="modal-h">Transpose</div>' +
+    '<div class="modal-body">' +
+      '<div class="m-field"><label>Semitones (−24 to +24)</label>' +
+        '<input type="number" id="tr-amt" min="-24" max="24" value="0"></div>' +
+      '<div class="m-field" style="margin-top:8px"><label>Scope</label><select id="tr-scope">' +
+        '<option value="track">Whole track</option>' +
+        '<option value="beat">Current beat</option>' +
+      '</select></div>' +
+    '</div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="tr-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="tr-ok">Transpose</button>' +
+    '</div>';
+  showModal();
+  const amt = document.getElementById('tr-amt');
+  if (amt) { amt.focus(); amt.select(); }
+  const apply = () => {
+    const n = Math.max(-24, Math.min(24, parseInt(amt.value, 10) || 0));
+    const scope = document.getElementById('tr-scope').value;
+    hideModal(); E.transpose(n, scope);
+  };
+  document.getElementById('tr-cancel').onclick = hideModal;
+  document.getElementById('tr-ok').onclick = apply;
+  amt.onkeydown = (e) => { if (e.key === 'Enter') apply(); else if (e.key === 'Escape') hideModal(); };
+}
+window.gomidasOpenTranspose = openTransposeDialog;
+
+// Track-options "⋮" menu: rename + mixer toggles + add/delete, over existing funcs.
+function openTrackMenu(idx) {
+  const E = window.GomidasEditor;
+  if (!E) return;
+  const st = E.getState ? E.getState() : null;
+  const tr = st && st.allTracks && st.allTracks[idx];
+  const name = tr ? tr.name : ('Track ' + (idx + 1));
+  const safe = String(name).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const flag = () => (window.gomidasTrackFlags[idx] || (window.gomidasTrackFlags[idx] = {}));
+  const f = flag();
+  modalBox.innerHTML =
+    '<div class="modal-h">' + safe + '</div>' +
+    '<div class="modal-body">' +
+      '<div class="m-field"><label>Rename track</label><input type="text" id="tm-name" value="' + safe + '"></div>' +
+      '<div class="m-row" style="margin-top:10px;flex-wrap:wrap;gap:6px">' +
+        '<button class="m-btn ghost" id="tm-mute">' + (f.muted ? 'Unmute' : 'Mute') + '</button>' +
+        '<button class="m-btn ghost" id="tm-solo">' + (f.soloed ? 'Unsolo' : 'Solo') + '</button>' +
+        '<button class="m-btn ghost" id="tm-hide">' + (f.hidden ? 'Show' : 'Hide') + '</button>' +
+      '</div>' +
+      '<div class="m-row" style="margin-top:6px;flex-wrap:wrap;gap:6px">' +
+        '<button class="m-btn ghost" id="tm-add-g">+ Guitar</button>' +
+        '<button class="m-btn ghost" id="tm-add-b">+ Bass</button>' +
+        '<button class="m-btn ghost" id="tm-add-d">+ Drums</button>' +
+        '<button class="m-btn ghost" id="tm-del" style="color:#e66">Delete track</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="tm-cancel">Close</button>' +
+      '<button class="m-btn primary" id="tm-ok">Apply name</button>' +
+    '</div>';
+  showModal();
+  E.selectTrack(idx);
+  const nameEl = document.getElementById('tm-name');
+  if (nameEl) { nameEl.focus(); nameEl.select(); }
+  const refreshUI = () => { if (window.GomidasUI && E.getState) window.GomidasUI.refresh(E.getState()); };
+  const applyName = () => { const v = nameEl.value; hideModal(); if (v && v.trim()) E.setTrackName(v.trim()); };
+  document.getElementById('tm-ok').onclick = applyName;
+  document.getElementById('tm-cancel').onclick = hideModal;
+  nameEl.onkeydown = (e) => { if (e.key === 'Enter') applyName(); else if (e.key === 'Escape') hideModal(); };
+  document.getElementById('tm-mute').onclick = () => { flag().muted = !flag().muted; if (window.gomidasApplyMixer) window.gomidasApplyMixer(); hideModal(); refreshUI(); };
+  document.getElementById('tm-solo').onclick = () => { flag().soloed = !flag().soloed; if (window.gomidasApplyMixer) window.gomidasApplyMixer(); hideModal(); refreshUI(); };
+  document.getElementById('tm-hide').onclick = () => { flag().hidden = !flag().hidden; if (window.gomidasShowMulti) window.gomidasShowMulti(); hideModal(); };
+  document.getElementById('tm-add-g').onclick = () => { hideModal(); E.addTrack('guitar'); };
+  document.getElementById('tm-add-b').onclick = () => { hideModal(); E.addTrack('bass'); };
+  document.getElementById('tm-add-d').onclick = () => { hideModal(); E.addTrack('drums'); };
+  document.getElementById('tm-del').onclick = () => { hideModal(); E.deleteTrack(); };
+}
+window.gomidasOpenTrackMenu = openTrackMenu;
+
+// 3-band EQ popup (Low/Mid/High in dB). target: { master:true } or { idx:trackIndex }.
+// Drags update the engine live; Cancel reverts to the stored values. EQ is session-live
+// (held in gomidasTrackFlags[i].eq / gomidasMaster.eq) — not yet saved to .gomidas.
+function openEqDialog(target) {
+  if (!api || !api.score) return;
+  const isMaster = !!target.master;
+  const stored = isMaster
+    ? Object.assign({ low: 0, mid: 0, high: 0 }, window.gomidasMaster.eq)
+    : Object.assign({ low: 0, mid: 0, high: 0 }, (window.gomidasTrackFlags[target.idx] || {}).eq || {});
+  const channel = isMaster ? -1 : trackChannel(api.score.tracks[target.idx]);
+  const tname = isMaster ? 'Master EQ'
+    : ('EQ — ' + ((api.score.tracks[target.idx] || {}).name || ('Track ' + (target.idx + 1))));
+  const row = (id, label, val) =>
+    '<div class="m-field"><label>' + label + ' (<span id="eq-' + id + '-v">' + val + '</span> dB)</label>' +
+    '<input type="range" id="eq-' + id + '" min="-12" max="12" step="0.5" value="' + val + '"></div>';
+  modalBox.innerHTML =
+    '<div class="modal-h">' + tname + '</div>' +
+    '<div class="modal-body">' +
+      row('low', 'Low', stored.low) + row('mid', 'Mid', stored.mid) + row('high', 'High', stored.high) +
+      '<button class="m-btn ghost" id="eq-reset" style="margin-top:8px">Reset (flat)</button>' +
+    '</div>' +
+    '<div class="modal-foot">' +
+      '<button class="m-btn ghost" id="eq-cancel">Cancel</button>' +
+      '<button class="m-btn primary" id="eq-ok">Apply</button>' +
+    '</div>';
+  showModal();
+  const get = (id) => parseFloat(document.getElementById('eq-' + id).value) || 0;
+  const push = (lo, mi, hi) => { if (isMaster) window.gomidasSetMasterEq(lo, mi, hi); else window.gomidasSetTrackEq(channel, lo, mi, hi); };
+  const live = () => {
+    const lo = get('low'), mi = get('mid'), hi = get('high');
+    document.getElementById('eq-low-v').textContent = lo;
+    document.getElementById('eq-mid-v').textContent = mi;
+    document.getElementById('eq-high-v').textContent = hi;
+    push(lo, mi, hi);
+  };
+  ['low', 'mid', 'high'].forEach(id => document.getElementById('eq-' + id).addEventListener('input', live));
+  document.getElementById('eq-reset').onclick = () => { ['low', 'mid', 'high'].forEach(id => { document.getElementById('eq-' + id).value = 0; }); live(); };
+  document.getElementById('eq-ok').onclick = () => {
+    const eq = { low: get('low'), mid: get('mid'), high: get('high') };
+    if (isMaster) window.gomidasMaster.eq = eq;
+    else (window.gomidasTrackFlags[target.idx] || (window.gomidasTrackFlags[target.idx] = {})).eq = eq;
+    push(eq.low, eq.mid, eq.high);
+    hideModal();
+  };
+  document.getElementById('eq-cancel').onclick = () => { push(stored.low, stored.mid, stored.high); hideModal(); };
+}
+window.gomidasOpenEq = openEqDialog;
+
 // GP8 "Chord" (A): name the chord on the current beat, with an optional fret diagram
 // (comma/space-separated frets per string in alphaTab order; x or - = unplayed).
 function openChordDialog() {
@@ -865,6 +1131,14 @@ window.gomidasMenu = function (action) {
     case 'tripletfeel': E.toggleTripletFeel(); break;
     case 'dir': E.toggleDirection(arg); break;
     case 'fermata': E.toggleFermata(); break;
+    case 'dyn': E.setDynamics(arg); break;
+    case 'cresc': E.setCrescendo(arg); break;
+    case 'ottava': E.setOttava(arg); break;
+    case 'lyrics': openLyricsDialog(); break;
+    case 'transpose': openTransposeDialog(); break;
+    case 'print': try { window.print(); } catch (e) { nlog('print: ' + e); } break;
+    case 'minimize': nativeInvoke('minimizeWindow', 1); break;
+    case 'about': nativeInvoke('showAbout', 1); break;
     case 'dur': E.setDuration(parseInt(arg, 10)); break;
     case 'voice': E.selectVoice(parseInt(arg, 10) - 1); break;
     case 'tuplet': E.setTuplet(parseInt(arg, 10)); break;
@@ -904,6 +1178,8 @@ window.gomidasMenu = function (action) {
     case 'record': toggleRecord(); break;
     case 'zoom': window.gomidasZoom(arg === 'in' ? 1 : -1); break;
     case 'toggleview': window.gomidasToggleMultiView(); break;
+    case 'toggle': togglePanel(arg); break;
+    case 'fullscore': toggleFullScore(); break;
     default: break;
   }
   focusEditor();
@@ -936,7 +1212,24 @@ onClick('zoom-in', () => window.gomidasZoom(1));
 onClick('zoom-out', () => window.gomidasZoom(-1));
 onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(); focusEditor(); });
 onClick('redo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.redo(); focusEditor(); });
-onClick('rewind-btn', () => { nativeInvoke('stop', 1); focusEditor(); });
+onClick('rewind-btn', () => { if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); nativeInvoke('stop', 1); focusEditor(); });
+onClick('print-btn', () => window.gomidasMenu('print'));
+{
+  const cib = document.getElementById('countin-bars');
+  if (cib) cib.addEventListener('change', () => {
+    if (window.GomidasEditor && window.GomidasEditor.setCountInBars)
+      window.GomidasEditor.setCountInBars(parseInt(cib.value, 10) || 1);
+    focusEditor();
+  });
+}
+// Panel-toggle / full-view buttons route through gomidasMenu via their data-act.
+document.querySelectorAll('#transport [data-act]').forEach(b =>
+  b.addEventListener('click', () => { if (window.gomidasMenu) window.gomidasMenu(b.dataset.act); }));
+// F11 toggles full view; Escape exits it (only when active, so modals/inputs are unaffected).
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'F11') { e.preventDefault(); toggleFullScore(); }
+  else if (e.key === 'Escape' && document.body.classList.contains('fullscore')) { e.preventDefault(); toggleFullScore(); }
+}, true);
 onClick('metro-btn', () => {
   const on = window.gomidasToggleMetronome();
   const b = document.getElementById('metro-btn'); if (b) b.classList.toggle('on', on);
