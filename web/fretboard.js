@@ -799,8 +799,15 @@
     if (title) title.onchange = () => E.setSongTitle(title.value);
     const tempo = byId('ins-tempo');
     if (tempo) tempo.onchange = () => E.setSongTempo(parseInt(tempo.value, 10));
+    // Choosing a GM program switches the track back to the MIDI engine: clear any SFZ
+    // instrument on it (otherwise sfizz keeps overriding and the GM choice is inaudible).
+    const switchToMidi = () => {
+      const ch = window.gomidasCurrentTrackChannel && window.gomidasCurrentTrackChannel();
+      if (ch != null && window.gomidasTrackSfz && window.gomidasTrackSfz[ch] && window.gomidasClearTrackSfz)
+        window.gomidasClearTrackSfz();
+    };
     const sound = byId('ins-sound');
-    if (sound) sound.onchange = () => E.setTrackProgram(parseInt(sound.value, 10));
+    if (sound) sound.onchange = () => { E.setTrackProgram(parseInt(sound.value, 10)); switchToMidi(); };
     // SFZ instrument dropdown: '' = GM (clear), a preset id = load it, __file__ = native
     // chooser, __current__ = the already-loaded custom file (no-op).
     const sfzPreset = byId('ins-sfz-preset');
@@ -837,7 +844,7 @@
     if (not) not.querySelectorAll('span').forEach(sp => sp.onclick = () => E.toggleNotation(sp.dataset.not));
     // ---- drum-track inspector controls ----
     const kit = byId('ins-kit');
-    if (kit) kit.onchange = () => E.setTrackProgram(parseInt(kit.value, 10));
+    if (kit) kit.onchange = () => { E.setTrackProgram(parseInt(kit.value, 10)); switchToMidi(); };
     const genvar = byId('ins-genvar');
     if (genvar) genvar.onclick = () => { if (E.generateVariation) E.generateVariation(); refocus(); };
     const insmode = byId('ins-insmode');

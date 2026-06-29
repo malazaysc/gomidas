@@ -239,7 +239,40 @@ audio thread under `eqLock` + `eqDirty` (mirrors the `Sequence`/`mixDirty` swap)
 (Low/Mid/High −12..+12 dB); values live in `gomidasTrackFlags[i].eq` / `gomidasMaster` (**session-only —
 not yet saved to `.gomidas`**; vol/pan still persist via `playbackInfo`).
 
+### Per-track SFZ instruments (sfizz) — "realistic sound" / RSE-equivalent (2026-06-29)
+First step of the realistic-sound plan (full design: **`docs/REALISTIC_SOUND.md`**; CC0 content +
+licensing: **`docs/SOUND_LIBRARIES.md`**). A track can load an **SFZ sample instrument** played by
+**sfizz** (BSD/ISC); that channel renders via sfizz instead of TinySoundFont, through the **same
+per-channel EQ → mix → master bus**. `src/synth/SfzSynth.{h,cpp}` keeps **one `sfz::Sfizz` per MIDI
+channel**, mirroring `SoundFontSynth`. Threading mirrors the `pluginLock` idiom: a lock-free
+`activeMask()` lets the audio thread choose TSF-vs-SFZ routing per channel **without** touching
+instances; instances are only read between `tryLock()/unlock()`; loads swap+free on the message thread
+under the lock. `AudioEngine` forks in `applyEvent` + the per-channel render loop (SFZ-channel mixer
+gain/pan applied **post-render**, since sfizz bypasses TSF's internal volume/pan). The per-block lock is
+taken **after** the only early-return so it can't leak.
+- **Content/presets:** small CC0 SFZ sets are bundled in `assets/instruments/` (FreePats classical
+  guitar 5.2 MB, electric bass 2.8 MB) → copied to `Gomidas.app/Contents/Resources/instruments` by a
+  CMake POST_BUILD step. Inspector **SOUNDS** has a live RSE/MIDI pill + a **Preset** dropdown
+  (GM SoundFont | bundled presets | loaded custom file | Load file…). Native `loadTrackSfzPreset`
+  resolves the bundled path; `loadTrackSfz`/`clearTrackSfz` handle custom files + clearing. Picking a GM
+  Sound/Kit clears the SFZ (switches the track back to MIDI). Drums are **not** bundled (good CC0 kits
+  are 1.6–2.3 GB → future download-on-first-run).
+- **Persistence:** `.gomidas` now wraps the score in an envelope `{ gomidasVersion, instruments, score }`
+  (`saveProject`/`gomidasLoadProject` in `app.js`); legacy raw-score files still load. Built-in presets
+  persist (matched by name) + reload; custom file loads are session-only.
+- **Event format extended** (`NoteEvent.kind`/`value`): kind 0=note, 1=pitch-bend, 2=CC. Native parses
+  optional 8th/9th array elements; `applyEvent` dispatches to TSF (`tsf_channel_set_pitchwheel`/
+  `_midi_control`, bend range ±12) or sfizz (`pitchWheel`/`cc`; bundled SFZs given `bend_up/down=1200`).
+  **Additive — no kind≠0 events are emitted yet.** Slide/bend *emission* is deferred until it can be
+  ear-verified (a mis-ordered bend reset would detune a whole channel).
+- **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
+  `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
+  flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.
+- **Audio path verified (non-GUI):** `tests/sfz_smoketest.cpp` (`-DGOMIDAS_BUILD_TESTS=ON`) loads a bundled
+  SFZ, plays a note, asserts non-silent output — guitar+bass PASS (FLAC decode + render confirmed). The
+  in-app inspector→engine→speakers routing is still GUI-only; ear-check via inspector Preset → play.
+
 ### Real-time-safety caveats (milestone-1; harden before shipping)
-TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, and **the EQ
-coeff swap (`eqLock`)**, all happen on the audio thread under a `SpinLock` (tryEnter). Fine for a dev
-build; revisit for production.
+TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ
+coeff swap (`eqLock`)**, and **the per-channel SFZ instance swap (`SfzSynth`'s lock)**, all happen on the
+audio thread under a `SpinLock` (tryEnter). Fine for a dev build; revisit for production.

@@ -244,9 +244,11 @@ What's wired: `src/synth/SfzSynth.{h,cpp}` (one `sfz::Sfizz` per channel, mirror
 `tryLock()`), native `loadTrackSfz`/`clearTrackSfz`, Sound-menu items, JS `currentTrackChannel()` /
 `gomidasSfzLoaded`.
 
-**To verify audio:** run the app → select a track → Sound → *Load SFZ Instrument for Track…* →
-`~/Music/GomidasTest/test.sfz` (a generated test tone) → play. Real CC0 instruments per
-[`SOUND_LIBRARIES.md`](./SOUND_LIBRARIES.md) come next.
+**Audio path verified (non-GUI):** `tests/sfz_smoketest.cpp` (build with `-DGOMIDAS_BUILD_TESTS=ON`)
+loads a bundled SFZ, plays a note, and asserts non-silent output. Both bundled instruments PASS
+(guitar RMS 0.0148, bass 0.0129) — so sfizz loads our SFZ, decodes the FLAC samples, and renders
+audio. **Still GUI-only:** the in-app routing (inspector preset → engine → speakers). To confirm:
+run the app → TRACK inspector → Sounds → Preset → *Classical Guitar* → play.
 
 ## 8. Related docs / memory
 - [`SOUND_LIBRARIES.md`](./SOUND_LIBRARIES.md) — license-verified CC0/permissive content reference.

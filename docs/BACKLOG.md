@@ -169,8 +169,9 @@ Drums:
   abstraction deferred — `SfzSynth` is the concrete first backend; refactor when VST instruments land._
 - [x] Sequencer routing fork: SFZ channels routed in `applyEvent` + the render loop (mixer gain/pan applied
   post-render since sfizz bypasses TSF volume/pan)
-- [~] Prove end-to-end: builds, links, app launches clean. **Audio not yet runtime-verified** — needs GUI:
-  Sound → Load SFZ Instrument for Track → `~/Music/GomidasTest/test.sfz` → play
+- [x] Prove end-to-end: builds/links/launches; **`tests/sfz_smoketest` confirms sfizz loads the bundled
+  SFZ + decodes FLAC + renders non-silent audio** (guitar+bass PASS). In-app GUI routing → speakers still
+  needs an ear-check (inspector Preset → play).
 - [x] **Event-format plumbing**: `NoteEvent` gains `kind`+`value` (0=note, 1=pitch-bend, 2=CC); native parses
   the optional 8th/9th array elements; `applyEvent` dispatches to TSF (`tsf_channel_set_pitchwheel`/`_midi_control`,
   bend range widened to ±12) and sfizz (`pitchWheel`/`cc`; bundled SFZs given `bend_up/down=1200`). Additive —

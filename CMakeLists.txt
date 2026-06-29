@@ -124,6 +124,14 @@ target_compile_definitions(Gomidas PRIVATE
   JUCE_PLUGINHOST_AU=1
   JUCE_PLUGINHOST_VST3=1)
 
+# Standalone test tools (off by default): -DGOMIDAS_BUILD_TESTS=ON
+option(GOMIDAS_BUILD_TESTS "Build standalone test tools (sfz_smoketest)" OFF)
+if(GOMIDAS_BUILD_TESTS)
+  add_executable(sfz_smoketest tests/sfz_smoketest.cpp)
+  target_link_libraries(sfz_smoketest PRIVATE sfizz::sfizz)
+  set_target_properties(sfz_smoketest PROPERTIES CXX_STANDARD 17)
+endif()
+
 target_link_libraries(Gomidas PRIVATE
   GomidasAssets
   sfizz::sfizz
