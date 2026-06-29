@@ -286,6 +286,11 @@
     .insp-pill { display: inline-flex; gap: 6px; }
     .insp-pill span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--ctrl); font-size: 11px; }
     .insp-pill span.on { background: var(--accent); border-color: var(--accent2); color: #fff; }
+    /* Engine status badge — a label, NOT a button (no hand cursor, no click) */
+    .insp-engine { padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+                   cursor: default; user-select: none; letter-spacing: .02em; }
+    .insp-engine.is-midi { background: var(--ctrl); border: 1px solid var(--line); color: var(--dim); }
+    .insp-engine.is-sample { background: var(--accent); border: 1px solid var(--accent2); color: #fff; }
     .insp-btn { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--ctrl); color: var(--text); font-size: 11px; cursor: pointer; }
     .insp-btn:hover { border-color: var(--accent2); }
     .insp-sfz { font-size: 11px; color: var(--dim); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -386,6 +391,14 @@
               background: color-mix(in srgb, var(--bc, #555) 26%, #14141a); }
     .tk-bar:hover { outline: 1px solid #fff5; outline-offset: -1px; }
     .tk-bar.fill { background: var(--bc, var(--accent)); }
+    /* GP-style bar-fill markers: amber dot = incomplete, red = overfilled */
+    .tk-bar.bf-under.fill { background: linear-gradient(var(--bc, var(--accent)), var(--bc, var(--accent))); }
+    .tk-bar.bf-under::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 4px; height: 4px;
+                              border-radius: 50%; background: #f5a623; }
+    .tk-bar.bf-over { outline: 1.5px solid #e5484d; outline-offset: -1.5px; }
+    .tk-bar.bf-over::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 4px; height: 4px;
+                             border-radius: 50%; background: #e5484d; }
+    .tk-bar { position: relative; }
     .tk-bar.cur { box-shadow: inset 0 0 0 1.5px #fff; }
 
     /* editable inspector controls */

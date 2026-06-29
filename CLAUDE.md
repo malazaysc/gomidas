@@ -171,8 +171,9 @@ numbers) then clear it. Kit pieces resolve to the articulation index by `outputM
 (`drumArtIndex`). **Theme:** the app uses a purple accent (`--accent #7b5cff`); track colors are
 kind-based (drums purple / bass blue / guitar orange) and the bottom timeline is a continuous
 colored band per track.
-**Feedback:** clicking a fret auditions the note/chord (native `preview`). Edit + play cursors
-span notation+tab and follow the native transport.
+**Feedback:** clicking a fret auditions the note/chord (native `preview`). **One unified cursor**
+spans notation+tab: it follows the native transport during playback and stays where playback stopped
+(written back into `cur`), so Play always resumes from the cursor (`commitPlayPositionToCursor`).
 
 Key facts learned (don't relearn):
 - alphaTab renders into a `.at-surface` div at the `#at` padding offset (24,24) — cursor/click
@@ -217,7 +218,8 @@ and/or a bar-window render (`settings.display.startBar`/`barCount`) around the c
   multi-track + add/delete-track, New/Open/Save (.gomidas), undo/redo, native MIDI playback + transport
   (starts from the edit cursor) + FluidR3 SoundFont, per-note audition. Selection + copy/cut/paste, voices
   1–4, time/key sig, repeats, tuplets (incl. spanning), keyboard drum entry (17-pc kit), full GP8 effect set,
-  text/directions/fermata/chords, D.C./D.S. + repeat playback. **Deferred:** bend editor; multirest.
+  text/directions/fermata/chords, D.C./D.S. + repeat playback, bends (preset shapes + pitch-bend MIDI).
+  **Deferred:** graphical bend-curve editor; multirest; alternate-endings/Coda playback order.
 - **Phase 2 — play on top: DONE except the depth items.** per-track mixer (vol/pan/mute/solo, persisted),
   A/B loop, metronome, count-in, tempo slow-down (pitch-independent), **live input + AU/VST3 plugin insert +
   plugin editor window**, input gain, output VU meter, WAV recording, panic. `MICROPHONE_PERMISSION_ENABLED`
@@ -263,8 +265,11 @@ taken **after** the only early-return so it can't leak.
 - **Event format extended** (`NoteEvent.kind`/`value`): kind 0=note, 1=pitch-bend, 2=CC. Native parses
   optional 8th/9th array elements; `applyEvent` dispatches to TSF (`tsf_channel_set_pitchwheel`/
   `_midi_control`, bend range ±12) or sfizz (`pitchWheel`/`cc`; bundled SFZs given `bend_up/down=1200`).
-  **Additive — no kind≠0 events are emitted yet.** Slide/bend *emission* is deferred until it can be
-  ear-verified (a mis-ordered bend reset would detune a whole channel).
+  **Bend emission is live** (`emitBendEvents` in `app.js`): a bent note's `bendPoints` are traced as
+  kind-1 pitch-bend events over the note, then the wheel is **reset to centre at a fractional tick just
+  before the note end** so it sorts before the next note-on and never leaves the channel detuned. Bend is
+  per-channel (a bent note bends the whole channel in a chord — fine for lead bends). Imported GP bends
+  play too. _Still deferred:_ pitch-bend *slides* (legato vs shift nuance) + CC emission.
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
   `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
   flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.

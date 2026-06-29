@@ -84,11 +84,12 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Directions (Segno/Coda/Fine, D.C./D.S. jumps) | menu Section | `D` | ✅ notation + **playback**: D.C. / D.C. al Fine / D.S. / D.S. al Fine drive the play order (once, stop at Fine). Coda variants → backlog |
 | Fermata | `F` / menu Section | same | 🟡 per-beat hold (notation); playback timing unchanged |
 | Chord | `A` / menu Note→Chord | same | ✅ names a chord on the beat (+ optional fret diagram); modal, blank clears |
-| Triplet feel (swing) | `⌘/` / menu Note | same | 🟡 notation from the current bar onward; MIDI doesn't swing yet |
+| Triplet feel (swing) | `⌘/` / menu Note | same | ✅ notation from the current bar onward; **MIDI swings** (2:1 8th-grid warp in `rebuildSequence`). ⚠ confirm feel by ear |
 
 ## Effects
 | Feature | Gomidas key | GP8 | Notes |
 | --- | --- | --- | --- |
+| Bend | `B` / menu Effects→Bend… | `B` | ✅ preset shapes (full / half / bend&release / pre-bend / pre-bend&release); **MIDI pitch-bend emitted** (per-channel; resets to centre at note end). Imported GP bends play too. ⚠ confirm pitch by ear |
 | Palm mute (current note) | `P` | same | ✅ shorter+softer in MIDI playback |
 | Palm mute (whole beat) | `⇧P` / toolbar `P.M.` | same | ✅ |
 | Dead note | `X` / toolbar `✕` | same | ✅ short percussive thunk in MIDI |
@@ -113,6 +114,11 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Grace note (before / on beat) | `G` / menu (on beat) | `G` / `⌥G` | 🟡 notation; MIDI plain |
 | Slap / pop | `$` / menu (pop) | same | 🟡 bass; notation; MIDI plain |
 | Fade in / out / volume swell | `<` / `>` / menu (swell) | `<` / `>` / `⌥<` | 🟡 notation; MIDI plain |
+| Tremolo / whammy bar | menu Effects→Tremolo Bar | `⌥V` | 🟡 beat-level dip-and-return (`whammyBarType` Dip + bend points); notation; MIDI plain |
+| Wah open / closed | menu Effects→Wah Open/Closed | `⌥O` / `⌥C` | 🟡 beat-level `wahPedal`; notation; MIDI plain |
+| Rasgueado | `⇧R` / menu Effects | `⇧R` | 🟡 beat-level flamenco strum (`rasgueado`); notation; MIDI plain |
+| Left-hand tapping | `(` / menu Effects | `(` | 🟡 note-level `isLeftHandTapped`; notation; MIDI plain |
+| Tapping | `)` / menu Effects | `)` | 🟡 beat-level `tap`; notation; MIDI plain |
 
 ## Drum view (KIT VIEW / GROOVE EDITOR / MIXER) — reference redesign (2026-06-28)
 | Feature | How | Notes |
@@ -144,8 +150,8 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 ## Playback / transport
 | Feature | Key | Notes |
 | --- | --- | --- |
-| Play / stop | `Space` / toolbar `▶ Play` | ✅ native transport owns the clock (960 PPQ). **Starts from the edit cursor** (seeks the transport to the cursor's tick before playing), not bar 1. Space is ignored while typing in a field / modal |
-| Edit + play cursors over tab & notation | automatic | ✅ follow native transport |
+| Play / stop | `Space` / toolbar `▶ Play` | ✅ native transport owns the clock (960 PPQ). **Starts from the edit cursor** (seeks the transport to the cursor's tick before playing), not bar 1. **Resumes from the green play position** after a stop unless the edit cursor was repositioned since. Space is ignored while typing in a field / modal |
+| Single cursor over tab & notation | automatic | ✅ one cursor; follows the transport while playing and stays where playback stopped (Play resumes from it) |
 | Auto-scroll during playback | automatic | ✅ keeps the play cursor in view (GP-style page turn); only scrolls near an edge. Toggle: `GomidasEditor.setAutoScroll(bool)` |
 | Auto-scroll to the **edit** cursor | automatic | ✅ as you navigate/edit, the score scrolls to keep the edit cursor in view (edge-triggered, instant; stands down during playback). Same `setAutoScroll` toggle |
 | A/B loop | `⌘L` / menu Sound→Loop Selection | — | ✅ loops the beat selection (or current bar) via `AudioEngine::setLoopRange`; `⌘L` again or Clear Loop turns it off; cleared on score load |
@@ -184,16 +190,18 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | **Collapse / expand panels** | transport ◧ ◨ ▤ buttons / View menu | — | ✅ toggle the left palette / right inspector / track list individually; score reflows |
 | **Full view** | transport ⛶ / `F11` / `Esc` / View→Full View | — | ✅ hides all chrome (palette, inspector, tracks, fretboard) leaving transport + score; `Esc` or toggle exits |
 | Track row controls | bottom track list | ✅ color swatch · instrument icon · name · show/hide · mute · solo · volume fader + value · **pan knob** (drag; double-click = center) · **EQ button** (3-band per-track EQ popup) · **⋮ track-options menu** (rename / mute / solo / hide / add / delete) |
-| **Per-track + master EQ** | track-list EQ buttons / Master row | ✅ 3-band EQ (low/mid/high, −12..+12 dB) per track and on the master, live. Synth re-architected into **per-channel audio buses** (`tsf_copy`) so each track EQs independently. **Session-only** — not yet saved to `.gomidas` |
+| **Per-track + master EQ** | track-list EQ buttons / Master row | ✅ 3-band EQ (low/mid/high, −12..+12 dB) per track and on the master, live. Synth re-architected into **per-channel audio buses** (`tsf_copy`) so each track EQs independently. **Persisted** in the `.gomidas` envelope (`mix`: per-track `eq` + master `{vol,pan,eq}`) |
 | **Master row** | bottom track list | ✅ live master volume + balance pan + EQ |
-| **Expanded left palette** | left palette | ✅ GP8 sections: voice tabs 1–4, Lyrics/Chords, bar & signatures, octave/clef (8va/8vb/15ma/15mb → `beat.ottava`, shifts playback octave), durations, tuplets, **dynamics ppp–fff** (→ velocity), **crescendo/diminuendo** (notation marking), articulation grid (~30 effects), bars & beats |
+| **Expanded left palette** | left palette | ✅ GP8 sections: voice tabs 1–4, Lyrics/Chords, bar & signatures, octave/clef (8va/8vb/15ma/15mb → `beat.ottava`, shifts playback octave), durations, tuplets, **dynamics ppp–fff** (→ velocity), **crescendo/diminuendo** (notation marking **+ playback velocity ramp** across the hairpin span), articulation grid (~30 effects), bars & beats |
 | Native macOS menu bar | menu bar | File / Edit / Track / Bar / Note / Effects / Section / Tools / Sound / View / Window / Help |
 | Track mute / solo | track-list M / S | ✅ live via per-channel gain in `AudioEngine` (`setChannelMix`); solo overrides mute; takes effect instantly during playback |
 | Track volume (mixer) | track-list slider | ✅ per-track linear gain (0–100%), live; defaults from `playbackInfo.volume` |
 | Track pan (mixer) | inspector TRACK→Mixer slider | ✅ per-track pan (L/C/R), live via `setChannelMix`; defaults from `playbackInfo.balance` |
 | Track show / hide | track-list 👁 | ✅ toggles the track in the score (multi-track view); does not mute it |
 | Single-track focus | click a track row / `track-select` | ✅ shows that track alone (GP-style); eye control returns to multi-track view |
-| Inspector — TRACK (live) | right panel | ✅ color swatch + instrument icon + short-name badge · editable name · **notation icon toggles** (staff/tab) · tuning preset picker · GM sound picker · pan. **Deferred (greyed `.gd-soon`):** RSE pill segment + Interpretation section (playing-style sim) |
+| Inspector — TRACK (live) | right panel | ✅ color swatch + instrument icon + short-name badge · editable name · **notation icon toggles** (staff/tab) · **re-tune picker** (expanded presets + saved user tunings + **Custom / Edit…** per-string editor) · GM sound picker · pan. SOUNDS controls follow the engine mode (RSE hides the GM picker). **Deferred (greyed `.gd-soon`):** Interpretation section (playing-style sim) |
+| Custom tuning editor | inspector tuning → Custom / Edit… | — | ✅ per-string pitch picker modal; **Save & apply** persists to `localStorage` (`gomidasUserTunings`), saved tunings (★) merge into the preset list for matching string counts |
+| **GP-style bar-fill indicator** | timeline + status line | — | ✅ per-bar `under`/`exact`/`over` classifier across all voices; amber dot = incomplete, red = overfilled on the track-list squares; status line warns for the current bar |
 | Transport view clusters | transport | 🟡 page-view toggles (page/vert/wide) + right instrument cluster (audio/guitar/keys/drums) are single-select **visual** toggles. **Print** works (`window.print()`); **Tuner** is deferred (greyed) |
 | Print | transport `🖨` / menu File→Print | ✅ prints the rendered score via the WebView |
 | Transpose | menu Tools→Transpose | ✅ shift current beat or whole track by ±24 semitones (tab: shifts frets) |

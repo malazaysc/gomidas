@@ -259,6 +259,9 @@ void AudioEngine::applyEvent (const NoteEvent& e)
     // Channels backed by an SFZ instrument are routed to sfizz (never to TSF). cbSfzMask
     // is read lock-free; we only touch instances when we hold the lock (cbSfzLocked).
     const bool useSfz = (e.channel >= 0 && e.channel < 16 && ((cbSfzMask >> e.channel) & 1) != 0);
+    // Mark the channel so the render loop forces a renderBlock this callback (sfizz applies
+    // queued events on the next renderBlock; skipping it would strand this note/cc).
+    if (useSfz && cbSfzLocked) cbSfzEvented |= (std::uint16_t) (1u << e.channel);
 
     if (e.kind == 1)   // pitch-bend
     {
@@ -300,12 +303,18 @@ void AudioEngine::applyEvent (const NoteEvent& e)
 
 bool AudioEngine::loadChannelSfz (int channel, const juce::File& sfzFile)
 {
-    return sfz.loadChannel (channel, sfzFile);
+    const bool ok = sfz.loadChannel (channel, sfzFile);
+    // Silence any notes ringing across the engine→SFZ routing switch so the old voices
+    // (TSF on this channel) don't hang once routing flips to sfizz.
+    if (ok) flushRequested.store (true);
+    return ok;
 }
 
 void AudioEngine::clearChannelSfz (int channel)
 {
     sfz.clearChannel (channel);
+    // Switching back to TSF: silence so any abandoned SFZ voices / stale TSF voices don't hang.
+    flushRequested.store (true);
 }
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -407,8 +416,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     // Acquire the SFZ routing/render lock for this block. Placed AFTER the only early
     // return so it can never leak. cbSfzMask is lock-free (which channels use SFZ);
     // cbSfzLocked means instances are safe to touch in applyEvent + the render loop.
-    cbSfzMask   = sfz.activeMask();
-    cbSfzLocked = (cbSfzMask != 0) && sfz.tryLock();
+    cbSfzMask    = sfz.activeMask();
+    cbSfzLocked  = (cbSfzMask != 0) && sfz.tryLock();
+    cbSfzEvented = 0;   // set by applyEvent for channels that get an event this block
 
     if (playing.load() && activeSequence != nullptr)
     {
@@ -488,7 +498,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         const bool useSfz = ((cbSfzMask >> c) & 1) != 0;
         bool rendered = false;
         if (useSfz)
-            rendered = cbSfzLocked && sfz.renderChannel (c, channelBuffer, numSamples);
+            rendered = cbSfzLocked && sfz.renderChannel (c, channelBuffer, numSamples,
+                                                         ((cbSfzEvented >> c) & 1) != 0);
         else
             rendered = synth.renderChannel (c, channelBuffer, numSamples);
         if (! rendered)

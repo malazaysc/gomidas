@@ -192,8 +192,83 @@ window.gomidasMetronomeOn = () => metronomeOn;
 // A free melodic channel for the count-in click (editor reads this).
 window.gomidasFreeClickChannel = function () { return (api && api.score) ? freeMelodicChannel(api.score) : 15; };
 
+// Per-beat velocity multipliers for crescendo / diminuendo hairpins: a run of
+// consecutive beats carrying the same crescendo type ramps 0.6→1.0 (cresc) or
+// 1.0→0.6 (dim) across the span. Returns an array aligned to `beats`.
+function crescendoFactors(beats) {
+  const CT = (alphaTab.model && alphaTab.model.CrescendoType) || { None: 0, Crescendo: 1, Decrescendo: 2 };
+  const f = new Array(beats.length).fill(1);
+  let i = 0;
+  while (i < beats.length) {
+    const c = beats[i].crescendo | 0;
+    if (!c || c === CT.None) { i++; continue; }
+    let j = i;
+    while (j < beats.length && (beats[j].crescendo | 0) === c) j++;
+    const run = j - i;
+    for (let k = 0; k < run; k++) {
+      const frac = run > 1 ? k / (run - 1) : 1;
+      f[i + k] = (c === CT.Crescendo) ? (0.6 + 0.4 * frac) : (1.0 - 0.4 * frac);
+    }
+    i = j;
+  }
+  return f;
+}
+
+// Swing map for triplet-feel bars: warps a within-bar tick onto a triplet 8th grid
+// (frac 0→0, 0.5→2/3, 1→1 — a monotonic 2:1 swing). Fixed at the 8th points so 8th
+// pairs swing while bar boundaries stay put. ⚠ Timing feel — confirm by ear.
+function swungTickInBar(rel) {
+  const quarter = WHOLE_TICKS / 4;
+  const beatIdx = Math.floor(rel / quarter);
+  const frac = (rel - beatIdx * quarter) / quarter; // 0..1 within the quarter
+  const sf = (frac <= 0.5) ? (frac * (2 / 3) / 0.5) : (2 / 3 + (frac - 0.5) * (1 / 3) / 0.5);
+  return Math.round(beatIdx * quarter + sf * quarter);
+}
+
+// Pitch-bend MIDI. alphaTab BendPoint.value is in 1/4 tones (4 = a full/whole-tone bend
+// = 2 semitones), offset 0..60 across the note. The native bend range is ±12 semitones
+// over the 14-bit wheel (8192 = centre).
+function bendValueToSemitones(v) { return (v || 0) / 2.0; }
+function semitonesToWheel(semis) {
+  return Math.max(0, Math.min(16383, Math.round(8192 + (semis / 12.0) * 8192)));
+}
+// Emit pitch-bend events tracing a note's bend curve from onTick→offTick, then RESET the
+// wheel to centre just before the note ends so following notes on the same channel aren't
+// left detuned (the reset tick is fractional so it sorts before the next note-on).
+// NOTE: pitch bend is per-CHANNEL — in a chord a bent note bends the whole channel. Fine
+// for single-note lead bends; documented limitation. ⚠ confirm pitch by ear.
+function emitBendEvents(events, channel, program, onTick, offTick, bendPoints) {
+  const pts = bendPoints.slice().sort((a, b) => (a.offset || 0) - (b.offset || 0));
+  if (!pts.length) return;
+  const valAt = (off) => {
+    if (off <= (pts[0].offset || 0)) return pts[0].value || 0;
+    for (let i = 1; i < pts.length; i++) {
+      if (off <= (pts[i].offset || 0)) {
+        const a = pts[i - 1], b = pts[i];
+        const span = ((b.offset || 0) - (a.offset || 0)) || 1;
+        const t = (off - (a.offset || 0)) / span;
+        return (a.value || 0) + ((b.value || 0) - (a.value || 0)) * t;
+      }
+    }
+    return pts[pts.length - 1].value || 0;
+  };
+  const dur = Math.max(1, offTick - onTick);
+  const resetTick = offTick - 0.5;            // sorts just before the next note-on
+  const STEPS = 12;
+  for (let i = 0; i <= STEPS; i++) {
+    const f = i / STEPS;
+    const tick = onTick + f * dur;
+    if (tick >= resetTick - 0.25) break;      // don't overshoot the held end value
+    events.push([tick, channel, 0, 0, false, program, false, 1, semitonesToWheel(bendValueToSemitones(valAt(f * 60)))]);
+  }
+  // Hold the curve's end value right up to the note end, then reset to centre.
+  events.push([resetTick - 0.25, channel, 0, 0, false, program, false, 1, semitonesToWheel(bendValueToSemitones(valAt(60)))]);
+  events.push([resetTick, channel, 0, 0, false, program, false, 1, 8192]);
+}
+
 function rebuildSequence() {
   const score = api.score;
+  const TF = (alphaTab.model && alphaTab.model.TripletFeel) || { NoTripletFeel: 0, Triplet8th: 1 };
   const events = [];
   const tickMap = [];               // [{tick, beat}] ascending, primary rendered track
   let lengthTicks = 0;
@@ -218,13 +293,20 @@ function rebuildSequence() {
         if (!bar) continue;
         const barStart = trackTick;
         let barEnd = barStart;
+        // Triplet feel → swing the within-bar 8th grid (identity otherwise).
+        const mbar = score.masterBars[mbIndex];
+        const swung = !!(mbar && mbar.tripletFeel === TF.Triplet8th);
+        const sw = swung ? (abs) => barStart + swungTickInBar(abs - barStart) : (abs) => abs;
         for (const voice of bar.voices) {
           let t = barStart;
+          const cresc = crescendoFactors(voice.beats);   // hairpin velocity ramp
+          let bIdx = -1;
           for (const beat of voice.beats) {
+            bIdx++;
             const dur = beatTicks(beat);
-            if (isPrimary && voice.index === 0) tickMap.push({ tick: t, beat });
+            if (isPrimary && voice.index === 0) tickMap.push({ tick: sw(t), beat });
             if (!beat.isEmpty && !beat.isRest) {
-              const vel = dynamicsToVelocity(beat.dynamics);
+              const vel = dynamicsToVelocity(beat.dynamics) * cresc[bIdx];
               const ottava = percussion ? 0 : ottavaSemitones(beat.ottava);
               for (const note of beat.notes) {
                 let key;
@@ -253,17 +335,22 @@ function rebuildSequence() {
                   const g = window.gomidasDrumGains[key];
                   if (g != null) noteVel = Math.max(0, Math.min(1, noteVel * g));
                 }
+                const onTick = sw(t), offTick = sw(t + noteDur);
                 const id = channel + ':' + key;
                 // Tie: don't re-trigger — extend the still-ringing note's note-off.
-                if (note.isTieDestination && lastOff[id]) { lastOff[id][0] = t + noteDur; continue; }
+                if (note.isTieDestination && lastOff[id]) { lastOff[id][0] = offTick; continue; }
                 // A new note on a string cuts (or, for a let-ring note, extends) any
                 // let-ring note still sounding on that same string.
                 const stringNo = (!percussion && note.string != null) ? note.string : null;
-                if (stringNo != null && ringOff[stringNo]) { ringOff[stringNo][0] = t; ringOff[stringNo] = null; }
-                events.push([t, channel, key, noteVel, true, program, percussion]);
-                const off = [t + noteDur, channel, key, 0.0, false, program, percussion];
+                if (stringNo != null && ringOff[stringNo]) { ringOff[stringNo][0] = onTick; ringOff[stringNo] = null; }
+                events.push([onTick, channel, key, noteVel, true, program, percussion]);
+                const off = [offTick, channel, key, 0.0, false, program, percussion];
                 events.push(off);
                 lastOff[id] = off;
+                // Pitch-bend curve for bent notes (imported or edited). Per-channel; resets
+                // to centre at the note end. Skipped for percussion and tie destinations.
+                if (!percussion && !note.isTieDestination && note.bendPoints && note.bendPoints.length)
+                  emitBendEvents(events, channel, program, onTick, offTick, note.bendPoints);
                 // Let ring: hold until the next note on this string (or the track end).
                 if (note.isLetRing && stringNo != null) ringOff[stringNo] = off;
               }
@@ -662,6 +749,82 @@ const modalBox = document.getElementById('modal-box');
 function hideModal() { modalOverlay.classList.remove('show'); modalBox.innerHTML = ''; focusEditor(); }
 function showModal() { modalOverlay.classList.add('show'); }
 modalOverlay.addEventListener('mousedown', (e) => { if (e.target === modalOverlay) hideModal(); });
+
+// ---- custom tunings (author + save/load, persisted in localStorage) ----------
+function userTuningList() { try { return JSON.parse(localStorage.getItem('gomidasUserTunings') || '[]'); } catch (e) { return []; } }
+function saveUserTuning(name, midis) {
+  const list = userTuningList().filter(t => t.name !== name);
+  list.push({ name: String(name).slice(0, 40), midis: midis.slice() });
+  try { localStorage.setItem('gomidasUserTunings', JSON.stringify(list)); } catch (e) {}
+}
+window.gomidasUserTunings = userTuningList;
+window.gomidasSaveUserTuning = saveUserTuning;
+
+const TUN_NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function midiToTuningName(m) { return TUN_NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+// Per-string tuning editor: pick each string's pitch (high→low), Apply, optionally Save.
+function openTuningEditor(midis, onApply) {
+  let cur = (midis && midis.length) ? midis.slice() : [64, 59, 55, 50, 45, 40];
+  const noteOpts = (sel) => { let o = ''; for (let m = 24; m <= 84; m++) o += '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + midiToTuningName(m) + '</option>'; return o; };
+  function render() {
+    modalBox.innerHTML =
+      '<div class="modal-h">Custom tuning</div>' +
+      '<div class="modal-body"><div class="m-msg">Set each string’s pitch (string 1 = highest). Frets are kept; pitches shift.</div>' +
+        '<div class="m-tunstrings" id="te-strings">' +
+          cur.map((m, i) => '<div class="m-row" style="align-items:center;gap:8px;margin:4px 0">' +
+            '<span style="width:64px;color:var(--dim);font-size:12px">String ' + (i + 1) + '</span>' +
+            '<select class="te-note" data-i="' + i + '">' + noteOpts(m) + '</select></div>').join('') +
+        '</div>' +
+        '<div class="m-field" style="margin-top:10px"><label>Save as (optional)</label><input type="text" id="te-name" placeholder="My tuning"></div>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button class="m-btn ghost" id="te-cancel">Cancel</button>' +
+        '<button class="m-btn" id="te-save">Save &amp; apply</button>' +
+        '<button class="m-btn primary" id="te-apply">Apply</button>' +
+      '</div>';
+    wire();
+  }
+  function readStrings() {
+    return Array.from(modalBox.querySelectorAll('.te-note')).map(s => parseInt(s.value, 10));
+  }
+  function wire() {
+    modalBox.querySelectorAll('.te-note').forEach(s => s.onchange = () => { cur = readStrings(); });
+    document.getElementById('te-cancel').onclick = hideModal;
+    document.getElementById('te-apply').onclick = () => { const m = readStrings(); hideModal(); if (onApply) onApply(m); };
+    document.getElementById('te-save').onclick = () => {
+      const m = readStrings();
+      const nm = (document.getElementById('te-name').value || '').trim();
+      if (nm) saveUserTuning(nm, m);
+      hideModal(); if (onApply) onApply(m);
+    };
+  }
+  render();
+  showModal();
+}
+window.gomidasOpenTuningEditor = openTuningEditor;
+
+// ---- bend dialog (GP "B") — preset bend shapes on the current note ----------
+function openBendDialog() {
+  const E = window.GomidasEditor; if (!E) return;
+  const opts = [
+    ['full', 'Bend — full (whole step)'],
+    ['half', 'Bend — half (½ step)'],
+    ['fullrelease', 'Bend & Release'],
+    ['prebend', 'Pre-bend (hold)'],
+    ['prebendrelease', 'Pre-bend & Release'],
+    ['none', 'Remove bend'],
+  ];
+  modalBox.innerHTML =
+    '<div class="modal-h">Bend</div>' +
+    '<div class="modal-body"><div class="m-msg">Apply a bend to the note under the cursor.</div>' +
+      opts.map(([k, l]) => '<button class="m-btn bendopt" data-k="' + k + '" style="display:block;width:100%;margin:5px 0;text-align:left">' + l + '</button>').join('') +
+    '</div>' +
+    '<div class="modal-foot"><button class="m-btn ghost" id="bend-cancel">Cancel</button></div>';
+  showModal();
+  document.getElementById('bend-cancel').onclick = hideModal;
+  modalBox.querySelectorAll('.bendopt').forEach(b => b.onclick = () => { E.setBend(b.dataset.k); hideModal(); });
+}
+window.gomidasOpenBend = openBendDialog;
 
 // Run cb, but if there are unsaved edits first ask the user to confirm discarding them.
 function confirmDiscard(cb) {
@@ -1107,7 +1270,16 @@ function saveProject() {
     const p = presets.find(x => x.name === sfz[ch]);
     if (p) instruments[String(ch)] = p.id;
   }
-  const payload = JSON.stringify({ gomidasVersion: 1, instruments, score: scoreJson });
+  // Per-track + master EQ (and master vol/pan) are session-live elsewhere; persist them
+  // here in the envelope (track vol/pan already ride in playbackInfo). Keyed by track index.
+  const mix = { tracks: {}, master: null };
+  const flags = window.gomidasTrackFlags || {};
+  for (const i in flags) if (flags[i] && flags[i].eq) mix.tracks[i] = { eq: flags[i].eq };
+  if (window.gomidasMaster) {
+    const m = window.gomidasMaster;
+    mix.master = { vol: m.vol, pan: m.pan, eq: Object.assign({ low: 0, mid: 0, high: 0 }, m.eq || {}) };
+  }
+  const payload = JSON.stringify({ gomidasVersion: 1, instruments, mix, score: scoreJson });
   nativeInvoke('saveProject', payload);
   if (window.GomidasEditor.markClean) window.GomidasEditor.markClean();
 }
@@ -1135,10 +1307,10 @@ window.gomidasExportGp = exportGp;
 // Called by native after reading a .gomidas file. Accepts both the new Gomidas
 // envelope ({ gomidasVersion, instruments, score }) and the legacy raw-score JSON.
 window.gomidasLoadProject = function (json) {
-  let scoreJson = json, instruments = null;
+  let scoreJson = json, instruments = null, mix = null;
   try {
     const env = JSON.parse(json);
-    if (env && env.gomidasVersion && env.score != null) { scoreJson = env.score; instruments = env.instruments || {}; }
+    if (env && env.gomidasVersion && env.score != null) { scoreJson = env.score; instruments = env.instruments || {}; mix = env.mix || null; }
   } catch (e) { /* not an envelope — treat as a legacy raw-score JSON string */ }
   // Clear SFZ instruments left on the engine by the previous project, then reset state.
   const prev = window.gomidasTrackSfz || {};
@@ -1151,6 +1323,19 @@ window.gomidasLoadProject = function (json) {
         const p = presets.find(x => x.id === instruments[ch]);
         if (p) nativeInvoke('loadTrackSfzPreset', { channel: parseInt(ch, 10), file: p.file, name: p.name });
       }
+    }
+    // Restore per-track + master EQ (loadProject reset gomidasTrackFlags to {}).
+    if (mix) {
+      if (mix.tracks) for (const i in mix.tracks) {
+        if (!mix.tracks[i] || !mix.tracks[i].eq) continue;
+        (window.gomidasTrackFlags[i] || (window.gomidasTrackFlags[i] = {})).eq = mix.tracks[i].eq;
+      }
+      if (mix.master) window.gomidasMaster = Object.assign(window.gomidasMaster || {}, {
+        vol: mix.master.vol != null ? mix.master.vol : 1,
+        pan: mix.master.pan != null ? mix.master.pan : 0.5,
+        eq: Object.assign({ low: 0, mid: 0, high: 0 }, mix.master.eq || {})
+      });
+      if (window.gomidasApplyMixer) window.gomidasApplyMixer();
     }
     focusEditor();
   }
@@ -1225,6 +1410,7 @@ window.gomidasMenu = function (action) {
     case 'chord': openChordDialog(); break;
     case 'rest': E.makeRest(); break;
     case 'dead': E.deadNote(); break;
+    case 'bend': openBendDialog(); break;
     case 'fx': {
       const m = { palmmute: () => E.palmMute(), letring: () => E.letRing(), hammer: () => E.hammerPull(),
         slide: () => E.slideNote(false), ghost: () => E.ghostNote(), staccato: () => E.staccato(),
@@ -1237,7 +1423,9 @@ window.gomidasMenu = function (action) {
         widevibrato: () => E.wideVibrato(), slap: () => E.slapBeat(), pop: () => E.popBeat(),
         fadein: () => E.setFade('in'), fadeout: () => E.setFade('out'), swell: () => E.setFade('swell'),
         shiftslide: () => E.slideNote(true), pickslidedown: () => E.pickSlide(false), pickslideup: () => E.pickSlide(true),
-        artharmonic: () => E.artificialHarmonic(), pinchharmonic: () => E.pinchHarmonic() };
+        artharmonic: () => E.artificialHarmonic(), pinchharmonic: () => E.pinchHarmonic(),
+        tremolobar: () => E.tremoloBar(), wahopen: () => E.setWah(false), wahclosed: () => E.setWah(true),
+        rasgueado: () => E.rasgueadoBeat(), lefthandtap: () => E.leftHandTap(), tap: () => E.tapBeat() };
       (m[arg] || (() => {}))(); break;
     }
     case 'play': E.togglePlay(); break;

@@ -33,10 +33,63 @@ Priority: **P1** core editing parity · **P2** expressive effects · **P3** app/
   buses so each track has a real 3-band EQ), master volume/pan, Print, Tools (Transpose + practice tools),
   Window→Minimize, Help→About. **Deferred (greyed out via `.gd-soon`):** RSE engine, Interpretation
   (guitar-playing sim), Tuner. See [`DEAD_BUTTONS.md`](./DEAD_BUTTONS.md).
-- [ ] **EQ persistence** — track/master EQ is session-live but not saved to `.gomidas` (no alphaTab model
-  field; needs a project-format envelope). Vol/pan already persist via `playbackInfo`.
-- [ ] **Crescendo/diminuendo playback** — the hairpin marking is set, but no velocity ramp across the span yet.
-- [ ] **Tuner** — chromatic tuner from the live input (pitch detection + needle UI).
+- [x] **EQ persistence** — track + master EQ now persist in the `.gomidas` envelope (`mix` sibling of
+  `instruments`: per-track `eq` keyed by track index + master `{vol,pan,eq}`); restored + re-applied on load
+  (`saveProject`/`gomidasLoadProject` in `app.js`). Legacy/instrument-only files still load.
+- [x] **Crescendo/diminuendo playback** — `rebuildSequence` now ramps note velocity across a hairpin span
+  (consecutive beats with the same `crescendo` type): 0.6→1.0 cresc, 1.0→0.6 dim (`crescendoFactors`, `app.js`).
+- [ ] **Tuner** — chromatic tuner from the live input (pitch detection + needle UI). _(real-instrument scope)_
+
+## Reported issues (user, 2026-06-29) — triaged, not yet fixed
+> Root-caused via code investigation 2026-06-29 (see file:line refs). Bend (#1) **deferred by user**
+> — emission is risky and can't be ear-verified in this environment; tracked under Phase 0/C below.
+
+**Core bugs (P3 / high-value, low-risk):**
+- [x] **RSE pill opens the file finder** — the RSE/MIDI pill is now a status indicator: the **MIDI**
+  segment switches the track back to GM (`clearsfz`); the **RSE** segment no longer opens a dialog (you
+  enter RSE by picking a preset). Custom SFZ load lives only in Preset → *Load file…* (`web/fretboard.js`).
+- [x] **Playback resumes from the blue edit cursor, not the green play cursor** — on stop the green play
+  beat is captured (`captureResume`); the next Play resumes from it unless the edit cursor moved since
+  (`resumeBeat`/`resumeAtCursor`, `seekForPlay`/`seekToBeat` in `editor.js`). Falls back to `cur` on a
+  reposition; cleared on score load.
+- [x] **Pattern Library shows in all three drum tabs** — `buildPatternLib()` now lives inside the `kit`
+  `.dp-pane`, so tab show/hide hides it for the Groove/Mixer tabs (`web/fretboard.js`).
+- [x] **New drum-only track is silent even after inserting a pattern** — `clearDrumRegistration` now
+  captures each percussion track's populated `percussionArticulations`, strips the registration notes,
+  finishes, then **restores** the kit (instead of letting `finish()` re-derive an empty one). Groove/kit
+  entry resolves articulation indices again (`web/editor.js`).
+
+**Instrument SOUNDS panel (P3 / UX consistency):**
+- [x] **RSE highlighted but MIDI controls shown** — the SOUNDS controls now follow the engine mode: when
+  an SFZ is loaded (RSE) the GM Sound/Kit picker is hidden (it's overridden by sfizz); the Preset dropdown
+  groups sample instruments under an `<optgroup>` ("Sample instruments (RSE)") separate from "GM SoundFont
+  (MIDI)". Pill, dropdown, and visible controls stay consistent (`web/fretboard.js`).
+
+**Drum KIT VIEW visual (P3):**
+- [ ] **Kit hotspot circles misaligned** — `.kit-frame` uses `height:100%` + `max-width:100%`, so when
+  the stage is narrower than `--drum-h × 1.5` the frame loses the 1536/1024 ratio and `object-fit:contain`
+  letterboxes the image, while `.kit-hot` stays anchored to the *frame* not the rendered image
+  (`index.html:186-191`; coords `fretboard.js:288-298`, positioning `:362-367`). Also a center-vs-corner
+  ambiguity: `.kit-hot` uses `translate(-50%,-50%)` (coords = center) but the table reads like rectangle
+  corners. **Fix:** lock the frame to the image aspect ratio (size by width so contain never letterboxes,
+  or position hotspots against the rendered image box), and reconcile the coordinate convention; re-measure
+  hotspots against `drumkit.png` if needed. _Needs visual iteration in-app._
+
+**Bar-fill indicator (P1 / editing parity):**
+- [x] **GP-style bar-fill indicator** — `trackBarFillClass` classifies each bar (`under`|`exact`|`over`)
+  across **all** voices (max filled ticks vs `barCapacityTicks`); exposed in `getState()` (per-track
+  `barsFill[]` + `curBarFill`). Timeline squares show an amber dot (incomplete) / red outline+dot
+  (overfilled) (`fretboard.js`, CSS `.bf-under`/`.bf-over` in `index.html`); the status line shows
+  "⚠ bar incomplete/overfilled" for the current bar.
+
+**Tuning (P3 → small + feature):**
+- [x] **Re-tuning an existing track** — `INSP_TUNINGS` expanded (6-string: Drop C, DADGAD, Open G/D/E…;
+  7/8-string; 4/5/6-string bass), the select is labelled a re-tune control (tooltip + "Custom (…)" readout),
+  and saved user tunings are merged in (★). (`web/fretboard.js`)
+- [x] **Custom tunings: author + save/load** — per-string tuning editor modal (`gomidasOpenTuningEditor`,
+  `app.js`) reached via the inspector tuning dropdown's "Custom / Edit…" option; **Save & apply** persists
+  to `localStorage` (`gomidasUserTunings`) and the saved tuning appears in the preset list for matching
+  string counts. Applies via the existing `setTuningPreset`.
 
 ## Reported issues (user, 2026-06-27)
 - [x] **Play started from bar 1, not the cursor** — `AudioEngine::stop()` rewinds `seekRequest` to 0 and
@@ -66,13 +119,19 @@ Remaining inspector polish (small):
 ## P1 — Core editing parity
 Note effects (per current string / note):
 - [x] Shift slide — GP `⌥S` (Effects→Shift Slide); pick slides down/up (Effects menu). Legato/slur `⇧H` ≈ hammer/pull (`H`).
-- [ ] Bend — GP `B` (needs a bend editor UI)
+- [x] Bend — GP `B` (Effects→Bend… / `B` → preset shapes: full / half / bend&release / pre-bend /
+  pre-bend&release). **MIDI pitch-bend now emitted** (`emitBendEvents` in `app.js`): traces the bend
+  curve over the note then resets the wheel to centre just before the note ends (fractional reset tick
+  sorts before the next note-on). Imported GP bends are now audible too. ⚠ per-channel (a bent note bends
+  the whole channel in a chord); confirm pitch by ear.
 - [~] Legato MIDI for hammer/pull (done: hammered/pulled note plays softer, no re-pick) + **pitch-bend MIDI
   for slides + harmonic/vibrato MIDI still pending** (need native pitch-bend in `SoundFontSynth` + event format)
 
 Rhythm:
 - [x] Other tuplets (5, 6, 7, 9) — `setTuplet(n)` generalises `toggleTriplet` (Note menu + `gomidasMenu tuplet:N`)
-- [~] Triplet feel — GP `⌘/` (notation: swing 8ths on the current bar onward; **MIDI doesn't swing yet**)
+- [x] Triplet feel — GP `⌘/` (notation swing 8ths on the current bar onward; **MIDI now swings**:
+  `rebuildSequence` warps the within-bar 8th grid onto a 2:1 triplet feel for `Triplet8th` bars
+  via `swungTickInBar`/`sw()` in `app.js`. ⚠ timing feel — confirm by ear.)
 - [x] Spanning tuplet groups — `setTuplet`/`setDuration` now apply across the beat selection (`selectedBeats`);
   tuplet toggles off when every selected beat already has it. (Also: set duration across a selection.)
 
@@ -99,7 +158,7 @@ Drums:
 > harmonic/vibrato/slide. Audible realism (tremolo repick, strum spread, fade envelopes) → MIDI backlog.
 - [x] Wide vibrato — GP `⌥W` (menu: Effects→Wide Vibrato; ⌥-letter keys unreliable so menu-only)
 - [x] Artificial harmonic — GP `⌥Y` (Effects→Artificial Harmonic) + pinch harmonic (Effects menu)
-- [ ] Tremolo bar — GP `⌥V`
+- [x] Tremolo bar — GP `⌥V` (Effects→Tremolo Bar; beat-level `whammyBarType` Dip + bend points; toggles off)
 - [x] Tremolo picking — GP `"` (beat-level, 16th)
 - [x] Trill — GP `N` (trills to fret+2)
 - [x] Brush up/down — GP `⌘U`/`⌘D`; arpeggio up/down — GP `⇧⌘U`/`⇧⌘D`
@@ -108,7 +167,8 @@ Drums:
   name always shows, diagram when frets given). Chord library picker / barre UI → future polish.
 - [x] Slap — GP `$`; pop (Effects menu); pick stroke up/down — GP `⇧U`/`⇧D`
 - [x] Fade in / out — GP `<` / `>`; volume swell — GP `⌥<`/`⌥>` (swell is menu-only)
-- [ ] Wah open/close, rasgueado, left-hand tapping, tapping — GP `⌥O`/`⌥C`, `⇧R`, `(`, `)`
+- [x] Wah open/close, rasgueado, left-hand tapping, tapping — GP `⌥O`/`⌥C`, `⇧R`, `(`, `)`
+  (Effects menu + keys; `beat.wahPedal`/`beat.rasgueado`/`beat.tap`/`note.isLeftHandTapped`; notation-only)
 - [x] Text — GP `T`; directions — GP `D` (Section menu: Segno/Coda/Fine + Da Capo/Dal Segno jumps →
   `masterBar.directions`); fermata — GP `F`. **Jumps now drive playback**: `computePlaybackOrder` honours
   D.C. / D.C. al Fine / D.S. / D.S. al Fine (once, stopping at Fine). Coda variants + alternate endings still TODO.

@@ -89,11 +89,12 @@ void SfzSynth::allNotesOff()
             s->allSoundOff();
 }
 
-bool SfzSynth::renderChannel (int channel, juce::AudioBuffer<float>& stereo, int numSamples)
+bool SfzSynth::renderChannel (int channel, juce::AudioBuffer<float>& stereo, int numSamples, bool force)
 {
     if (channel < 0 || channel >= kNumChannels) return false;
     auto* s = chan[channel].get();
-    if (s == nullptr || s->getNumActiveVoices() == 0)
+    if (s == nullptr) return false;
+    if (s->getNumActiveVoices() == 0 && ! force)
         return false;
 
     stereo.clear();

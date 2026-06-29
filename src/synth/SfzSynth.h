@@ -51,9 +51,12 @@ public:
     void allNotesOff();
 
     // Render ONE channel's stereo output, OVERWRITING `stereo`. Returns false (buffer
-    // untouched) when the channel has no SFZ instance or no active voices, so the engine
-    // can skip silent channels cheaply.
-    bool renderChannel (int channel, juce::AudioBuffer<float>& stereo, int numSamples);
+    // untouched) when the channel has no SFZ instance, or no active voices AND !force, so
+    // the engine can skip silent channels cheaply. Pass force=true when an event was just
+    // sent to this channel: sfizz applies queued noteOn/Off/cc on the NEXT renderBlock, so
+    // a freshly-triggered note on an otherwise-silent channel (e.g. right after loading an
+    // instrument) would be stranded if we skipped the render.
+    bool renderChannel (int channel, juce::AudioBuffer<float>& stereo, int numSamples, bool force = false);
 
 private:
     double sampleRate = 44100.0;

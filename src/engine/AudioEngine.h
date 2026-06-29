@@ -157,6 +157,10 @@ private:
     // SFZ this block; cbSfzLocked = we hold sfz.tryLock() so instances are safe to touch.
     std::uint16_t cbSfzMask = 0;
     bool          cbSfzLocked = false;
+    // Which SFZ channels received an event this block — they must be rendered even at 0
+    // active voices so sfizz processes the queued note/cc on this renderBlock (see
+    // SfzSynth::renderChannel). Reset each callback before event processing.
+    std::uint16_t cbSfzEvented = 0;
 
     // transport (positionTicks/cursor are audio-thread owned)
     std::atomic<bool>   playing { false };

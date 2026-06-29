@@ -369,6 +369,7 @@
     stage.appendChild(frame); kit.appendChild(stage);
 
     kit.appendChild(el('div', 'kit-artic')); // filled by renderArticPanel
+    kit.appendChild(buildPatternLib()); // pattern library lives in the KIT pane only
     body.appendChild(kit);
 
     const groove = el('div', 'dp-pane' + (drumTab === 'groove' ? ' active' : '')); groove.dataset.pane = 'groove';
@@ -396,7 +397,6 @@
     body.appendChild(mixer);
 
     panel.appendChild(body);
-    panel.appendChild(buildPatternLib());
     fb.appendChild(panel);
 
     const split = el('div', 'dp-splitter');
@@ -659,12 +659,32 @@
   let inspTab = 'track';            // 'song' | 'track'
   // Tuning presets offered in the inspector, keyed by string count (high→low MIDI).
   const INSP_TUNINGS = {
-    6: [ { name: 'Standard', midis: [64,59,55,50,45,40] }, { name: 'Drop D', midis: [64,59,55,50,45,38] },
-         { name: 'Eb Standard', midis: [63,58,54,49,44,39] }, { name: 'D Standard', midis: [62,57,53,48,43,38] } ],
-    7: [ { name: '7-string', midis: [64,59,55,50,45,40,35] } ],
-    4: [ { name: 'Standard', midis: [43,38,33,28] }, { name: 'Drop D', midis: [43,38,33,26] } ],
-    5: [ { name: '5-string', midis: [43,38,33,28,23] } ]
+    6: [ { name: 'Standard (E A D G B E)', midis: [64,59,55,50,45,40] },
+         { name: 'Drop D', midis: [64,59,55,50,45,38] },
+         { name: 'Eb Standard (½ down)', midis: [63,58,54,49,44,39] },
+         { name: 'D Standard', midis: [62,57,53,48,43,38] },
+         { name: 'Drop C', midis: [62,57,53,48,43,36] },
+         { name: 'DADGAD', midis: [62,57,55,50,45,38] },
+         { name: 'Open G', midis: [62,59,55,50,43,38] },
+         { name: 'Open D', midis: [62,57,54,50,45,38] },
+         { name: 'Open E', midis: [64,59,56,52,47,40] } ],
+    7: [ { name: '7-string (B E A D G B E)', midis: [64,59,55,50,45,40,35] },
+         { name: '7-string Drop A', midis: [64,59,55,50,45,40,33] } ],
+    8: [ { name: '8-string (F# B E A D G B E)', midis: [64,59,55,50,45,40,35,30] } ],
+    4: [ { name: 'Standard (E A D G)', midis: [43,38,33,28] },
+         { name: 'Drop D', midis: [43,38,33,26] },
+         { name: 'Eb Standard', midis: [42,37,32,27] } ],
+    5: [ { name: '5-string (B E A D G)', midis: [43,38,33,28,23] },
+         { name: '5-string Drop A', midis: [43,38,33,28,21] } ],
+    6.1: [ { name: '6-string bass (B E A D G C)', midis: [48,43,38,33,28,23] } ]
   };
+  // Merge user-saved custom tunings (localStorage) for the given string count.
+  function tuningsForCount(sc) {
+    const base = (INSP_TUNINGS[sc] || []).slice();
+    const user = (window.gomidasUserTunings ? window.gomidasUserTunings() : [])
+      .filter(t => Array.isArray(t.midis) && t.midis.length === sc);
+    return base.concat(user.map(t => ({ name: t.name, midis: t.midis, user: true })));
+  }
   // Common General MIDI sounds for the program picker (value = GM program number).
   const GM_SOUNDS = [
     [24, 'Nylon Guitar'], [25, 'Steel Guitar'], [26, 'Jazz Guitar'], [27, 'Clean Guitar'],
@@ -720,14 +740,15 @@
           valRow('Tracks', (s.allTracks ? s.allTracks.length : 1)) + '</div>';
     } else {
       const sc = s.stringCount || 6;
-      const presets = INSP_TUNINGS[sc] || [];
+      const presets = tuningsForCount(sc);
       const curMidis = (s.tuning || []).join(',');
-      const tuningSel = presets.length
-        ? '<select class="insp-select" id="ins-tuning">' +
-            presets.map(p => '<option value="' + p.midis.join(',') + '"' + (p.midis.join(',') === curMidis ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
-            (presets.some(p => p.midis.join(',') === curMidis) ? '' : '<option value="" selected>Custom</option>') +
-          '</select>'
-        : '<span class="insp-tuning">' + esc((s.tuningNames || []).join(' ')) + '</span>';
+      const matched = presets.some(p => p.midis.join(',') === curMidis);
+      const tuningSel =
+        '<select class="insp-select" id="ins-tuning" title="Re-tune this track (frets kept, pitches shift)">' +
+          presets.map(p => '<option value="' + p.midis.join(',') + '"' + (p.midis.join(',') === curMidis ? ' selected' : '') + '>' + esc(p.name) + (p.user ? ' ★' : '') + '</option>').join('') +
+          (matched ? '' : '<option value="" selected>Custom (' + esc((s.tuningNames || []).join(' ')) + ')</option>') +
+          '<option value="__edit__">Custom / Edit…</option>' +
+        '</select>';
       const ct = (s.allTracks || []).find(t => t.current) || {};
       const tcolor = ct.color || '#888';
       const shortName = ct.shortName || (s.trackName || 'Trk').slice(0, 6).toLowerCase();
@@ -752,23 +773,34 @@
           // custom file (shown as its own option) | Load file… (native chooser).
           const presets = window.gomidasSfzPresets || [];
           const match = presets.find(p => p.name === sfzName);
-          let sfzOpts = '<option value="">GM SoundFont</option>' +
-            presets.map(p => '<option value="' + p.id + '"' + (match && match.id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+          const isRse = !!sfzName;
+          // Preset dropdown: grouped so RSE sample instruments aren't mistaken for GM
+          // options. '' = GM SoundFont (the MIDI engine), preset id = an RSE sample set,
+          // __current__ = an already-loaded custom file, __file__ = native chooser.
+          const sfzOpts = '<option value=""' + (isRse ? '' : ' selected') + '>GM SoundFont (MIDI)</option>' +
+            (presets.length ? '<optgroup label="Sample instruments">' +
+              presets.map(p => '<option value="' + p.id + '"' + (match && match.id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+              '</optgroup>' : '') +
             ((sfzName && !match) ? '<option value="__current__" selected>' + esc(sfzName) + '</option>' : '') +
             '<option value="__file__">Load file…</option>';
+          // Picker that drives the GM program — only meaningful on the MIDI engine. When an
+          // SFZ is loaded (RSE) the program is overridden by sfizz, so hide it for consistency.
+          const programPicker = isRse ? '' : (s.isPercussion
+            ? '<div class="insp-row" style="margin-top:8px"><span>Kit</span><select class="insp-select" id="ins-kit">' + optionList(DRUM_KITS, s.trackProgram | 0) + '</select></div>'
+            : '<div class="insp-row" style="margin-top:8px"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>');
           return '<div class="insp-sec"><div class="insp-h">Sounds</div>' +
-            // RSE = SFZ sample instrument (active when one is loaded); MIDI = GM SoundFont.
-            '<div class="insp-row"><span class="insp-pill" id="ins-engine">' +
-              '<span class="' + (sfzName ? 'on' : '') + '" data-eng="rse" title="SFZ sample instrument">RSE</span>' +
-              '<span class="' + (sfzName ? '' : 'on') + '" data-eng="midi" title="MIDI / SoundFont">MIDI</span></span>' +
-              '<span class="insp-chain">' + IC('guitar', 'sm') + IC('eq', 'sm') + IC('wave', 'sm') + IC('volume', 'sm') + '</span></div>' +
+            // Engine = which synth plays this track. A non-interactive status badge: "Sample"
+            // when an SFZ instrument is loaded, "MIDI" for the GM SoundFont. Switching is done
+            // via the Preset dropdown below (GM SoundFont = MIDI, a preset = Sample).
+            '<div class="insp-row"><span>Engine</span>' +
+              '<span class="insp-engine ' + (isRse ? 'is-sample' : 'is-midi') + '" title="' +
+                (isRse ? 'Sample instrument (SFZ)' : 'MIDI / GM SoundFont') + '">' +
+                (isRse ? 'Sample' : 'MIDI') + '</span></div>' +
             '<div class="insp-row" style="margin-top:8px"><span>Instrument</span>' +
               '<span class="insp-sfz" id="ins-sfz-name" title="' + esc(sfzName || '') + '">' + esc(sfzName || 'GM SoundFont') + '</span></div>' +
             '<div class="insp-row" style="margin-top:6px"><span>Preset</span>' +
               '<select class="insp-select" id="ins-sfz-preset">' + sfzOpts + '</select></div>' +
-            (s.isPercussion
-              ? '<div class="insp-row" style="margin-top:8px"><span>Kit</span><select class="insp-select" id="ins-kit">' + optionList(DRUM_KITS, s.trackProgram | 0) + '</select></div>'
-              : '<div class="insp-row" style="margin-top:8px"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>') +
+            programPicker +
           '</div>';
         })() +
         '<div class="insp-sec"><div class="insp-h">Mixer</div>' +
@@ -821,14 +853,23 @@
         if (p && window.gomidasLoadSfzPreset) window.gomidasLoadSfzPreset(p);
       }
     };
-    // RSE/MIDI pill shortcut: RSE = open the native file chooser, MIDI = clear to GM.
-    const engine = byId('ins-engine');
-    if (engine) engine.querySelectorAll('span').forEach(sp => sp.onclick = () => {
-      if (!window.gomidasMenu) return;
-      window.gomidasMenu(sp.dataset.eng === 'rse' ? 'loadsfz' : 'clearsfz');
-    });
+    // Engine is a non-interactive status badge — switching happens via the Preset
+    // dropdown ('' = GM SoundFont/MIDI, a preset = Sample). Nothing to wire.
     const tuning = byId('ins-tuning');
-    if (tuning) tuning.onchange = () => { const v = tuning.value; if (v) E.setTuningPreset(v.split(',').map(Number)); };
+    if (tuning) tuning.onchange = () => {
+      const v = tuning.value;
+      if (v === '__edit__') {
+        const cur = (E.getState && E.getState().tuning) || [];
+        if (window.gomidasOpenTuningEditor) window.gomidasOpenTuningEditor(cur, (midis) => {
+          E.setTuningPreset(midis);
+          if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
+        });
+        else buildInspector(E.getState()); // no editor available — revert the select
+      } else if (v) {
+        E.setTuningPreset(v.split(',').map(Number));
+        if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
+      }
+    };
     const pan = byId('ins-pan');
     if (pan) pan.oninput = () => {
       const st = E && E.getState && E.getState();
@@ -900,10 +941,15 @@
       const ang = Math.round((pan - 0.5) * 270);
       let bars = '';
       const arr = t.bars || [];
+      const fillCls = t.barsFill || [];
       for (let i = 0; i < nBars; i++) {
         const fill = arr[i] ? ' fill' : '';
         const curCell = (t.current && i === s.curBar) ? ' cur' : '';
-        bars += '<div class="tk-bar' + fill + curCell + '" data-bar="' + i + '" title="Bar ' + (i + 1) + '" style="--bc:' + t.color + '"></div>';
+        // GP-style fill marker: amber for under-filled, red for over-filled bars.
+        const fc = fillCls[i];
+        const fillState = (fc === 'under') ? ' bf-under' : (fc === 'over' ? ' bf-over' : '');
+        const ttl = 'Bar ' + (i + 1) + (fc === 'under' ? ' (incomplete)' : (fc === 'over' ? ' (overfilled)' : ''));
+        bars += '<div class="tk-bar' + fill + curCell + fillState + '" data-bar="' + i + '" title="' + ttl + '" style="--bc:' + t.color + '"></div>';
       }
       html +=
         '<div class="tk-row2 ' + (t.current ? 'current' : '') + '" data-idx="' + t.index + '">' +

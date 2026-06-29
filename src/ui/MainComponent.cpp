@@ -537,6 +537,8 @@ void MainComponent::buildMenus()
             { "Chord...",   "chord" },
         } },
         { "Effects", {
+            { "Bend...",          "bend" },
+            { "-", "" },
             { "Palm Mute",        "fx:palmmute" },
             { "Let Ring",         "fx:letring" },
             { "Hammer-on / Pull-off", "fx:hammer" },
@@ -571,6 +573,13 @@ void MainComponent::buildMenus()
             { "Fade In",          "fx:fadein" },
             { "Fade Out",         "fx:fadeout" },
             { "Volume Swell",     "fx:swell" },
+            { "-", "" },
+            { "Tremolo Bar",      "fx:tremolobar" },
+            { "Wah Open",         "fx:wahopen" },
+            { "Wah Closed",       "fx:wahclosed" },
+            { "Rasgueado",        "fx:rasgueado" },
+            { "Left-Hand Tapping", "fx:lefthandtap" },
+            { "Tapping",          "fx:tap" },
         } },
         { "Section", {
             { "Segno", "dir:TargetSegno" },

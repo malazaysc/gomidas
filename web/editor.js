@@ -33,7 +33,7 @@
   let isPlaying = false;
   let fretBuffer = '';
   let fretTimer = null;
-  let lastPlayBeat = null;
+  let lastPlayBeat = null;       // alphaTab beat the single cursor last reached while playing
   let dirty = false;             // unsaved-changes flag (drives New/Open confirmation)
   function markDirty() { dirty = true; }
   function isDirty() { return dirty; }
@@ -956,13 +956,22 @@
   let _clearDrumRegOnLoad = false;
   function armDrumRegClear() { _clearDrumRegOnLoad = true; }
   function clearDrumRegistration() {
+    // alphaTab builds percussionArticulations lazily from drum notes, so finish()
+    // after stripping the registration chord would re-derive an EMPTY kit (then
+    // toggleDrum/insertGroove find no articulation index and emit zero notes — a
+    // silent track). Capture the populated kit, strip the notes, finish, restore.
+    const saved = [];
     for (const t of api.score.tracks) {
       const st = t.staves && t.staves[0];
       if (!st || !st.isPercussion) continue;
+      saved.push([t, t.percussionArticulations]);
       const be = st.bars[0] && st.bars[0].voices[0] && st.bars[0].voices[0].beats[0];
       if (be) while (be.notes.length) be.removeNote(be.notes[0]);
     }
     try { api.score.finish(api.settings); } catch (e) {}
+    for (const [t, arts] of saved)
+      if (arts && arts.length && (!t.percussionArticulations || !t.percussionArticulations.length))
+        t.percussionArticulations = arts;
     api.renderTracks(window.gomidasGetRenderedTracks());
     window.gomidasRebuild();
   }
@@ -1394,6 +1403,63 @@
     applyEdit(true);
   }
 
+  // GP: Tremolo / whammy bar (⌥V) — beat-level dip-and-return; toggles off.
+  function tremoloBar() {
+    const b = beat(); if (!b) return;
+    const WT = (alphaTab.model && alphaTab.model.WhammyType) || { None: 0, Dip: 3 };
+    const none = (WT.None != null) ? WT.None : 0;
+    const dip = (WT.Dip != null) ? WT.Dip : 3;
+    const on = (b.whammyBarType != null && b.whammyBarType !== none);
+    if (on) { b.whammyBarType = none; b.whammyBarPoints = []; }
+    else {
+      b.whammyBarType = dip;
+      const BP = alphaTab.model && alphaTab.model.BendPoint;
+      b.whammyBarPoints = BP ? [new BP(0, 0), new BP(15, -4), new BP(30, 0)] : [];
+    }
+    applyEdit(true);
+  }
+  // GP: Bend (B) — note-level. Applies a preset bend shape (alphaTab BendType + points;
+  // value units are 1/4 tones, 4 = whole step). rebuildSequence emits the pitch-bend.
+  function setBend(kind) {
+    const BT = (alphaTab.model && alphaTab.model.BendType) || { None: 0, Bend: 2, BendRelease: 4, Prebend: 6, PrebendRelease: 8 };
+    const BP = alphaTab.model && alphaTab.model.BendPoint;
+    withCurNote(n => {
+      if (kind === 'none' || !BP) { n.bendType = BT.None; n.bendPoints = []; return; }
+      const mk = (o, v) => new BP(o, v);
+      let type = BT.Bend, pts = [];
+      switch (kind) {
+        case 'half':           type = BT.Bend;           pts = [mk(0, 0), mk(60, 2)]; break;            // ½ step up
+        case 'full':           type = BT.Bend;           pts = [mk(0, 0), mk(60, 4)]; break;            // whole step up
+        case 'fullrelease':    type = BT.BendRelease;    pts = [mk(0, 0), mk(30, 4), mk(60, 0)]; break; // up then back
+        case 'prebend':        type = BT.Prebend;        pts = [mk(0, 4), mk(60, 4)]; break;            // start bent, hold
+        case 'prebendrelease': type = BT.PrebendRelease; pts = [mk(0, 4), mk(60, 0)]; break;            // start bent, release
+        default:               type = BT.Bend;           pts = [mk(0, 0), mk(60, 4)]; break;
+      }
+      n.bendType = type; n.bendPoints = pts;
+    });
+  }
+  // GP: Wah pedal — open (⌥O) / closed (⌥C); beat-level. Re-applying clears it.
+  function setWah(closed) {
+    const b = beat(); if (!b) return;
+    const WP = (alphaTab.model && alphaTab.model.WahPedal) || { None: 0, Open: 1, Closed: 2 };
+    const want = closed ? WP.Closed : WP.Open;
+    b.wahPedal = (b.wahPedal === want) ? WP.None : want;
+    applyEdit(true);
+  }
+  // GP: Rasgueado (⇧R) — flamenco strum technique; beat-level. Toggles off.
+  function rasgueadoBeat() {
+    const b = beat(); if (!b) return;
+    const RG = (alphaTab.model && alphaTab.model.Rasgueado) || { None: 0, Ii: 1 };
+    const want = (RG.Ii != null) ? RG.Ii : 1;
+    const none = (RG.None != null) ? RG.None : 0;
+    b.rasgueado = (b.rasgueado === want) ? none : want;
+    applyEdit(true);
+  }
+  // GP: Left-hand tapping ( ( ) — note-level boolean.
+  function leftHandTap() { withCurNote(n => { n.isLeftHandTapped = !n.isLeftHandTapped; }); }
+  // GP: Tapping ( ) ) — right-hand tap, beat-level boolean.
+  function tapBeat() { const b = beat(); if (!b) return; b.tap = !b.tap; applyEdit(true); }
+
   // GP: Dynamics (ppp..fff) — beat-level loudness; mapped to MIDI velocity by
   // rebuildSequence (dynamicsToVelocity). Re-applying the same value clears it.
   function setDynamics(name) {
@@ -1630,6 +1696,26 @@
     }
     return out;
   }
+  // GP-style bar-fill classification per bar (across ALL voices): 'under' (beats occupy
+  // less than the time signature), 'exact' (exactly full), or 'over' (overfilled).
+  function trackBarFillClass(t) {
+    const st = t && t.staves && t.staves[0];
+    const n = api.score.masterBars.length;
+    const out = new Array(n).fill('under');
+    if (!st) return out;
+    for (let bi = 0; bi < n && bi < st.bars.length; bi++) {
+      const bar = st.bars[bi];
+      if (!bar) continue;
+      let maxFill = 0;
+      for (const v of bar.voices) {
+        const f = (v.beats || []).reduce((s, be) => s + beatTicksOf(be), 0);
+        if (f > maxFill) maxFill = f;
+      }
+      const cap = barCapacityTicks(bi);
+      out[bi] = (maxFill > cap + 1) ? 'over' : (maxFill >= cap - 1 ? 'exact' : 'under');
+    }
+    return out;
+  }
 
   function getState() {
     if (!api || !api.score) return null;
@@ -1703,8 +1789,10 @@
         volume: (t.playbackInfo && t.playbackInfo.volume != null) ? (t.playbackInfo.volume / 16) : 0.75,
         color: trackColor(t, i),
         bars: trackBarFill(t),
+        barsFill: trackBarFillClass(t),
         current: i === cur.track
-      }))
+      })),
+      curBarFill: (function () { const cls = trackBarFillClass(track()); return cls[cur.bar] || 'under'; })()
     };
   }
 
@@ -1740,7 +1828,7 @@
   }
   function hideCountdownOverlay() { if (countdownEl) { countdownEl.style.display = 'none'; countdownEl.classList.remove('pulse'); } }
   // Reflect a forced stop (e.g. Panic) in the UI without sending another transport msg.
-  function notifyStopped() { cancelCountIn(); isPlaying = false; refreshCursor(); }
+  function notifyStopped() { cancelCountIn(); commitPlayPositionToCursor(); isPlaying = false; refreshCursor(); }
 
   function startPlayback() {
     countInRunning = false;
@@ -1781,6 +1869,19 @@
     step();
   }
 
+  // Single-cursor model: there is one cursor. During playback it follows the transport
+  // (onPlayTick moves it); when playback stops it stays where it landed by writing the
+  // play position back into `cur`. So Play always starts from the cursor, and stopping
+  // mid-song then pressing Play again naturally resumes from there.
+  function commitPlayPositionToCursor() {
+    const b = lastPlayBeat;
+    if (!b) return;
+    const v = b.voice, bar = v && v.bar, st = bar && bar.staff, tk = st && st.track;
+    if (!v || !bar || !tk) return;
+    cur.track = tk.index | 0; cur.bar = bar.index | 0; cur.voice = v.index | 0; cur.beat = b.index | 0;
+    clampString();
+  }
+
   function togglePlay() {
     if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); // stop any groove audition
     flushHeavy(); // make sure native has the latest edited MIDI before playing
@@ -1788,9 +1889,11 @@
     if (!isPlaying && countInOn) { playWithCountIn(); return; }
     isPlaying = !isPlaying;
     if (isPlaying) {
-      // Start from the edit cursor, not bar 1 (seek the native transport there first).
       lastPlayBeat = null;
       if (window.gomidasSeekToCursor) window.gomidasSeekToCursor(cur.track, cur.bar, cur.voice, cur.beat);
+    } else {
+      commitPlayPositionToCursor();   // single cursor: land where playback stopped
+      refreshCursor();
     }
     window.__JUCE__.backend.emitEvent('__juce__invoke',
       { name: isPlaying ? 'play' : 'stop', params: [1], resultId: 0 });
@@ -1886,9 +1989,14 @@
     renderSelection();
     autoScrollToEditCursor();
     const st = document.getElementById('status');
-    if (st) st.textContent = `${track() ? track().name : ''} · bar ${cur.bar + 1} · beat ${cur.beat + 1} · string ${cur.string + 1}`
-      + (cur.voice > 0 ? ` · voice ${cur.voice + 1}` : '')
-      + (fretBuffer ? ` · fret ${fretBuffer}` : '');
+    if (st) {
+      const fc = (function () { try { return trackBarFillClass(track())[cur.bar]; } catch (e) { return 'under'; } })();
+      st.textContent = `${track() ? track().name : ''} · bar ${cur.bar + 1} · beat ${cur.beat + 1} · string ${cur.string + 1}`
+        + (cur.voice > 0 ? ` · voice ${cur.voice + 1}` : '')
+        + (fretBuffer ? ` · fret ${fretBuffer}` : '')
+        + (fc === 'under' ? ' · ⚠ bar incomplete' : (fc === 'over' ? ' · ⚠ bar overfilled' : ''));
+      st.classList.toggle('bar-warn', fc !== 'exact');
+    }
     if (window.GomidasUI) window.GomidasUI.refresh(getState());
   }
 
@@ -1903,14 +2011,17 @@
     if (b === lastPlayBeat) return;
     lastPlayBeat = b;
     ensureOverlays();
+    // Single cursor: the one cursor follows the transport during playback (no separate
+    // green play cursor). The string highlight is hidden while playing.
     const col = beatColumn(b);
-    if (!col) { playCursorEl.style.display = 'none'; return; }
-    playCursorEl.style.display = 'block';
-    playCursorEl.style.left = col.x + 'px';
-    playCursorEl.style.top = col.y + 'px';
-    playCursorEl.style.width = col.w + 'px';
-    playCursorEl.style.height = col.h + 'px';
-    if (autoScrollOn) autoScrollToPlayCursor();
+    if (!col) { editCursorEl.style.display = 'none'; return; }
+    editCursorEl.style.display = 'block';
+    editCursorEl.style.left = col.x + 'px';
+    editCursorEl.style.top = col.y + 'px';
+    editCursorEl.style.width = col.w + 'px';
+    editCursorEl.style.height = col.h + 'px';
+    stringCursorEl.style.display = 'none';
+    if (autoScrollOn) autoScrollToCursor(editCursorEl, true);
   }
 
   // Keep the play cursor in view while playing (GP-style "page turn"). Only scrolls
@@ -1997,6 +2108,11 @@
     if (alt) {
       if (k === 'ArrowUp') { transposeNote(shift ? 1 : 12); return true; }    // ⌥⇧↑ semitone / ⌥↑ octave
       if (k === 'ArrowDown') { transposeNote(shift ? -1 : -12); return true; }// ⌥⇧↓ semitone / ⌥↓ octave
+      // ⌥-letter combos are unreliable (the OS eats the letter) — these mirror the
+      // Effects menu entries, which are the dependable path.
+      if (k === 'v' || k === 'V') { tremoloBar(); return true; }              // ⌥V Tremolo Bar
+      if (k === 'o' || k === 'O') { setWah(false); return true; }             // ⌥O Wah Open
+      if (k === 'c' || k === 'C') { setWah(true); return true; }              // ⌥C Wah Closed
       return false;
     }
 
@@ -2033,7 +2149,7 @@
     if (k === 'Backspace' || k === 'Delete') { deleteNote(); return true; }
     if (k === '+' || k === '=') { changeDuration(false); return true; } // GP: Decrease Note Duration
     if (k === '-' || k === '_') { changeDuration(true); return true; }  // GP: Increase Note Duration
-    if (k === 'r' || k === 'R') { makeRest(); return true; }            // GP: Rest
+    if (k === 'r' || k === 'R') { (shift || k === 'R') ? rasgueadoBeat() : makeRest(); return true; } // GP: Rest / ⇧R Rasgueado
     if (k === '.') { toggleDot(); return true; }                        // GP: Dotting
     if (k === '/') { toggleTriplet(); return true; }                    // GP: Triolet (triplet)
     if (k === 'p' || k === 'P') { (shift || k === 'P') ? palmMuteBeat() : palmMuteNote(); return true; } // GP: Palm Mute (P / ⇧P)
@@ -2055,6 +2171,9 @@
     if (k === 'g' || k === 'G') { graceNote(false); return true; }      // GP: Grace note (before beat)
     if (k === '"') { tremoloPicking(); return true; }                  // GP: Tremolo Picking
     if (k === '$') { slapBeat(); return true; }                        // GP: Slap
+    if (k === '(') { leftHandTap(); return true; }                     // GP: Left-Hand Tapping
+    if (k === ')') { tapBeat(); return true; }                         // GP: Tapping
+    if (k === 'b' || k === 'B') { if (window.gomidasOpenBend) window.gomidasOpenBend(); return true; } // GP: Bend
     if (k === '<') { setFade('in'); return true; }                     // GP: Fade In
     if (k === '>') { setFade('out'); return true; }                    // GP: Fade Out
     if (k === '[') { toggleRepeatStart(); return true; }               // GP: Open Repeat
@@ -2241,6 +2360,7 @@
     tieNote, tieBeat, hammerPull, slideNote, toggleDrum, armDrumRegClear,
     ghostNote, staccato, accent, naturalHarmonic, artificialHarmonic, pinchHarmonic, vibratoNote, transposeNote,
     setBrush, setPickStroke, wideVibrato, tremoloPicking, trillNote, graceNote, slapBeat, popBeat, setFade, pickSlide,
+    tremoloBar, setWah, rasgueadoBeat, leftHandTap, tapBeat, setBend,
     setDynamics, setCrescendo, setOttava, setLyrics, getLyrics, transpose,
     insertGroove, readBarGrid, toggleGridCell, generateVariation, isPercussion: isPercussionTrack,
     move: (d) => moveBeat(d), moveString: (d) => moveString(d), moveTrack: (d) => moveTrack(d),
