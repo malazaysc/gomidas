@@ -4,6 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "synth/SoundFontSynth.h"
+#include "synth/SfzSynth.h"
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -83,6 +84,12 @@ public:
         loopEnd.store   (endTick);
     }
 
+    // Per-track SFZ instrument (sfizz). Loads an .sfz on the given MIDI channel so that
+    // channel renders via the sample engine instead of TinySoundFont. Message-thread only
+    // (loading is not RT-safe); the instance is swapped to the audio thread under a lock.
+    bool loadChannelSfz (int channel, const juce::File& sfzFile);
+    void clearChannelSfz (int channel);
+
     // Per-track mixer: gain is a linear scale (1.0 = unity, 0.0 = silent → mute/solo),
     // pan is 0..1 (0.5 = centre). Keyed by MIDI channel; applied on the audio thread.
     void setChannelMix (int channel, float gain, float pan);
@@ -139,6 +146,12 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     SoundFontSynth synth;
+    SfzSynth        sfz;   // per-channel SFZ instruments (override TSF on assigned channels)
+
+    // Per-callback SFZ routing state (audio-thread only). cbSfzMask = which channels use
+    // SFZ this block; cbSfzLocked = we hold sfz.tryLock() so instances are safe to touch.
+    std::uint16_t cbSfzMask = 0;
+    bool          cbSfzLocked = false;
 
     // transport (positionTicks/cursor are audio-thread owned)
     std::atomic<bool>   playing { false };

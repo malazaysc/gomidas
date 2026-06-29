@@ -427,6 +427,36 @@ function trackChannel(track) {
   const pb = track.playbackInfo || {};
   return (pb.primaryChannel != null) ? (pb.primaryChannel & 0x0f) : 0;
 }
+
+// MIDI channel of the currently-edited track (for per-track SFZ/instrument actions).
+function currentTrackChannel() {
+  if (!api || !api.score) return null;
+  const st = window.GomidasEditor && window.GomidasEditor.getState && window.GomidasEditor.getState();
+  const idx = st ? st.curTrackIndex : 0;
+  const t = api.score.tracks[idx];
+  return t ? trackChannel(t) : null;
+}
+window.gomidasCurrentTrackChannel = currentTrackChannel;
+
+// Per-channel SFZ instrument name (session state; drives the inspector display).
+window.gomidasTrackSfz = window.gomidasTrackSfz || {};
+
+// Native reports the result of a per-track SFZ load (channel, ok, instrument name).
+window.gomidasSfzLoaded = function (channel, ok, name) {
+  if (ok) window.gomidasTrackSfz[channel] = name;
+  setStatus(ok ? ('SFZ instrument loaded: ' + name) : 'SFZ load failed');
+  if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
+};
+
+// Clear the SFZ instrument on the current track (back to the GM SoundFont).
+window.gomidasClearTrackSfz = function () {
+  const ch = currentTrackChannel();
+  if (ch == null) return;
+  nativeInvoke('clearTrackSfz', { channel: ch });
+  delete window.gomidasTrackSfz[ch];
+  setStatus('SFZ instrument cleared');
+  if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
+};
 // Compute each track's live gain (volume × mute/solo) + pan and push to the engine.
 // Mute = gain 0; with any track soloed, non-soloed tracks are silenced.
 function applyMixer() {
@@ -1175,6 +1205,8 @@ window.gomidasMenu = function (action) {
     case 'loadplugin': nativeInvoke('loadInputPlugin', 1); break;
     case 'showplugineditor': nativeInvoke('showPluginEditor', 1); break;
     case 'clearplugin': nativeInvoke('clearInputPlugin', 1); setStatus('Input plugin cleared'); break;
+    case 'loadsfz': { const ch = currentTrackChannel(); if (ch != null) nativeInvoke('loadTrackSfz', { channel: ch }); break; }
+    case 'clearsfz': window.gomidasClearTrackSfz(); break;
     case 'record': toggleRecord(); break;
     case 'zoom': window.gomidasZoom(arg === 'in' ? 1 : -1); break;
     case 'toggleview': window.gomidasToggleMultiView(); break;

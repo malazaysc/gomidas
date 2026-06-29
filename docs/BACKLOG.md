@@ -156,6 +156,53 @@ Drums:
 - [x] Record the output mix (backing tracks + live input) to WAV — transport `⏺` / Sound menu;
   `AudioEngine::startRecording`/`stopRecording` via a background `ThreadedWriter` (RT-safe). _Loop/overdub recording still pending._
 
+## Realistic Sound (RSE-equivalent) — sfizz default + per-track VST
+> Full design + architecture: [`REALISTIC_SOUND.md`](./REALISTIC_SOUND.md). Bundled-content licensing:
+> [`SOUND_LIBRARIES.md`](./SOUND_LIBRARIES.md). Decided with the user 2026-06-29: **A-first** (bundled
+> CC0 SFZ default), then **B** (per-track VST instruments — roadmap priority #2). Status: **planning**.
+
+**Phase 0 — shared foundation (prereq for A and B):**
+- [x] Add **sfizz** (BSD/ISC) to `CMakeLists.txt` via FetchContent (static lib; built as C++17 — see
+  `REALISTIC_SOUND.md` §7 for the four arm64/modern-clang build fixes in `cmake/patch_sfizz.py`)
+- [x] Per-channel SFZ override in `AudioEngine` via `SfzSynth` (lock-free `activeMask()` + per-block
+  `tryLock()`, mirroring `pluginLock`; null channel → existing TSF path). _Generalised `TrackInstrument`
+  abstraction deferred — `SfzSynth` is the concrete first backend; refactor when VST instruments land._
+- [x] Sequencer routing fork: SFZ channels routed in `applyEvent` + the render loop (mixer gain/pan applied
+  post-render since sfizz bypasses TSF volume/pan)
+- [~] Prove end-to-end: builds, links, app launches clean. **Audio not yet runtime-verified** — needs GUI:
+  Sound → Load SFZ Instrument for Track → `~/Music/GomidasTest/test.sfz` → play
+- [ ] Extend the event format with `kind`+`value` (pitch-bend/CC) — JS array `[…,kind,value]` + `NoteEvent`
+  (`AudioEngine.h:14-30`); dispatch to instruments + TSF (`tsf_channel_set_pitchwheel`/`_midi_control`).
+  **Bonus: makes slides/bends audible** (currently notation-only). _Not started — `SfzSynth` already has the
+  `pitchWheel`/`controlChange` methods ready._
+
+**Phase A — bundled SFZ default (build first):**
+- [x] `SfzSynth` per-channel sfizz backend (load/note/bend/cc/render/clear) — see Phase 0
+- [x] Native `loadTrackSfz`/`clearTrackSfz`; **inspector SOUNDS UI**: live RSE/MIDI pill + Instrument row +
+  Load SFZ…/Clear buttons (reused the "RSE pill" stub). Also a Sound-menu fallback.
+- [~] CC0 content: **FreePats Spanish Classical Guitar (CC0, 4.5 MiB, SFZ+FLAC) acquired + license-verified**,
+  staged at `~/Music/GomidasTest/` for testing. Bass + Karoryfer drums still to fetch (see `SOUND_LIBRARIES.md`).
+- [ ] **Bundle** instrument(s) as built-in presets (Resources/binary-data) + a preset picker, vs the current
+  load-any-file flow; bundle vs download-on-first-run for big sets (Karoryfer drums ~2.3 GB — open question)
+- [ ] Author our own `.sfz` layout incl. the articulation/keyswitch map (Phase C)
+- [ ] Persist the instrument assignment in `.gomidas` (needs the project-format envelope EQ-persistence also wants)
+
+**Phase B — per-track VST instruments (priority #2):**
+- [ ] ⚠️ First **verify the existing live-input VST host actually works at runtime** (it's unverified) before scaling to 16
+- [ ] `VstInstrument : TrackInstrument` (per-channel MidiBuffer feed; reuse `pluginFormatManager` + the
+  `loadInputPlugin` swap pattern)
+- [ ] Generalize `PluginEditorWindow` → N windows; native `showTrackPluginEditor(channel)`
+- [ ] Plugin state save/restore in `.gomidas` (`getStateInformation` → base64) — closes the existing "plugin state-save" TODO
+- [ ] UI sound-source picker → "Plugin…" → file chooser → `setTrackInstrument(channel,'vst',path)`
+
+**Phase C — articulation mapping (realism; overlaps A/B):**
+- [ ] Pitch-bend ramps for slides/bends in `rebuildSequence` (~`app.js:251`) — universal across backends
+- [ ] Keyswitch emission for palm-mute/harmonic/dead matching the bundled-SFZ layout
+- [ ] (Later) tremolo repick, strum spread, fade envelopes, vibrato-as-pitch-bend; per-VST articulation presets
+
+**Later / open:** amp sim (bundle Neural Amp Modeler MIT, fed the CC0 clean-DI guitar); per-track plugin
+*chains*; sample-accurate (vs block-quantized) note timing.
+
 ## Phase 3 — Export & sync
 - [x] `.gp` export (alphaTab `Gp7Exporter`) — File→Export Guitar Pro; `exportGp` → `saveBinary` native
   save dialog (base64 → bytes). _Verify the round-trip: export, then reopen the `.gp` in Gomidas / GP._

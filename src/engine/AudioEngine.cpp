@@ -256,6 +256,18 @@ void AudioEngine::resetCursorForTick (double tick)
 
 void AudioEngine::applyEvent (const NoteEvent& e)
 {
+    // Channels backed by an SFZ instrument are routed to sfizz (never to TSF). cbSfzMask
+    // is read lock-free; we only touch instances when we hold the lock (cbSfzLocked).
+    if (e.channel >= 0 && e.channel < 16 && ((cbSfzMask >> e.channel) & 1) != 0)
+    {
+        if (cbSfzLocked)
+        {
+            if (e.on) sfz.noteOn (e.channel, e.key, e.velocity);
+            else      sfz.noteOff (e.channel, e.key);
+        }
+        return;
+    }
+
     if (e.on)
     {
         if (currentProgram[e.channel] != e.program)
@@ -271,10 +283,21 @@ void AudioEngine::applyEvent (const NoteEvent& e)
     }
 }
 
+bool AudioEngine::loadChannelSfz (int channel, const juce::File& sfzFile)
+{
+    return sfz.loadChannel (channel, sfzFile);
+}
+
+void AudioEngine::clearChannelSfz (int channel)
+{
+    sfz.clearChannel (channel);
+}
+
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
     sampleRate = device->getCurrentSampleRate();
     synth.prepare (sampleRate);
+    sfz.prepare (sampleRate, device->getCurrentBufferSizeSamples());
     renderBuffer.setSize (2, device->getCurrentBufferSizeSamples(), false, false, true);
 }
 
@@ -305,7 +328,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
     }
 
     if (flushRequested.exchange (false))
+    {
         synth.allNotesOff();
+        if (sfz.activeMask() != 0 && sfz.tryLock()) { sfz.allNotesOff(); sfz.unlock(); }
+    }
 
     // Editor audition: trigger a note/chord immediately, auto-release after ~0.8s.
     if (previewPending.load() && previewLock.tryEnter())
@@ -344,7 +370,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         resetCursorForTick (sr);
 
     if (panicRequested.exchange (false) && synth.isReady())
+    {
         synth.allNotesOff();
+        if (sfz.activeMask() != 0 && sfz.tryLock()) { sfz.allNotesOff(); sfz.unlock(); }
+    }
 
     // Push any pending per-track mixer changes into the synth (audio-thread only).
     if (synth.isReady() && mixDirty.exchange (false))
@@ -359,6 +388,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         reportedTicks.store (positionTicks);
         return;
     }
+
+    // Acquire the SFZ routing/render lock for this block. Placed AFTER the only early
+    // return so it can never leak. cbSfzMask is lock-free (which channels use SFZ);
+    // cbSfzLocked means instances are safe to touch in applyEvent + the render loop.
+    cbSfzMask   = sfz.activeMask();
+    cbSfzLocked = (cbSfzMask != 0) && sfz.tryLock();
 
     if (playing.load() && activeSequence != nullptr)
     {
@@ -387,6 +422,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
             if (doLoop)
             {
                 synth.allNotesOff();
+                if (cbSfzLocked) sfz.allNotesOff();
                 endTick = wrapTo + (endTick - wrapEnd);
                 nextEventIndex = 0;
                 while (nextEventIndex < events.size() && events[nextEventIndex].tick < wrapTo)
@@ -402,6 +438,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
             {
                 playing.store (false);
                 synth.allNotesOff();
+                if (cbSfzLocked) sfz.allNotesOff();
                 endTick = 0.0;
                 nextEventIndex = 0;
             }
@@ -433,8 +470,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
 
     for (int c = 0; c < SoundFontSynth::kNumChannels; ++c)
     {
-        if (! synth.renderChannel (c, channelBuffer, numSamples))
+        const bool useSfz = ((cbSfzMask >> c) & 1) != 0;
+        bool rendered = false;
+        if (useSfz)
+            rendered = cbSfzLocked && sfz.renderChannel (c, channelBuffer, numSamples);
+        else
+            rendered = synth.renderChannel (c, channelBuffer, numSamples);
+        if (! rendered)
             continue;
+
+        // SFZ channels bypass tsf_channel_set_volume/pan, so apply the per-track mixer
+        // (gain + balance pan) to the rendered buffer here to match TSF channels.
+        if (useSfz)
+        {
+            const float g = channelGain[c].load();
+            const float p = channelPan[c].load();
+            const float lG = g * (p > 0.5f ? 1.0f - (p - 0.5f) * 2.0f : 1.0f);
+            const float rG = g * (p < 0.5f ? p * 2.0f : 1.0f);
+            channelBuffer.applyGain (0, 0, numSamples, lG);
+            channelBuffer.applyGain (1, 0, numSamples, rG);
+        }
 
         if (! channelEq[c].flat)
             for (int ch = 0; ch < 2; ++ch)
@@ -453,6 +508,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
         renderBuffer.addFrom (0, 0, channelBuffer, 0, 0, numSamples);
         renderBuffer.addFrom (1, 0, channelBuffer, 1, 0, numSamples);
     }
+
+    // Done touching SFZ instances for this block — release the lock so the message
+    // thread can swap/free instances on load/clear.
+    if (cbSfzLocked) { sfz.unlock(); cbSfzLocked = false; }
 
     // Master EQ on the summed mix.
     if (! masterEq.flat)

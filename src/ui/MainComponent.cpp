@@ -329,6 +329,43 @@ MainComponent::MainComponent()
                                            (float) (double) obj->getProperty ("high"));
                 completion (juce::var());
             })
+        .withNativeFunction ("loadTrackSfz",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                int channel = 0;
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        channel = (int) obj->getProperty ("channel");
+                auto start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose an SFZ instrument", start, "*.sfz");
+                chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectFiles,
+                    [this, chooser, channel] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f.existsAsFile())
+                        {
+                            const bool ok = engine.loadChannelSfz (channel, f);
+                            if (webView != nullptr)
+                                webView->evaluateJavascript ("window.gomidasSfzLoaded && window.gomidasSfzLoaded("
+                                    + juce::String (channel) + ","
+                                    + juce::String (ok ? "true" : "false") + ","
+                                    + juce::JSON::toString (juce::var (f.getFileNameWithoutExtension())) + ");");
+                        }
+                    });
+                completion (juce::var());
+            })
+        .withNativeFunction ("clearTrackSfz",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                        engine.clearChannelSfz ((int) obj->getProperty ("channel"));
+                completion (juce::var());
+            })
         .withNativeFunction ("minimizeWindow",
             [this] (const juce::Array<juce::var>&,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
@@ -546,6 +583,9 @@ void MainComponent::buildMenus()
             { "Load Input Plugin (AU/VST3)...", "loadplugin" },
             { "Show Plugin Editor", "showplugineditor" },
             { "Clear Input Plugin", "clearplugin" },
+            { "-", "" },
+            { "Load SFZ Instrument for Track...", "loadsfz" },
+            { "Clear SFZ Instrument for Track", "clearsfz" },
             { "-", "" },
             { "Record to WAV (toggle)...", "record" },
         } },
