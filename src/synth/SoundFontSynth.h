@@ -31,6 +31,8 @@ public:
     void programChange (int channel, int program, bool isPercussion);
     void noteOn (int channel, int key, float velocity);   // velocity 0..1
     void noteOff (int channel, int key);
+    void pitchWheel (int channel, int value14);           // 0..16383 (8192 = centre); range = 12 semitones
+    void controlChange (int channel, int cc, int value);  // value 0..127
     void setChannelVolume (int channel, float volume);    // linear gain (1.0 = full), affects ringing voices
     void setChannelPan (int channel, float pan);          // 0..1 (0.5 = centre)
     void allNotesOff();

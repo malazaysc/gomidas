@@ -156,6 +156,64 @@ Drums:
 - [x] Record the output mix (backing tracks + live input) to WAV — transport `⏺` / Sound menu;
   `AudioEngine::startRecording`/`stopRecording` via a background `ThreadedWriter` (RT-safe). _Loop/overdub recording still pending._
 
+## Realistic Sound (RSE-equivalent) — sfizz default + per-track VST
+> Full design + architecture: [`REALISTIC_SOUND.md`](./REALISTIC_SOUND.md). Bundled-content licensing:
+> [`SOUND_LIBRARIES.md`](./SOUND_LIBRARIES.md). Decided with the user 2026-06-29: **A-first** (bundled
+> CC0 SFZ default), then **B** (per-track VST instruments — roadmap priority #2). Status: **planning**.
+
+**Phase 0 — shared foundation (prereq for A and B):**
+- [x] Add **sfizz** (BSD/ISC) to `CMakeLists.txt` via FetchContent (static lib; built as C++17 — see
+  `REALISTIC_SOUND.md` §7 for the four arm64/modern-clang build fixes in `cmake/patch_sfizz.py`)
+- [x] Per-channel SFZ override in `AudioEngine` via `SfzSynth` (lock-free `activeMask()` + per-block
+  `tryLock()`, mirroring `pluginLock`; null channel → existing TSF path). _Generalised `TrackInstrument`
+  abstraction deferred — `SfzSynth` is the concrete first backend; refactor when VST instruments land._
+- [x] Sequencer routing fork: SFZ channels routed in `applyEvent` + the render loop (mixer gain/pan applied
+  post-render since sfizz bypasses TSF volume/pan)
+- [x] Prove end-to-end: builds/links/launches; **`tests/sfz_smoketest` confirms sfizz loads the bundled
+  SFZ + decodes FLAC + renders non-silent audio** (guitar+bass PASS). In-app GUI routing → speakers still
+  needs an ear-check (inspector Preset → play).
+- [x] **Event-format plumbing**: `NoteEvent` gains `kind`+`value` (0=note, 1=pitch-bend, 2=CC); native parses
+  the optional 8th/9th array elements; `applyEvent` dispatches to TSF (`tsf_channel_set_pitchwheel`/`_midi_control`,
+  bend range widened to ±12) and sfizz (`pitchWheel`/`cc`; bundled SFZs given `bend_up/down=1200`). Additive —
+  no behavior change until JS emits pitch-bend/CC events.
+- [ ] **Emit** pitch-bend for slides/bends in `rebuildSequence` (~`app.js:251`). _Deliberately deferred:_ a
+  mis-ordered bend-reset detunes the whole channel for following notes, so this needs **ear verification** before
+  shipping. Design: ramp center→Δsemitones over the slide note (Δ scaled to ±12), reset to centre at the target
+  onset (use a fractional tick so the reset sorts before the next note-on). Watch legato (no re-pick) vs shift.
+
+**Phase A — bundled SFZ default (build first):**
+- [x] `SfzSynth` per-channel sfizz backend (load/note/bend/cc/render/clear) — see Phase 0
+- [x] Native `loadTrackSfz`/`clearTrackSfz`; **inspector SOUNDS UI**: live RSE/MIDI pill + Instrument row +
+  Load SFZ…/Clear buttons (reused the "RSE pill" stub). Also a Sound-menu fallback.
+- [x] CC0 content bundled: **FreePats Classical Guitar (5.2 MB) + Electric Bass (2.8 MB)**, both CC0,
+  in `assets/instruments/` → copied to app Resources at build. **Drums deferred to download-on-first-run**
+  (good CC0 kits are 1.6–2.3 GB — too big to bundle).
+- [x] **Built-in preset picker**: inspector SOUNDS dropdown (GM SoundFont | presets | loaded custom file |
+  Load file…); native `loadTrackSfzPreset` resolves the bundled path. _Drum-kit SFZ preset still TODO
+  (needs the download mechanism)._
+- [ ] Author our own `.sfz` layout incl. the articulation/keyswitch map (Phase C)
+- [x] **Persist the instrument assignment in `.gomidas`** via a backward-compatible envelope
+  (`{ gomidasVersion, instruments, score }`; legacy raw-score files still load). Built-in **presets** persist
+  (matched by name) + reload on open; custom file loads stay session-only (paths are fragile). This is the
+  project-format envelope EQ-persistence can also use. _Verified with standalone round-trip tests; needs a GUI
+  save/reload pass to confirm in-app._
+
+**Phase B — per-track VST instruments (priority #2):**
+- [ ] ⚠️ First **verify the existing live-input VST host actually works at runtime** (it's unverified) before scaling to 16
+- [ ] `VstInstrument : TrackInstrument` (per-channel MidiBuffer feed; reuse `pluginFormatManager` + the
+  `loadInputPlugin` swap pattern)
+- [ ] Generalize `PluginEditorWindow` → N windows; native `showTrackPluginEditor(channel)`
+- [ ] Plugin state save/restore in `.gomidas` (`getStateInformation` → base64) — closes the existing "plugin state-save" TODO
+- [ ] UI sound-source picker → "Plugin…" → file chooser → `setTrackInstrument(channel,'vst',path)`
+
+**Phase C — articulation mapping (realism; overlaps A/B):**
+- [ ] Pitch-bend ramps for slides/bends in `rebuildSequence` (~`app.js:251`) — universal across backends
+- [ ] Keyswitch emission for palm-mute/harmonic/dead matching the bundled-SFZ layout
+- [ ] (Later) tremolo repick, strum spread, fade envelopes, vibrato-as-pitch-bend; per-VST articulation presets
+
+**Later / open:** amp sim (bundle Neural Amp Modeler MIT, fed the CC0 clean-DI guitar); per-track plugin
+*chains*; sample-accurate (vs block-quantized) note timing.
+
 ## Phase 3 — Export & sync
 - [x] `.gp` export (alphaTab `Gp7Exporter`) — File→Export Guitar Pro; `exportGp` → `saveBinary` native
   save dialog (base64 → bytes). _Verify the round-trip: export, then reopen the `.gp` in Gomidas / GP._

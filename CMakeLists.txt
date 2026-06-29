@@ -18,6 +18,37 @@ FetchContent_Declare(JUCE
   GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(JUCE)
 
+# ---- sfizz (SFZ sample engine, BSD/ISC) -------------------------------------
+# Realistic sample-based instruments (see docs/REALISTIC_SOUND.md). We build only the
+# static library — no LV2/VST/AU plugins, no JACK, no CLI render tool, no tests/demos.
+# SFIZZ_USE_SNDFILE=OFF uses sfizz's vendored audio loader (dr_libs), so we don't need
+# an external libsndfile. Consumers link the sfizz::sfizz alias.
+set(SFIZZ_SHARED    OFF CACHE BOOL "" FORCE)
+set(SFIZZ_RENDER    OFF CACHE BOOL "" FORCE)
+set(SFIZZ_JACK      OFF CACHE BOOL "" FORCE)
+set(SFIZZ_LV2       OFF CACHE BOOL "" FORCE)
+set(SFIZZ_LV2_UI    OFF CACHE BOOL "" FORCE)
+set(SFIZZ_VST       OFF CACHE BOOL "" FORCE)
+set(SFIZZ_AU        OFF CACHE BOOL "" FORCE)
+set(SFIZZ_TESTS     OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEMOS     OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEVTOOLS  OFF CACHE BOOL "" FORCE)
+set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(SFIZZ_USE_SNDFILE OFF CACHE BOOL "" FORCE)
+set(ENABLE_LTO      OFF CACHE BOOL "" FORCE)   # faster dev builds; revisit for release
+FetchContent_Declare(sfizz
+  GIT_REPOSITORY https://github.com/sfztools/sfizz.git
+  GIT_TAG        1.2.3
+  # sfizz 1.2.3 doesn't build cleanly on arm64 + modern clang; patch_sfizz.py fixes
+  # the arm64 compile flags and an atomic_queue template-keyword conformance error.
+  PATCH_COMMAND  python3 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_sfizz.py")
+# Build sfizz (and its vendored abseil) as C++17: 1.2.3 is a C++17-era codebase that
+# breaks under C++20 (uses the removed std::result_of, pre-char8_t u8"..." literals, etc.).
+# Drop to 17 just for sfizz's add_subdirectory, then restore 20 for our own target.
+set(CMAKE_CXX_STANDARD 17)
+FetchContent_MakeAvailable(sfizz)
+set(CMAKE_CXX_STANDARD 20)
+
 # ---- App ---------------------------------------------------------------------
 juce_add_gui_app(Gomidas
   PRODUCT_NAME  "Gomidas"
@@ -54,7 +85,8 @@ target_sources(Gomidas PRIVATE
   src/Main.cpp
   src/ui/MainComponent.cpp
   src/engine/AudioEngine.cpp
-  src/synth/SoundFontSynth.cpp)
+  src/synth/SoundFontSynth.cpp
+  src/synth/SfzSynth.cpp)
 
 # High-quality GM SoundFont (FluidR3, ~150MB, MIT). Too big to embed in the binary,
 # so it ships as a bundle resource and is loaded at runtime. Falls back to the
@@ -66,6 +98,18 @@ if(EXISTS "${GOMIDAS_FLUID_SF}")
   message(STATUS "Gomidas: bundling FluidR3_GM.sf2 SoundFont")
 else()
   message(STATUS "Gomidas: FluidR3_GM.sf2 not found — using embedded sonivox bank")
+endif()
+
+# Bundle built-in SFZ instruments (small CC0 sets) into the app Resources, so
+# sfizz can load them by absolute path with no download. Big sets (e.g. Karoryfer
+# drums ~2.3 GB) will fetch on first run instead — keep only small CC0 here.
+set(GOMIDAS_INSTRUMENTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/instruments")
+if(EXISTS "${GOMIDAS_INSTRUMENTS}")
+  add_custom_command(TARGET Gomidas POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${GOMIDAS_INSTRUMENTS}"
+            "$<TARGET_FILE_DIR:Gomidas>/../Resources/instruments"
+    COMMENT "Gomidas: bundling SFZ instruments into app Resources")
 endif()
 
 target_include_directories(Gomidas PRIVATE src)
@@ -80,8 +124,17 @@ target_compile_definitions(Gomidas PRIVATE
   JUCE_PLUGINHOST_AU=1
   JUCE_PLUGINHOST_VST3=1)
 
+# Standalone test tools (off by default): -DGOMIDAS_BUILD_TESTS=ON
+option(GOMIDAS_BUILD_TESTS "Build standalone test tools (sfz_smoketest)" OFF)
+if(GOMIDAS_BUILD_TESTS)
+  add_executable(sfz_smoketest tests/sfz_smoketest.cpp)
+  target_link_libraries(sfz_smoketest PRIVATE sfizz::sfizz)
+  set_target_properties(sfz_smoketest PROPERTIES CXX_STANDARD 17)
+endif()
+
 target_link_libraries(Gomidas PRIVATE
   GomidasAssets
+  sfizz::sfizz
   juce::juce_audio_processors
   juce::juce_audio_utils
   juce::juce_audio_devices

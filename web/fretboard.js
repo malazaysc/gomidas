@@ -745,13 +745,32 @@
             '<span class="' + (s.showTab ? 'on' : '') + '" data-not="tab" title="Tablature">' + IC('tabgrid', 'sm') + '</span></span></div>' +
           (s.isPercussion ? '' : '<div class="insp-row"><span>Tuning</span><span class="insp-tunwrap">' + IC('gear', 'sm') + tuningSel + '</span></div>') +
         '</div>' +
-        '<div class="insp-sec"><div class="insp-h">Sounds</div>' +
-          '<div class="insp-row"><span class="insp-pill" id="ins-engine"><span class="gd-soon" data-eng="rse" title="Realistic Sound Engine (coming soon)">RSE</span><span class="on" data-eng="midi" title="MIDI / SoundFont">MIDI</span></span>' +
-            '<span class="insp-chain">' + IC('guitar', 'sm') + IC('eq', 'sm') + IC('wave', 'sm') + IC('volume', 'sm') + '</span></div>' +
-          (s.isPercussion
-            ? '<div class="insp-row" style="margin-top:8px"><span>Kit</span><select class="insp-select" id="ins-kit">' + optionList(DRUM_KITS, s.trackProgram | 0) + '</select></div>'
-            : '<div class="insp-row" style="margin-top:8px"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>') +
-        '</div>' +
+        (function () {
+          const ch = window.gomidasCurrentTrackChannel ? window.gomidasCurrentTrackChannel() : null;
+          const sfzName = (ch != null && window.gomidasTrackSfz) ? window.gomidasTrackSfz[ch] : null;
+          // Instrument dropdown: GM SoundFont (clear) | built-in presets | a loaded
+          // custom file (shown as its own option) | Load file… (native chooser).
+          const presets = window.gomidasSfzPresets || [];
+          const match = presets.find(p => p.name === sfzName);
+          let sfzOpts = '<option value="">GM SoundFont</option>' +
+            presets.map(p => '<option value="' + p.id + '"' + (match && match.id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+            ((sfzName && !match) ? '<option value="__current__" selected>' + esc(sfzName) + '</option>' : '') +
+            '<option value="__file__">Load file…</option>';
+          return '<div class="insp-sec"><div class="insp-h">Sounds</div>' +
+            // RSE = SFZ sample instrument (active when one is loaded); MIDI = GM SoundFont.
+            '<div class="insp-row"><span class="insp-pill" id="ins-engine">' +
+              '<span class="' + (sfzName ? 'on' : '') + '" data-eng="rse" title="SFZ sample instrument">RSE</span>' +
+              '<span class="' + (sfzName ? '' : 'on') + '" data-eng="midi" title="MIDI / SoundFont">MIDI</span></span>' +
+              '<span class="insp-chain">' + IC('guitar', 'sm') + IC('eq', 'sm') + IC('wave', 'sm') + IC('volume', 'sm') + '</span></div>' +
+            '<div class="insp-row" style="margin-top:8px"><span>Instrument</span>' +
+              '<span class="insp-sfz" id="ins-sfz-name" title="' + esc(sfzName || '') + '">' + esc(sfzName || 'GM SoundFont') + '</span></div>' +
+            '<div class="insp-row" style="margin-top:6px"><span>Preset</span>' +
+              '<select class="insp-select" id="ins-sfz-preset">' + sfzOpts + '</select></div>' +
+            (s.isPercussion
+              ? '<div class="insp-row" style="margin-top:8px"><span>Kit</span><select class="insp-select" id="ins-kit">' + optionList(DRUM_KITS, s.trackProgram | 0) + '</select></div>'
+              : '<div class="insp-row" style="margin-top:8px"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>') +
+          '</div>';
+        })() +
         '<div class="insp-sec"><div class="insp-h">Mixer</div>' +
           '<div class="insp-row"><span>Pan</span>' +
             '<input type="range" class="insp-slider" id="ins-pan" min="0" max="100" value="' + Math.round((s.trackPan != null ? s.trackPan : 0.5) * 100) + '"></div>' +
@@ -780,8 +799,34 @@
     if (title) title.onchange = () => E.setSongTitle(title.value);
     const tempo = byId('ins-tempo');
     if (tempo) tempo.onchange = () => E.setSongTempo(parseInt(tempo.value, 10));
+    // Choosing a GM program switches the track back to the MIDI engine: clear any SFZ
+    // instrument on it (otherwise sfizz keeps overriding and the GM choice is inaudible).
+    const switchToMidi = () => {
+      const ch = window.gomidasCurrentTrackChannel && window.gomidasCurrentTrackChannel();
+      if (ch != null && window.gomidasTrackSfz && window.gomidasTrackSfz[ch] && window.gomidasClearTrackSfz)
+        window.gomidasClearTrackSfz();
+    };
     const sound = byId('ins-sound');
-    if (sound) sound.onchange = () => E.setTrackProgram(parseInt(sound.value, 10));
+    if (sound) sound.onchange = () => { E.setTrackProgram(parseInt(sound.value, 10)); switchToMidi(); };
+    // SFZ instrument dropdown: '' = GM (clear), a preset id = load it, __file__ = native
+    // chooser, __current__ = the already-loaded custom file (no-op).
+    const sfzPreset = byId('ins-sfz-preset');
+    if (sfzPreset) sfzPreset.onchange = () => {
+      const v = sfzPreset.value;
+      if (v === '') { if (window.gomidasClearTrackSfz) window.gomidasClearTrackSfz(); }
+      else if (v === '__file__') { if (window.gomidasMenu) window.gomidasMenu('loadsfz'); }
+      else if (v === '__current__') { /* keep current */ }
+      else {
+        const p = (window.gomidasSfzPresets || []).find(x => x.id === v);
+        if (p && window.gomidasLoadSfzPreset) window.gomidasLoadSfzPreset(p);
+      }
+    };
+    // RSE/MIDI pill shortcut: RSE = open the native file chooser, MIDI = clear to GM.
+    const engine = byId('ins-engine');
+    if (engine) engine.querySelectorAll('span').forEach(sp => sp.onclick = () => {
+      if (!window.gomidasMenu) return;
+      window.gomidasMenu(sp.dataset.eng === 'rse' ? 'loadsfz' : 'clearsfz');
+    });
     const tuning = byId('ins-tuning');
     if (tuning) tuning.onchange = () => { const v = tuning.value; if (v) E.setTuningPreset(v.split(',').map(Number)); };
     const pan = byId('ins-pan');
@@ -799,7 +844,7 @@
     if (not) not.querySelectorAll('span').forEach(sp => sp.onclick = () => E.toggleNotation(sp.dataset.not));
     // ---- drum-track inspector controls ----
     const kit = byId('ins-kit');
-    if (kit) kit.onchange = () => E.setTrackProgram(parseInt(kit.value, 10));
+    if (kit) kit.onchange = () => { E.setTrackProgram(parseInt(kit.value, 10)); switchToMidi(); };
     const genvar = byId('ins-genvar');
     if (genvar) genvar.onclick = () => { if (E.generateVariation) E.generateVariation(); refocus(); };
     const insmode = byId('ins-insmode');
@@ -813,6 +858,9 @@
       refocus();
     };
   }
+
+  // Rebuild the inspector (e.g. after a per-track SFZ instrument loads/clears).
+  window.gomidasRefreshInspector = function () { if (E && E.getState) buildInspector(E.getState()); };
 
   // ---- bottom track list (GP8: controls + per-bar timeline + Master row) ------
   const IC = (n, c) => (window.Icons ? window.Icons.use(n, c) : '');

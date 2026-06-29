@@ -161,6 +161,20 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | MIDI instruments per track (GM program) | automatic | ✅ TinySoundFont + FluidR3_GM SoundFont |
 | Drum tracks (GM channel 9) | automatic | ✅ articulation → `outputMidiNumber` |
 
+## Realistic sound — per-track SFZ instruments (sfizz)
+> Design + build notes: [`REALISTIC_SOUND.md`](./REALISTIC_SOUND.md); CC0 content: [`SOUND_LIBRARIES.md`](./SOUND_LIBRARIES.md).
+> ⚠️ In-app audio (inspector preset → speakers) still needs an ear-check; the SFZ→audio path is verified by `tests/sfz_smoketest`.
+
+| Feature | How | Notes |
+| --- | --- | --- |
+| Per-track SFZ instrument | inspector **SOUNDS → Preset** / Sound menu | ✅ a track plays an SFZ sample instrument via **sfizz** (one `sfz::Sfizz` per channel) through the same per-channel EQ→mix bus; engine = `src/synth/SfzSynth` |
+| Built-in CC0 presets | inspector Preset dropdown | ✅ Classical Guitar + Electric Bass bundled (`assets/instruments/`, copied to app Resources); load instantly, no download |
+| Load custom `.sfz` | Preset → *Load file…* / Sound menu | ✅ native file chooser; loads any SFZ onto the current track (session-only) |
+| RSE / MIDI engine pill | inspector SOUNDS | ✅ shows which engine a track uses; RSE = SFZ loaded, MIDI = SoundFont. Picking a GM Sound/Kit clears the SFZ |
+| Persist instrument in `.gomidas` | Save / Open | ✅ built-in presets reload on open (envelope `{gomidasVersion,instruments,score}`; legacy files still load) |
+| Pitch-bend / CC events | event format | 🟡 plumbing only (`NoteEvent.kind/value` → TSF/sfizz, ±12 bend) — no slide/bend emission yet (deferred, needs ear) |
+| SFZ audio smoke test | `cmake -DGOMIDAS_BUILD_TESTS=ON` → `sfz_smoketest` | ✅ loads an SFZ, plays a note, asserts non-silent output (guitar+bass PASS) |
+
 ## UI / app
 | Feature | How | Notes |
 | --- | --- | --- |
