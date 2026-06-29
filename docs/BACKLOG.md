@@ -191,7 +191,11 @@ Drums:
   Load file…); native `loadTrackSfzPreset` resolves the bundled path. _Drum-kit SFZ preset still TODO
   (needs the download mechanism)._
 - [ ] Author our own `.sfz` layout incl. the articulation/keyswitch map (Phase C)
-- [ ] Persist the instrument assignment in `.gomidas` (needs the project-format envelope EQ-persistence also wants)
+- [x] **Persist the instrument assignment in `.gomidas`** via a backward-compatible envelope
+  (`{ gomidasVersion, instruments, score }`; legacy raw-score files still load). Built-in **presets** persist
+  (matched by name) + reload on open; custom file loads stay session-only (paths are fragile). This is the
+  project-format envelope EQ-persistence can also use. _Verified with standalone round-trip tests; needs a GUI
+  save/reload pass to confirm in-app._
 
 **Phase B — per-track VST instruments (priority #2):**
 - [ ] ⚠️ First **verify the existing live-input VST host actually works at runtime** (it's unverified) before scaling to 16

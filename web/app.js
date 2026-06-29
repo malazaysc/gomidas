@@ -1095,8 +1095,21 @@ function syncMixerToScore() {
 }
 function saveProject() {
   syncMixerToScore();
-  const json = window.GomidasEditor && window.GomidasEditor.snapshot();
-  if (json) { nativeInvoke('saveProject', json); if (window.GomidasEditor.markClean) window.GomidasEditor.markClean(); }
+  const scoreJson = window.GomidasEditor && window.GomidasEditor.snapshot();
+  if (!scoreJson) return;
+  // Wrap the score JSON in a Gomidas envelope so per-track SFZ instruments persist.
+  // Only built-in presets are persisted (matched by name) — custom file loads are
+  // session-only (absolute paths are fragile). Old raw-score .gomidas files still load.
+  const instruments = {};
+  const presets = window.gomidasSfzPresets || [];
+  const sfz = window.gomidasTrackSfz || {};
+  for (const ch in sfz) {
+    const p = presets.find(x => x.name === sfz[ch]);
+    if (p) instruments[String(ch)] = p.id;
+  }
+  const payload = JSON.stringify({ gomidasVersion: 1, instruments, score: scoreJson });
+  nativeInvoke('saveProject', payload);
+  if (window.GomidasEditor.markClean) window.GomidasEditor.markClean();
 }
 function openProject() { nativeInvoke('openProject', 1); }
 // Export the current score to a Guitar Pro (.gp) file via alphaTab's Gp7Exporter,
@@ -1119,9 +1132,28 @@ function exportGp() {
   } catch (e) { setStatus('GP export failed: ' + e); nlog('exportGp: ' + (e && e.stack || e)); }
 }
 window.gomidasExportGp = exportGp;
-// Called by native after reading a .gomidas file.
+// Called by native after reading a .gomidas file. Accepts both the new Gomidas
+// envelope ({ gomidasVersion, instruments, score }) and the legacy raw-score JSON.
 window.gomidasLoadProject = function (json) {
-  if (window.GomidasEditor && window.GomidasEditor.loadProject(json)) focusEditor();
+  let scoreJson = json, instruments = null;
+  try {
+    const env = JSON.parse(json);
+    if (env && env.gomidasVersion && env.score != null) { scoreJson = env.score; instruments = env.instruments || {}; }
+  } catch (e) { /* not an envelope — treat as a legacy raw-score JSON string */ }
+  // Clear SFZ instruments left on the engine by the previous project, then reset state.
+  const prev = window.gomidasTrackSfz || {};
+  for (const ch in prev) nativeInvoke('clearTrackSfz', { channel: parseInt(ch, 10) });
+  window.gomidasTrackSfz = {};
+  if (window.GomidasEditor && window.GomidasEditor.loadProject(scoreJson)) {
+    if (instruments) {
+      const presets = window.gomidasSfzPresets || [];
+      for (const ch in instruments) {
+        const p = presets.find(x => x.id === instruments[ch]);
+        if (p) nativeInvoke('loadTrackSfzPreset', { channel: parseInt(ch, 10), file: p.file, name: p.name });
+      }
+    }
+    focusEditor();
+  }
 };
 // Called by native with a base64 of a .gp / MusicXML file's raw bytes (native Open
 // + Open Recent give us a real path; the bytes come back here for alphaTab to parse).
