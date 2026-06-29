@@ -180,10 +180,12 @@ Drums:
 - [x] `SfzSynth` per-channel sfizz backend (load/note/bend/cc/render/clear) — see Phase 0
 - [x] Native `loadTrackSfz`/`clearTrackSfz`; **inspector SOUNDS UI**: live RSE/MIDI pill + Instrument row +
   Load SFZ…/Clear buttons (reused the "RSE pill" stub). Also a Sound-menu fallback.
-- [~] CC0 content: **FreePats Spanish Classical Guitar (CC0, 4.5 MiB, SFZ+FLAC) acquired + license-verified**,
-  staged at `~/Music/GomidasTest/` for testing. Bass + Karoryfer drums still to fetch (see `SOUND_LIBRARIES.md`).
-- [ ] **Bundle** instrument(s) as built-in presets (Resources/binary-data) + a preset picker, vs the current
-  load-any-file flow; bundle vs download-on-first-run for big sets (Karoryfer drums ~2.3 GB — open question)
+- [x] CC0 content bundled: **FreePats Classical Guitar (5.2 MB) + Electric Bass (2.8 MB)**, both CC0,
+  in `assets/instruments/` → copied to app Resources at build. **Drums deferred to download-on-first-run**
+  (good CC0 kits are 1.6–2.3 GB — too big to bundle).
+- [x] **Built-in preset picker**: inspector SOUNDS dropdown (GM SoundFont | presets | loaded custom file |
+  Load file…); native `loadTrackSfzPreset` resolves the bundled path. _Drum-kit SFZ preset still TODO
+  (needs the download mechanism)._
 - [ ] Author our own `.sfz` layout incl. the articulation/keyswitch map (Phase C)
 - [ ] Persist the instrument assignment in `.gomidas` (needs the project-format envelope EQ-persistence also wants)
 

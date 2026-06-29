@@ -23,6 +23,16 @@ files themselves, bundled in proprietary software.
 
 ---
 
+## Bundled now (in `assets/instruments/`, copied to app Resources at build)
+| Instrument | Source | License | Size |
+| --- | --- | --- | --- |
+| `classical-guitar` | FreePats Spanish Classical Guitar | CC0 | 5.2 MB (SFZ+FLAC) |
+| `electric-bass` | FreePats PickedBass YR (Yamaha RBX, pick) | CC0 | 2.8 MB (SFZ+FLAC) |
+
+These ship inside the app and load instantly as inspector presets (no download). **Drums are
+deliberately not bundled** — the good CC0 kits (Karoryfer) are ~1.6–2.3 GB, so they'll be
+download-on-first-run. CC0 confirmed in each bundled `cc0.txt`.
+
 ## Recommended default set — all CC0, SFZ-native, zero attribution
 
 This is a complete guitar + bass + drums default with **no legal conditions at all** (no credit

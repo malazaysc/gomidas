@@ -100,6 +100,18 @@ else()
   message(STATUS "Gomidas: FluidR3_GM.sf2 not found — using embedded sonivox bank")
 endif()
 
+# Bundle built-in SFZ instruments (small CC0 sets) into the app Resources, so
+# sfizz can load them by absolute path with no download. Big sets (e.g. Karoryfer
+# drums ~2.3 GB) will fetch on first run instead — keep only small CC0 here.
+set(GOMIDAS_INSTRUMENTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/instruments")
+if(EXISTS "${GOMIDAS_INSTRUMENTS}")
+  add_custom_command(TARGET Gomidas POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${GOMIDAS_INSTRUMENTS}"
+            "$<TARGET_FILE_DIR:Gomidas>/../Resources/instruments"
+    COMMENT "Gomidas: bundling SFZ instruments into app Resources")
+endif()
+
 target_include_directories(Gomidas PRIVATE src)
 
 target_compile_definitions(Gomidas PRIVATE

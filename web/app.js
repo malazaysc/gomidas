@@ -441,6 +441,21 @@ window.gomidasCurrentTrackChannel = currentTrackChannel;
 // Per-channel SFZ instrument name (session state; drives the inspector display).
 window.gomidasTrackSfz = window.gomidasTrackSfz || {};
 
+// Built-in SFZ instruments bundled in the app (Resources/instruments/<file>). All CC0.
+// `kind` is for future per-track-kind filtering. Extend as more content is bundled.
+window.gomidasSfzPresets = [
+  { id: 'classical-guitar', name: 'Classical Guitar (CC0)', file: 'classical-guitar/classical-guitar.sfz', kind: 'guitar' },
+  { id: 'electric-bass',    name: 'Electric Bass (CC0)',    file: 'electric-bass/electric-bass.sfz',       kind: 'bass' },
+];
+
+// Load a built-in preset onto the current track (native resolves the bundle path;
+// gomidasSfzLoaded fires with the result and updates the inspector).
+window.gomidasLoadSfzPreset = function (p) {
+  const ch = currentTrackChannel();
+  if (ch == null || !p) return;
+  nativeInvoke('loadTrackSfzPreset', { channel: ch, file: p.file, name: p.name });
+};
+
 // Native reports the result of a per-track SFZ load (channel, ok, instrument name).
 window.gomidasSfzLoaded = function (channel, ok, name) {
   if (ok) window.gomidasTrackSfz[channel] = name;

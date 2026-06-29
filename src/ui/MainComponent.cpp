@@ -357,6 +357,28 @@ MainComponent::MainComponent()
                     });
                 completion (juce::var());
             })
+        .withNativeFunction ("loadTrackSfzPreset",
+            [this] (const juce::Array<juce::var>& args,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                int channel = 0; juce::String rel, name;
+                if (! args.isEmpty())
+                    if (auto* obj = args[0].getDynamicObject())
+                    {
+                        channel = (int) obj->getProperty ("channel");
+                        rel  = obj->getProperty ("file").toString();
+                        name = obj->getProperty ("name").toString();
+                    }
+                // Built-in instruments live in Gomidas.app/Contents/Resources/instruments.
+                auto appFile = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+                auto f = appFile.getChildFile ("Contents/Resources/instruments").getChildFile (rel);
+                const bool ok = f.existsAsFile() && engine.loadChannelSfz (channel, f);
+                if (webView != nullptr)
+                    webView->evaluateJavascript ("window.gomidasSfzLoaded && window.gomidasSfzLoaded("
+                        + juce::String (channel) + "," + juce::String (ok ? "true" : "false") + ","
+                        + juce::JSON::toString (juce::var (name)) + ");");
+                completion (juce::var());
+            })
         .withNativeFunction ("clearTrackSfz",
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)

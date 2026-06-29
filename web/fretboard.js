@@ -748,6 +748,14 @@
         (function () {
           const ch = window.gomidasCurrentTrackChannel ? window.gomidasCurrentTrackChannel() : null;
           const sfzName = (ch != null && window.gomidasTrackSfz) ? window.gomidasTrackSfz[ch] : null;
+          // Instrument dropdown: GM SoundFont (clear) | built-in presets | a loaded
+          // custom file (shown as its own option) | Load file… (native chooser).
+          const presets = window.gomidasSfzPresets || [];
+          const match = presets.find(p => p.name === sfzName);
+          let sfzOpts = '<option value="">GM SoundFont</option>' +
+            presets.map(p => '<option value="' + p.id + '"' + (match && match.id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') +
+            ((sfzName && !match) ? '<option value="__current__" selected>' + esc(sfzName) + '</option>' : '') +
+            '<option value="__file__">Load file…</option>';
           return '<div class="insp-sec"><div class="insp-h">Sounds</div>' +
             // RSE = SFZ sample instrument (active when one is loaded); MIDI = GM SoundFont.
             '<div class="insp-row"><span class="insp-pill" id="ins-engine">' +
@@ -756,9 +764,8 @@
               '<span class="insp-chain">' + IC('guitar', 'sm') + IC('eq', 'sm') + IC('wave', 'sm') + IC('volume', 'sm') + '</span></div>' +
             '<div class="insp-row" style="margin-top:8px"><span>Instrument</span>' +
               '<span class="insp-sfz" id="ins-sfz-name" title="' + esc(sfzName || '') + '">' + esc(sfzName || 'GM SoundFont') + '</span></div>' +
-            '<div class="insp-row" style="margin-top:6px;justify-content:flex-end;gap:6px">' +
-              '<button class="insp-btn" id="ins-sfz-load">Load SFZ…</button>' +
-              (sfzName ? '<button class="insp-btn" id="ins-sfz-clear">Clear</button>' : '') + '</div>' +
+            '<div class="insp-row" style="margin-top:6px"><span>Preset</span>' +
+              '<select class="insp-select" id="ins-sfz-preset">' + sfzOpts + '</select></div>' +
             (s.isPercussion
               ? '<div class="insp-row" style="margin-top:8px"><span>Kit</span><select class="insp-select" id="ins-kit">' + optionList(DRUM_KITS, s.trackProgram | 0) + '</select></div>'
               : '<div class="insp-row" style="margin-top:8px"><span>Sound</span><select class="insp-select" id="ins-sound">' + optionList(GM_SOUNDS, s.trackProgram | 0) + '</select></div>') +
@@ -794,12 +801,20 @@
     if (tempo) tempo.onchange = () => E.setSongTempo(parseInt(tempo.value, 10));
     const sound = byId('ins-sound');
     if (sound) sound.onchange = () => E.setTrackProgram(parseInt(sound.value, 10));
-    // SFZ instrument: load/clear route through the global menu dispatch (which targets the
-    // current track's channel). The RSE/MIDI pill is a shortcut: RSE = load, MIDI = clear.
-    const sfzLoad = byId('ins-sfz-load');
-    if (sfzLoad) sfzLoad.onclick = () => { if (window.gomidasMenu) window.gomidasMenu('loadsfz'); };
-    const sfzClear = byId('ins-sfz-clear');
-    if (sfzClear) sfzClear.onclick = () => { if (window.gomidasMenu) window.gomidasMenu('clearsfz'); };
+    // SFZ instrument dropdown: '' = GM (clear), a preset id = load it, __file__ = native
+    // chooser, __current__ = the already-loaded custom file (no-op).
+    const sfzPreset = byId('ins-sfz-preset');
+    if (sfzPreset) sfzPreset.onchange = () => {
+      const v = sfzPreset.value;
+      if (v === '') { if (window.gomidasClearTrackSfz) window.gomidasClearTrackSfz(); }
+      else if (v === '__file__') { if (window.gomidasMenu) window.gomidasMenu('loadsfz'); }
+      else if (v === '__current__') { /* keep current */ }
+      else {
+        const p = (window.gomidasSfzPresets || []).find(x => x.id === v);
+        if (p && window.gomidasLoadSfzPreset) window.gomidasLoadSfzPreset(p);
+      }
+    };
+    // RSE/MIDI pill shortcut: RSE = open the native file chooser, MIDI = clear to GM.
     const engine = byId('ins-engine');
     if (engine) engine.querySelectorAll('span').forEach(sp => sp.onclick = () => {
       if (!window.gomidasMenu) return;
