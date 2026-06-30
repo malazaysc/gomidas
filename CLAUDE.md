@@ -90,7 +90,8 @@ open "build/Gomidas_artefacts/Debug/Gomidas.app"
 
 **UI: GP8-style dark layout** (`web/index.html`): top **transport** (home/zoom/undo·redo · ◀◀ ▶ ▶▶ +
 track chip with tempo · New/Open/Save/Import/track-select), left **palette** (`#editbar`, built by
-`fretboard.js buildEditBar` — nav/duration/fx/articulation/bar-ops), center **score** (`#at`) + **fretboard
+`fretboard.js buildEditBar` — nav/duration/fx/articulation/bar-ops), center **score** (`#at`) + **time-grid
+tab** (`#beatlane-panel`, see below) + **fretboard
 / drum palette**, right **SONG/TRACK inspector** (`buildInspector` — **live**: TRACK tab = editable name,
 Score/Tab toggles, tuning-preset picker, GM sound picker → `setTrackName`/`toggleNotation`/`setTuningPreset`/
 `setTrackProgram`; SONG tab = title + tempo → `setSongTitle`/`setSongTempo`. Interpretation sliders are still
@@ -174,6 +175,20 @@ colored band per track.
 **Feedback:** clicking a fret auditions the note/chord (native `preview`). **One unified cursor**
 spans notation+tab: it follows the native transport during playback and stays where playback stopped
 (written back into `cur`), so Play always resumes from the cursor (`commitPlayPositionToCursor`).
+
+**Time-grid tab view ("piano roll for tabs")** — a beat-reading helper for non-notation-readers,
+in `#beatlane-panel` below the score (toggle `⇧⌘G` / View→Toggle Beat Grid). alphaTab is an **optical
+engraver** (no proportional/equal-width-bar mode — only `stretchForce`/`justifyLastSystem`/`layoutMode`/
+`barCountPerPartial`), so any overlay on its surface is irregular. The grid is therefore drawn **by us
+on a canvas** (`editor.js renderBeatLane`) on its own even **time** scale: every 4/4 bar the same width,
+each bar's columns **adapt to its smallest value** (`laneBeatK`: 8ths→8, 16ths→16, triplets→3/beat),
+fret numbers on string rows at their **start time** + duration bars, BEAT + counting rows, center-locked
+green playhead, click-to-seek. The engraved tab/notation stays source of truth. _Don't re-attempt an
+overlay on the alphaTab score — it can't be both even and note-aligned._ v2 (backlog): fretboard-dot
+strip, margin annotations, multi-voice, repeats-aware playhead.
+**Collapsible drawers:** every dockable panel (Tools/Inspector/Beat Grid/Fretboard/Tracks) has a corner
+chevron → collapses to a thin labelled rail (`app.js initDrawers`; a `MutationObserver` re-appends the
+handle after `innerHTML` rebuilds; state persists per panel).
 
 Key facts learned (don't relearn):
 - alphaTab renders into a `.at-surface` div at the `#at` padding offset (24,24) — cursor/click

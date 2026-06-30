@@ -119,6 +119,49 @@
                    background: rgba(120,230,140,.30); border-left: 2px solid rgba(120,230,140,.95); }
     .sel-cell { position: absolute; pointer-events: none; display: none; z-index: 3;
                 background: rgba(255,190,70,.22); border-radius: 2px; }
+    /* Drawer handles: every dockable panel gets a small chevron button that collapses it
+       in place to a thin rail (re-expand by clicking the rail's chevron). */
+    .drawerable { position: relative; }
+    .drawer-tab { position: absolute; z-index: 40; display: flex; align-items: center; justify-content: center;
+                  gap: 6px; width: 18px; height: 18px; padding: 0; line-height: 1; font-size: 12px; border-radius: 4px;
+                  background: var(--ctrl); color: var(--dim); border: 1px solid var(--line); cursor: pointer; }
+    .drawer-tab:hover { color: #fff; background: var(--accent); border-color: var(--accent2); }
+    .drawer-title { display: none; font-size: 10px; font-weight: 700; letter-spacing: .07em;
+                    text-transform: uppercase; }
+    .drawer-left > .drawer-tab, .drawer-right > .drawer-tab { top: 6px; right: 6px; }
+    .drawer-bottom > .drawer-tab { top: 5px; right: 8px; }
+    /* collapsed → thin rail; hide the panel body; the whole rail becomes the labelled handle */
+    #palette.collapsed, #inspector.collapsed { flex: 0 0 24px !important; width: 24px !important;
+                  min-width: 24px !important; padding: 0 !important; overflow: hidden; }
+    #fretboard.collapsed { max-height: 24px !important; min-height: 24px !important; height: 24px !important;
+                  padding: 0 !important; overflow: hidden; }
+    #beatlane-panel.collapsed { height: 24px !important; overflow: hidden; }
+    #tracks.collapsed { max-height: 24px !important; overflow: hidden; }
+    .drawerable.collapsed > :not(.drawer-tab) { display: none !important; }
+    .drawerable.collapsed > .drawer-tab { inset: 0; width: auto; height: auto; transform: none;
+                  border: none; border-radius: 0; background: transparent; }
+    .drawerable.collapsed > .drawer-tab:hover { background: var(--hover); color: var(--text); }
+    .drawerable.collapsed .drawer-title { display: inline-block; }
+    .drawer-left.collapsed > .drawer-tab, .drawer-right.collapsed > .drawer-tab { flex-direction: column; padding-top: 8px; }
+    .drawer-left.collapsed .drawer-title, .drawer-right.collapsed .drawer-title {
+                  writing-mode: vertical-rl; text-orientation: mixed; }
+
+    /* Time-grid tab ("piano roll for tabs"): a consistent rhythm view below the score,
+       drawn on canvas. The grid represents TIME (every 4/4 bar the same width, columns
+       adapt to the smallest value in the bar); fret numbers sit on string rows at their
+       start time. The engraved tab above stays the source of truth. */
+    #beatlane-panel { flex: 0 0 auto; height: 184px; display: flex; background: #101015;
+                      border-top: 1px solid var(--line); }
+    body.hide-beatlane #beatlane-panel { display: none; }
+    #beatlane-gutter { flex: 0 0 auto; width: 34px; height: 100%; background: #0c0c10;
+                       border-right: 1px solid var(--line); }
+    #beatlane-wrap { flex: 1 1 auto; position: relative; overflow-x: auto; overflow-y: hidden; }
+    #beatlane { display: block; }
+    .bl-edit { position: absolute; pointer-events: none; display: none; z-index: 2;
+               background: rgba(123,92,255,.16); border-left: 1px solid rgba(123,92,255,.6);
+               border-right: 1px solid rgba(123,92,255,.6); }
+    .bl-play { position: absolute; pointer-events: none; display: none; z-index: 3; width: 2px;
+               background: #5ce08a; box-shadow: 0 0 6px rgba(92,224,138,.8); }
 
     /* fretboard / drum palette (center bottom) */
     #fretboard { flex: 0 0 auto; max-height: 240px; background: #211c17; border-top: 2px solid var(--line);
@@ -602,6 +645,10 @@
 
     <div id="center">
       <div id="at-wrap" tabindex="0"><div id="at"></div></div>
+      <div id="beatlane-panel">
+        <canvas id="beatlane-gutter"></canvas>
+        <div id="beatlane-wrap"><canvas id="beatlane"></canvas></div>
+      </div>
       <div id="fretboard"></div>
     </div>
 

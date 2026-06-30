@@ -625,6 +625,7 @@ void MainComponent::buildMenus()
             { "Zoom Out", "zoom:out" },
             { "-", "" },
             { "Toggle Multitrack View", "toggleview" },
+            { "Toggle Beat Grid", "togglebeatgrid" },
             { "Go To Bar...", "gotobar" },
             { "-", "" },
             { "Toggle Left Palette", "toggle:palette" },

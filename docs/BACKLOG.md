@@ -189,6 +189,12 @@ Drums:
 - [x] Left palette filled toward GP's icon set (voices, signatures, octave, dynamics, tuplets, articulation grid); dynamics/octave/clef/lyrics are placeholders pending engine support
 
 ## P3 — App / UX polish
+- [x] **Time-grid tab view** (piano-roll-for-tabs, `renderBeatLane`) — consistent time grid below the
+  score; adaptive columns, beat/counting rows, fret-on-string by start time, center-locked playhead.
+  **v2 TODO:** fretboard-dot strip (colored dots per string, mapped from the same time columns);
+  left-margin rhythm thumbnails; right-margin "= N grid spaces" annotations; multi-voice rendering;
+  repeats-aware playhead (currently linear song-tick, jumps on repeat replay).
+- [x] **Collapsible per-panel drawers** (`initDrawers`) — chevron handle → labelled rail; persists.
 - [x] Multitrack view toggle — GP `F3` (flips focused single track ↔ full multi-track view; View menu too)
 - [x] Zoom in / out — GP `⌘>` / `⌘<` (keyboard; transport buttons already existed)
 - [x] Go To (bar) — GP `⌘G` (modal → `GomidasEditor.goToBar`; View→Go To Bar)

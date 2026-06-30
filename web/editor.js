@@ -1828,7 +1828,10 @@
   }
   function hideCountdownOverlay() { if (countdownEl) { countdownEl.style.display = 'none'; countdownEl.classList.remove('pulse'); } }
   // Reflect a forced stop (e.g. Panic) in the UI without sending another transport msg.
-  function notifyStopped() { cancelCountIn(); commitPlayPositionToCursor(); isPlaying = false; refreshCursor(); }
+  function notifyStopped() {
+    cancelCountIn(); commitPlayPositionToCursor(); isPlaying = false; refreshCursor();
+    if (_lanePlay) _lanePlay.style.display = 'none';
+  }
 
   function startPlayback() {
     countInRunning = false;
@@ -1998,9 +2001,253 @@
       st.classList.toggle('bar-warn', fc !== 'exact');
     }
     if (window.GomidasUI) window.GomidasUI.refresh(getState());
+    updateLaneEditCursor();
+  }
+
+  // ---- proportional beat lane (consistent rhythm timeline) -------------------
+  // A non-reader's pulse helper, rendered entirely by us on its OWN even time-scale so
+  // spacing is perfectly consistent (which the engraved score, being optically spaced,
+  // can never be): every 4/4 bar is the same width, beats are evenly spaced, and each note
+  // is a block sized by its duration (ties/long notes = long blocks, rests = gaps). Lives
+  // in its own strip below the score; doesn't try to column-align with the notation above.
+  const LANE_PXQ = 84;          // pixels per quarter note (the whole grid's time scale)
+  const LANE_PAD = 14;
+  let _laneEdit = null, _lanePlay = null, _laneHookedResize = false;
+
+  function laneWrap() { return document.getElementById('beatlane-wrap'); }
+  function laneCanvas() { return document.getElementById('beatlane'); }
+  function laneVisible() { return !document.body.classList.contains('hide-beatlane'); }
+  function laneAbsX(tick) { return LANE_PAD + (tick / 960) * LANE_PXQ; }   // 960 = PPQ
+  function roundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function ensureLaneCursors() {
+    const w = laneWrap(); if (!w) return;
+    if (!_laneEdit) { _laneEdit = document.createElement('div'); _laneEdit.className = 'bl-edit'; w.appendChild(_laneEdit); }
+    if (!_lanePlay) { _lanePlay = document.createElement('div'); _lanePlay.className = 'bl-play'; w.appendChild(_lanePlay); }
+  }
+
+  // Absolute song tick of the current edit cursor (bars are full time-signature length).
+  function laneCurrentTick() {
+    const score = api.score; let tk = 0;
+    for (let i = 0; i < cur.bar; i++) tk += masterBarTicks(score, i);
+    const v = voice(); if (v) for (let j = 0; j < cur.beat && j < v.beats.length; j++) tk += beatTicks(v.beats[j]);
+    return tk;
+  }
+
+  // Counting syllable for subdivision cell j (0..K-1) of beat `bn`. j===0 is the beat itself.
+  function countSyllable(K, j, bn) {
+    if (j === 0) return String(bn);
+    if (K === 2) return '+';
+    if (K === 4) return ['', 'e', '+', 'a'][j];
+    if (K === 8) return ['', 'e', '+', 'a', '·', 'e', '+', 'a'][j] || '·';
+    if (K === 3) return '·';
+    if (K === 6) return j === 3 ? '+' : '·';
+    return '·';
+  }
+  // Adaptive subdivisions-per-beat from the smallest straight value present in the bar.
+  function laneBeatK(bar, beatUnit, compound) {
+    const v0 = bar && bar.voices && bar.voices[0];
+    let minDur = Infinity;
+    if (v0) for (const be of v0.beats) {
+      if (be.tupletNumerator && be.tupletNumerator > 0) continue;
+      const d = beatTicks(be); if (d > 0 && d < minDur) minDur = d;
+    }
+    if (!isFinite(minDur)) minDur = beatUnit;
+    let K = Math.max(1, Math.round(beatUnit / Math.max(minDur, WHOLE_TICKS / 16)));
+    return compound ? (K >= 5 ? 6 : K >= 2 ? 3 : 1) : (K >= 8 ? 8 : K >= 4 ? 4 : K >= 2 ? 2 : 1);
+  }
+
+  // Vertical-layout metrics (shared by render + cursors), derived from the panel height.
+  function laneMetrics() {
+    const t = track(), st = t && t.staves && t.staves[0];
+    const perc = !!(st && st.isPercussion);
+    const tuning = (st && st.tuning && st.tuning.length) ? st.tuning : [64, 59, 55, 50, 45, 40];
+    const nStr = perc ? 1 : tuning.length;
+    const beatY = 15, gridY = 31, gridTop = 38, stringTop = 54, stringGap = 18;
+    const stringBot = stringTop + (nStr - 1) * stringGap;
+    const gridBot = stringBot + 12;
+    return { perc, tuning, nStr, beatY, gridY, gridTop, stringTop, stringGap, stringBot, gridBot };
+  }
+
+  function renderBeatLane() {
+    ensureLaneCursors();
+    const w = laneWrap(), cv = laneCanvas(), gut = document.getElementById('beatlane-gutter');
+    if (!w || !cv || !api || !api.score || !laneVisible()) return;
+    const score = api.score, t = track(); if (!t) return;
+    const st = t.staves && t.staves[0]; if (!st) return;
+    const dpr = window.devicePixelRatio || 1;
+    const H = w.clientHeight || 184;
+    const m = laneMetrics();
+    const col = trackColor(t, cur.track);
+    let songTicks = 0;
+    for (let i = 0; i < score.masterBars.length; i++) songTicks += masterBarTicks(score, i);
+    const totalW = Math.max(w.clientWidth, LANE_PAD * 2 + (songTicks / 960) * LANE_PXQ);
+    cv.style.width = totalW + 'px'; cv.style.height = H + 'px';
+    cv.width = Math.round(totalW * dpr); cv.height = Math.round(H * dpr);
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, totalW, H);
+    const vline = (px, top, bot, style, lw) => {
+      ctx.strokeStyle = style; ctx.lineWidth = lw || 1;
+      ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, top); ctx.lineTo(Math.round(px) + 0.5, bot); ctx.stroke();
+    };
+    // horizontal string lines across the whole timeline
+    ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.lineWidth = 1;
+    for (let r = 0; r < m.nStr; r++) {
+      const y = Math.round(m.stringTop + r * m.stringGap) + 0.5;
+      ctx.beginPath(); ctx.moveTo(LANE_PAD, y); ctx.lineTo(totalW - LANE_PAD, y); ctx.stroke();
+    }
+
+    let x = LANE_PAD;
+    for (let i = 0; i < score.masterBars.length; i++) {
+      const bt = masterBarTicks(score, i), bw = (bt / 960) * LANE_PXQ;
+      const mb = score.masterBars[i];
+      const num = (mb && mb.timeSignatureNumerator) || 4, den = (mb && mb.timeSignatureDenominator) || 4;
+      const compound = (den === 8 || den === 16) && num % 3 === 0 && num > 3;
+      const beatUnit = compound ? (WHOLE_TICKS * 3 / den) : (WHOLE_TICKS / den);
+      const N = compound ? num / 3 : num;
+      const K = laneBeatK(st.bars[i], beatUnit, compound);
+      vline(x, m.gridTop, m.gridBot, 'rgba(255,255,255,.22)', 1);       // barline
+      for (let k = 0; k < N; k++) {
+        const bx = x + (k * beatUnit / bt) * bw, down = k === 0;
+        ctx.textAlign = 'center';
+        for (let j = 0; j < K; j++) {
+          const cx = x + ((k + j / K) * beatUnit / bt) * bw;
+          if (j > 0) vline(cx, m.gridTop, m.gridBot, 'rgba(255,255,255,.07)', 1);   // subdivision col
+          ctx.fillStyle = j === 0 ? '#9aa3b8' : '#5f6675';
+          ctx.font = (j === 0 ? '700 ' : '600 ') + (j === 0 ? '11' : '9') + 'px -apple-system,system-ui,sans-serif';
+          ctx.fillText(countSyllable(K, j, k + 1), cx, m.gridY);
+        }
+        vline(bx, m.gridTop, m.gridBot, down ? 'rgba(123,92,255,.85)' : 'rgba(255,255,255,.30)', down ? 2 : 1);
+        ctx.fillStyle = down ? '#a78bff' : '#7f8aa3';
+        ctx.font = '700 12px -apple-system,system-ui,sans-serif';
+        ctx.fillText(String(k + 1), bx, m.beatY);
+      }
+      // notes: fret number on its string row at its start time, with a duration bar
+      const v0 = st.bars[i] && st.bars[i].voices && st.bars[i].voices[0];
+      if (v0) {
+        let acc = 0;
+        for (const be of v0.beats) {
+          const d = beatTicks(be);
+          if (be.notes && be.notes.length) {
+            const nx = x + (acc / bt) * bw, dw = Math.max(4, (d / bt) * bw);
+            for (const note of be.notes) {
+              const row = m.perc ? 0 : (m.nStr - (note.string | 0));
+              if (row < 0 || row >= m.nStr) continue;
+              const y = m.stringTop + row * m.stringGap;
+              ctx.globalAlpha = 0.28; ctx.fillStyle = col;            // duration bar
+              roundRect(ctx, nx, y - 2, dw - 2, 4, 2); ctx.fill(); ctx.globalAlpha = 1;
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              if (m.perc) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(nx, y, 4, 0, 7); ctx.fill(); }
+              else {
+                const fret = String(note.fret | 0);
+                ctx.font = '700 12px -apple-system,system-ui,sans-serif';
+                ctx.lineWidth = 3; ctx.strokeStyle = '#101015'; ctx.strokeText(fret, nx, y);
+                ctx.fillStyle = '#fff'; ctx.fillText(fret, nx, y);
+              }
+              ctx.textBaseline = 'alphabetic';
+            }
+          }
+          acc += d;
+        }
+      }
+      x += bw;
+    }
+    vline(x, m.gridTop, m.gridBot, 'rgba(255,255,255,.22)', 1);         // final barline
+
+    // gutter: string letters aligned with the rows (pinned; doesn't scroll)
+    if (gut) {
+      const GW = gut.clientWidth || 34;
+      gut.style.height = H + 'px'; gut.width = Math.round(GW * dpr); gut.height = Math.round(H * dpr);
+      const gx = gut.getContext('2d'); gx.setTransform(dpr, 0, 0, dpr, 0, 0); gx.clearRect(0, 0, GW, H);
+      gx.fillStyle = '#5f6675'; gx.font = '600 8px -apple-system,system-ui,sans-serif';
+      gx.textAlign = 'left'; gx.fillText('BEAT', 3, m.beatY);
+      gx.textAlign = 'center'; gx.textBaseline = 'middle';
+      for (let r = 0; r < m.nStr; r++) {
+        const y = m.stringTop + r * m.stringGap;
+        gx.fillStyle = '#cdd3df'; gx.font = '700 11px -apple-system,system-ui,sans-serif';
+        gx.fillText(m.perc ? '•' : midiToName(m.tuning[r]), GW / 2, y);
+      }
+      gx.textBaseline = 'alphabetic';
+    }
+
+    const cTop = m.beatY - 11, cH = m.gridBot - cTop;
+    _laneEdit.style.top = _lanePlay.style.top = cTop + 'px';
+    _laneEdit.style.height = _lanePlay.style.height = cH + 'px';
+    updateLaneEditCursor();
+    if (!_laneHookedResize) {
+      _laneHookedResize = true;
+      window.addEventListener('resize', () => { if (laneVisible()) renderBeatLane(); });
+      cv.addEventListener('mousedown', laneSeek);
+    }
+  }
+
+  function updateLaneEditCursor() {
+    if (!_laneEdit || !api || !api.score || !laneVisible()) return;
+    const v = voice(), be = v && v.beats[cur.beat];
+    const d = be ? beatTicks(be) : 960;
+    const x = laneAbsX(laneCurrentTick()), wdt = Math.max(6, (d / 960) * LANE_PXQ);
+    _laneEdit.style.display = 'block';
+    _laneEdit.style.left = x + 'px';
+    _laneEdit.style.width = wdt + 'px';
+    if (isPlaying) return;                                           // playhead owns scroll while playing
+    const w = laneWrap();
+    if (w) {                                                          // edge-triggered keep-in-view
+      const sl = w.scrollLeft, vw = w.clientWidth, margin = Math.min(120, vw / 3);
+      if (x < sl + margin) w.scrollLeft = Math.max(0, x - margin);
+      else if (x + wdt > sl + vw - margin) w.scrollLeft = x + wdt - vw + margin;
+    }
+  }
+
+  function updateLanePlayCursor(tick) {
+    if (!_lanePlay || !laneVisible()) return;
+    const x = laneAbsX(tick);
+    _lanePlay.style.display = 'block';
+    _lanePlay.style.left = x + 'px';
+    const w = laneWrap();
+    if (w) {                                                          // center-lock: keep the
+      const maxS = Math.max(0, w.scrollWidth - w.clientWidth);       // playhead centered so the
+      w.scrollLeft = Math.max(0, Math.min(maxS, x - w.clientWidth / 2)); // music flows in from the right
+    }
+  }
+
+  // Click the lane → move the edit cursor to that beat (mirrors clicking the score).
+  function laneSeek(e) {
+    const cv = laneCanvas(); if (!cv || !api || !api.score) return;
+    const rect = cv.getBoundingClientRect();
+    const tick = Math.max(0, (e.clientX - rect.left - LANE_PAD) / LANE_PXQ * 960);
+    const score = api.score; let acc = 0, bar = 0;
+    for (let i = 0; i < score.masterBars.length; i++) {
+      const bt = masterBarTicks(score, i);
+      if (tick < acc + bt) { bar = i; break; }
+      acc += bt; bar = i;
+    }
+    const into = tick - acc;
+    const t = track(), st = t && t.staves && t.staves[0];
+    const v = st && st.bars[bar] && (st.bars[bar].voices[cur.voice] || st.bars[bar].voices[0]);
+    let bacc = 0, beat = 0;
+    if (v) for (let j = 0; j < v.beats.length; j++) {
+      const d = beatTicks(v.beats[j]);
+      if (into < bacc + d) { beat = j; break; }
+      bacc += d; beat = j;
+    }
+    cur.bar = bar; cur.beat = beat; clampString(); refreshCursor();
+  }
+
+  function toggleBeatGrid() {
+    const hidden = document.body.classList.toggle('hide-beatlane');
+    try { localStorage.setItem('gomidasBeatGrid', hidden ? '0' : '1'); } catch (e) {}
+    if (!hidden) renderBeatLane();
+    setStatus('Beat lane ' + (hidden ? 'off' : 'on'));
+    return !hidden;
   }
 
   function onPlayTick(tick) {
+    updateLanePlayCursor(tick);          // smooth lane play-head (every tick)
     const map = window.gomidasTickMap;
     if (!map || !map.length) return;
     // largest tick <= current
@@ -2086,7 +2333,10 @@
       if (k === 'ArrowDown') { moveTrack(1); return true; }     // Next Track ⌘↓
       if (k === 'Home') { moveToScoreEdge(false); return true; }// First Bar ⌘Home
       if (k === 'End') { moveToScoreEdge(true); return true; }  // Last Bar ⌘End
-      if (k === 'g' || k === 'G') { if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); return true; } // Go To ⌘G
+      if (k === 'g' || k === 'G') {
+        if (shift) { toggleBeatGrid(); return true; }                       // Toggle Beat Grid ⇧⌘G
+        if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); return true;   // Go To ⌘G
+      }
       if (k === 't' || k === 'T') { if (window.gomidasOpenTimeSig) window.gomidasOpenTimeSig(); return true; } // Time Signature ⌘T
       if (k === 'k' || k === 'K') { if (window.gomidasOpenKeySig) window.gomidasOpenKeySig(); return true; }   // Key Signature ⌘K
       if (k === 'u' || k === 'U') { setBrush(shift ? 'arpup' : 'up'); return true; }    // Brush Up ⌘U / Arpeggio Up ⇧⌘U
@@ -2243,6 +2493,7 @@
           + window.gomidasGetRenderedTracks().length + ' tracks shown)');
     }
     refreshCursor();
+    renderBeatLane();
   }
 
   // Select the beat under a score click — works on empty/rest beats (unlike
@@ -2312,6 +2563,8 @@
   function init(apiGetter) {
     api = apiGetter();
     window.addEventListener('keydown', onKey, true);
+    // Beat lane: hidden iff the user turned it off last session (default on).
+    try { if (localStorage.getItem('gomidasBeatGrid') === '0') document.body.classList.add('hide-beatlane'); } catch (e) {}
     // Click moves the cursor to that beat (incl. empty bars); click-drag selects a beat
     // range — and dragging across staves selects a cross-track block. beatPosAt re-picks
     // the correct track by click Y in multiview (alphaTab's beatMouseDown returns the
@@ -2373,6 +2626,7 @@
     setTrackName, setTrackProgram, toggleNotation, setTuningPreset, setSongTitle, setSongTempo,
     setBeatText, getBeatText, setBeatChord, getBeatChord,
     isDirty, markClean, setAutoScroll, setCountIn, toggleCountIn, isCountIn, setCountInBars, getCountInBars, notifyStopped,
+    toggleBeatGrid, isBeatGrid: () => laneVisible(), redrawLane: renderBeatLane,
     undo, redo, snapshot, loadProject: loadProjectJson, addTrack: addTrackOfKind,
     canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0
   };

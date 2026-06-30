@@ -680,6 +680,46 @@ function togglePanel(which) {
   if (btn) btn.classList.toggle('on', !hidden); // .on = panel visible
   reflowScore();
 }
+// Collapsible "drawer" handle on each dockable panel. Clicking collapses the panel to a
+// thin rail (chevron flips). State persists. Panels that rebuild via innerHTML (#inspector/
+// #tracks/#fretboard) wipe the handle but keep their .collapsed class, so a MutationObserver
+// re-appends the handle; the rebuilt content stays hidden by CSS while collapsed.
+function chevronFor(side, collapsed) {
+  if (side === 'left') return collapsed ? '»' : '«';   // » / «
+  if (side === 'right') return collapsed ? '«' : '»';
+  return collapsed ? '▴' : '▾';                        // ▴ / ▾
+}
+function initDrawers() {
+  const defs = [
+    { id: 'palette', side: 'left', title: 'Tools' }, { id: 'inspector', side: 'right', title: 'Inspector' },
+    { id: 'beatlane-panel', side: 'bottom', title: 'Beat Grid' }, { id: 'fretboard', side: 'bottom', title: 'Fretboard' },
+    { id: 'tracks', side: 'bottom', title: 'Tracks' },
+  ];
+  for (const d of defs) {
+    const el = document.getElementById(d.id); if (!el) continue;
+    el.classList.add('drawerable', 'drawer-' + d.side);
+    const tab = document.createElement('button');
+    tab.className = 'drawer-tab'; tab.type = 'button'; tab.title = 'Collapse / expand panel';
+    tab.innerHTML = '<span class="drawer-chev"></span><span class="drawer-title"></span>';
+    tab.querySelector('.drawer-title').textContent = d.title;
+    const chev = tab.querySelector('.drawer-chev');
+    const key = 'gomidasDrawer_' + d.id;
+    const setGlyph = () => { chev.textContent = chevronFor(d.side, el.classList.contains('collapsed')); };
+    const apply = (collapsed, persist) => {
+      el.classList.toggle('collapsed', collapsed); setGlyph();
+      if (persist) try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
+      reflowScore();
+      if (d.id === 'beatlane-panel' && !collapsed && window.GomidasEditor && window.GomidasEditor.redrawLane)
+        requestAnimationFrame(() => window.GomidasEditor.redrawLane());
+    };
+    tab.addEventListener('click', (e) => { e.stopPropagation(); apply(!el.classList.contains('collapsed'), true); });
+    el.appendChild(tab);
+    new MutationObserver(() => { if (!el.contains(tab)) { el.appendChild(tab); setGlyph(); } }).observe(el, { childList: true });
+    let collapsed = false; try { collapsed = localStorage.getItem(key) === '1'; } catch (e) {}
+    apply(collapsed, false);
+  }
+}
+
 function toggleFullScore() {
   const on = document.body.classList.toggle('fullscore');
   const btn = document.getElementById('fullscore-btn');
@@ -1445,6 +1485,7 @@ window.gomidasMenu = function (action) {
     case 'record': toggleRecord(); break;
     case 'zoom': window.gomidasZoom(arg === 'in' ? 1 : -1); break;
     case 'toggleview': window.gomidasToggleMultiView(); break;
+    case 'togglebeatgrid': E.toggleBeatGrid(); break;
     case 'toggle': togglePanel(arg); break;
     case 'fullscore': toggleFullScore(); break;
     default: break;
@@ -1589,6 +1630,7 @@ window.addEventListener('load', () => {
   if (typeof alphaTab === 'undefined') { setStatus('alphaTab failed to load'); return; }
   initAlphaTab();
   if (window.GomidasEditor) window.GomidasEditor.init(() => api);
+  initDrawers();
   setStatus('ready');
   loadSample();
   focusEditor();
