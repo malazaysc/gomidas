@@ -6,6 +6,10 @@ build-release/
 compile_commands.json
 *.gomidas.bak
 
+# Node / Vitest (web layer unit tests — see docs/TESTING.md)
+web/node_modules/
+web/coverage/
+
 # Local Claude Code session artifacts (scheduled-task locks, etc.)
 .claude/
 

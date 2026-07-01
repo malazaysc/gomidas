@@ -92,40 +92,21 @@ function populateTracks(score) {
 }
 
 // ---- model -> MIDI events (we compute absolute ticks) ------------------------
-function beatTicks(beat) {
-  let t = WHOLE_TICKS / beat.duration;         // duration enum value == note fraction
-  if (beat.dots) t *= (2 - Math.pow(0.5, beat.dots));
-  if (beat.tupletNumerator && beat.tupletNumerator > 0)
-    t *= beat.tupletDenominator / beat.tupletNumerator;
-  return Math.max(1, Math.round(t));
-}
+// Extracted + unit-tested in web/core/gomidas-core.js (see docs/TESTING.md); these are
+// thin adapters so the shipping path and the tests share one implementation.
+function beatTicks(beat) { return GomidasCore.beatTicks(beat); }
 
-function dynamicsToVelocity(dyn) {
-  if (typeof dyn !== 'number') return 0.85;
-  return Math.max(0.2, Math.min(1.0, 0.3 + dyn * 0.1));
-}
+function dynamicsToVelocity(dyn) { return GomidasCore.dynamicsToVelocity(dyn); }
 
 // Octave/clef line → MIDI semitone offset, so playback matches the displayed octave.
-// alphaTab Ottava: Regular=0, Va8=+8va, Vb8=-8vb, Ma15=+15ma, Mb15=-15mb.
 function ottavaSemitones(ott) {
-  const OT = (window.alphaTab && alphaTab.model && alphaTab.model.Ottava) || null;
-  if (!OT || typeof ott !== 'number' || ott === OT.Regular) return 0;
-  if (ott === OT.Va8) return 12;
-  if (ott === OT.Vb8) return -12;
-  if (ott === OT.Ma15) return 24;
-  if (ott === OT.Mb15) return -24;
-  return 0;
+  return GomidasCore.ottavaSemitones(ott, (window.alphaTab && alphaTab.model && alphaTab.model.Ottava) || null);
 }
 
 // Builds the native sequence AND a tick->beat map (primary track) for the cursor.
 // Full duration of master bar i from its time signature (a bar always occupies
 // its time-signature length; underfilled bars are padded with silence).
-function masterBarTicks(score, i) {
-  const mb = score.masterBars[i];
-  const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
-  const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
-  return Math.round(WHOLE_TICKS * num / den);
-}
+function masterBarTicks(score, i) { return GomidasCore.masterBarTicks(score.masterBars, i); }
 
 // First MIDI channel not used by any track (and not the percussion channel 9), for the
 // metronome's melodic wood-block. Returns -1 if all 16 are taken (then we use channel 9).
@@ -217,53 +198,20 @@ function crescendoFactors(beats) {
 // Swing map for triplet-feel bars: warps a within-bar tick onto a triplet 8th grid
 // (frac 0→0, 0.5→2/3, 1→1 — a monotonic 2:1 swing). Fixed at the 8th points so 8th
 // pairs swing while bar boundaries stay put. ⚠ Timing feel — confirm by ear.
-function swungTickInBar(rel) {
-  const quarter = WHOLE_TICKS / 4;
-  const beatIdx = Math.floor(rel / quarter);
-  const frac = (rel - beatIdx * quarter) / quarter; // 0..1 within the quarter
-  const sf = (frac <= 0.5) ? (frac * (2 / 3) / 0.5) : (2 / 3 + (frac - 0.5) * (1 / 3) / 0.5);
-  return Math.round(beatIdx * quarter + sf * quarter);
-}
+function swungTickInBar(rel) { return GomidasCore.swungTickInBar(rel); }
 
 // Pitch-bend MIDI. alphaTab BendPoint.value is in 1/4 tones (4 = a full/whole-tone bend
 // = 2 semitones), offset 0..60 across the note. The native bend range is ±12 semitones
 // over the 14-bit wheel (8192 = centre).
-function bendValueToSemitones(v) { return (v || 0) / 2.0; }
-function semitonesToWheel(semis) {
-  return Math.max(0, Math.min(16383, Math.round(8192 + (semis / 12.0) * 8192)));
-}
+function bendValueToSemitones(v) { return GomidasCore.bendValueToSemitones(v); }
+function semitonesToWheel(semis) { return GomidasCore.semitonesToWheel(semis); }
 // Emit pitch-bend events tracing a note's bend curve from onTick→offTick, then RESET the
 // wheel to centre just before the note ends so following notes on the same channel aren't
 // left detuned (the reset tick is fractional so it sorts before the next note-on).
 // NOTE: pitch bend is per-CHANNEL — in a chord a bent note bends the whole channel. Fine
 // for single-note lead bends; documented limitation. ⚠ confirm pitch by ear.
 function emitBendEvents(events, channel, program, onTick, offTick, bendPoints) {
-  const pts = bendPoints.slice().sort((a, b) => (a.offset || 0) - (b.offset || 0));
-  if (!pts.length) return;
-  const valAt = (off) => {
-    if (off <= (pts[0].offset || 0)) return pts[0].value || 0;
-    for (let i = 1; i < pts.length; i++) {
-      if (off <= (pts[i].offset || 0)) {
-        const a = pts[i - 1], b = pts[i];
-        const span = ((b.offset || 0) - (a.offset || 0)) || 1;
-        const t = (off - (a.offset || 0)) / span;
-        return (a.value || 0) + ((b.value || 0) - (a.value || 0)) * t;
-      }
-    }
-    return pts[pts.length - 1].value || 0;
-  };
-  const dur = Math.max(1, offTick - onTick);
-  const resetTick = offTick - 0.5;            // sorts just before the next note-on
-  const STEPS = 12;
-  for (let i = 0; i <= STEPS; i++) {
-    const f = i / STEPS;
-    const tick = onTick + f * dur;
-    if (tick >= resetTick - 0.25) break;      // don't overshoot the held end value
-    events.push([tick, channel, 0, 0, false, program, false, 1, semitonesToWheel(bendValueToSemitones(valAt(f * 60)))]);
-  }
-  // Hold the curve's end value right up to the note end, then reset to centre.
-  events.push([resetTick - 0.25, channel, 0, 0, false, program, false, 1, semitonesToWheel(bendValueToSemitones(valAt(60)))]);
-  events.push([resetTick, channel, 0, 0, false, program, false, 1, 8192]);
+  return GomidasCore.emitBendEvents(events, channel, program, onTick, offTick, bendPoints);
 }
 
 function rebuildSequence() {
@@ -564,16 +512,11 @@ window.gomidasClearTrackSfz = function () {
 function applyMixer() {
   if (!api || !api.score) return;
   const flags = window.gomidasTrackFlags || {};
-  const anySolo = api.score.tracks.some((_, i) => flags[i] && flags[i].soloed);
+  const anySolo = GomidasCore.anyTrackSoloed(api.score.tracks, flags);
   api.score.tracks.forEach((track, i) => {
     const f = flags[i] || {};
-    const pb = track.playbackInfo || {};
-    const baseVol = (typeof f.vol === 'number') ? f.vol : ((pb.volume != null ? pb.volume : 12) / 16);
-    const audible = anySolo ? !!f.soloed : !f.muted;
-    const gain = audible ? Math.max(0, Math.min(1.5, baseVol)) : 0;
-    // Pan: track-list/inspector knob (flag) wins; else the file's balance; else center.
-    const pan = (typeof f.pan === 'number') ? Math.max(0, Math.min(1, f.pan))
-              : (pb.balance != null) ? Math.max(0, Math.min(1, pb.balance / 16)) : 0.5;
+    // Gain (vol × mute/solo) + pan resolution is extracted + unit-tested (see mixer.test.js).
+    const { gain, pan } = GomidasCore.computeChannelMix(track, f, anySolo);
     const ch = trackChannel(track);
     nativeInvoke('setChannelMix', { channel: ch, gain, pan });
     if (f.eq) nativeInvoke('setTrackEq', { channel: ch, low: f.eq.low || 0, mid: f.eq.mid || 0, high: f.eq.high || 0 });
@@ -1319,7 +1262,7 @@ function saveProject() {
     const m = window.gomidasMaster;
     mix.master = { vol: m.vol, pan: m.pan, eq: Object.assign({ low: 0, mid: 0, high: 0 }, m.eq || {}) };
   }
-  const payload = JSON.stringify({ gomidasVersion: 1, instruments, mix, score: scoreJson });
+  const payload = JSON.stringify(GomidasCore.buildEnvelope(scoreJson, { instruments, mix }));
   nativeInvoke('saveProject', payload);
   if (window.GomidasEditor.markClean) window.GomidasEditor.markClean();
 }
@@ -1347,11 +1290,9 @@ window.gomidasExportGp = exportGp;
 // Called by native after reading a .gomidas file. Accepts both the new Gomidas
 // envelope ({ gomidasVersion, instruments, score }) and the legacy raw-score JSON.
 window.gomidasLoadProject = function (json) {
-  let scoreJson = json, instruments = null, mix = null;
-  try {
-    const env = JSON.parse(json);
-    if (env && env.gomidasVersion && env.score != null) { scoreJson = env.score; instruments = env.instruments || {}; mix = env.mix || null; }
-  } catch (e) { /* not an envelope — treat as a legacy raw-score JSON string */ }
+  // Envelope vs legacy raw-score parsing is extracted + unit-tested (see envelope.test.js).
+  const parsed = GomidasCore.parseEnvelope(json);
+  let scoreJson = parsed.scoreJson, instruments = parsed.instruments, mix = parsed.mix;
   // Clear SFZ instruments left on the engine by the previous project, then reset state.
   const prev = window.gomidasTrackSfz || {};
   for (const ch in prev) nativeInvoke('clearTrackSfz', { channel: parseInt(ch, 10) });

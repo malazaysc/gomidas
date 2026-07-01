@@ -70,6 +70,7 @@ juce_add_binary_data(GomidasAssets
   NAMESPACE   GomidasAssets
   SOURCES
     web/index.html
+    web/core/gomidas-core.js
     web/app.js
     web/editor.js
     web/fretboard.js
@@ -125,11 +126,23 @@ target_compile_definitions(Gomidas PRIVATE
   JUCE_PLUGINHOST_VST3=1)
 
 # Standalone test tools (off by default): -DGOMIDAS_BUILD_TESTS=ON
+# Run with: cmake --build build && ctest --test-dir build --output-on-failure
 option(GOMIDAS_BUILD_TESTS "Build standalone test tools (sfz_smoketest)" OFF)
 if(GOMIDAS_BUILD_TESTS)
+  enable_testing()
+
   add_executable(sfz_smoketest tests/sfz_smoketest.cpp)
   target_link_libraries(sfz_smoketest PRIVATE sfizz::sfizz)
   set_target_properties(sfz_smoketest PROPERTIES CXX_STANDARD 17)
+
+  # Assert each bundled CC0 SFZ instrument loads (incl. FLAC decode) and renders audio.
+  add_test(NAME sfz_classical_guitar
+           COMMAND sfz_smoketest
+                   "${CMAKE_SOURCE_DIR}/assets/instruments/classical-guitar/classical-guitar.sfz")
+  # Bass samples top out around key 46 — play E2 (40), in range, not middle C (60 is silent).
+  add_test(NAME sfz_electric_bass
+           COMMAND sfz_smoketest
+                   "${CMAKE_SOURCE_DIR}/assets/instruments/electric-bass/electric-bass.sfz" 40)
 endif()
 
 target_link_libraries(Gomidas PRIVATE
