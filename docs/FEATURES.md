@@ -1,5 +1,7 @@
 # Gomidas — Implemented Features
 
+> Bird's-eye map (roadmap phases + verification debt): [`STATUS.md`](./STATUS.md).
+
 Status of the tab editor + playback engine. Keyboard column shows the **Gomidas** key and,
 where it differs, the **GP8** equivalent (see `references/gp8-keyboard-shortcuts.md`).
 Not-yet-built features and the full GP parity gap live in [`BACKLOG.md`](./BACKLOG.md).

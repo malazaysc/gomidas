@@ -1,10 +1,24 @@
 # Gomidas — Backlog
 
+> Bird's-eye map (roadmap phases + verification debt): [`STATUS.md`](./STATUS.md).
+
 Not-yet-implemented features, prioritised. Implemented items live in [`FEATURES.md`](./FEATURES.md).
 Keyboard targets follow GP8 (`references/gp8-keyboard-shortcuts.md`) unless a divergence is noted.
 Check an item off and move it to `FEATURES.md` when it ships.
 
 Priority: **P1** core editing parity · **P2** expressive effects · **P3** app/UX polish · **Phase 2/3** product roadmap.
+
+---
+
+## ⚠️ Verification debt (highest-risk — blocks building further)
+These paths are **written and compile, but were never confirmed at runtime**. They gate
+downstream work (especially Realistic Sound Phase B, which reuses the live-input host).
+- [ ] **Live-input / VST-plugin-insert / recording stack** — never runtime-verified (mic monitor,
+  `loadInputPlugin`, plugin editor window, WAV record). Verify with a real plugin before scaling to per-track.
+- [ ] **In-app SFZ routing → speakers** — ear-check only; `tests/sfz_smoketest` passes but the GUI
+  inspector→engine→speakers path is unconfirmed. See [`SFZ_TEST_CHECKLIST.md`](./SFZ_TEST_CHECKLIST.md).
+- [ ] **`.gp` export round-trip** — export, then reopen the `.gp` in Gomidas / Guitar Pro.
+- [ ] **Physical-keyboard delivery** in the packaged app (synthetic keys are blocked in the sandbox).
 
 ---
 
