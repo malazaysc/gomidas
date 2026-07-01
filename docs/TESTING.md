@@ -160,6 +160,18 @@ checklist as possible with a deterministic offline render:
   packaged app. Those stay manual (`SFZ_TEST_CHECKLIST.md` style) — document the boundary so a
   green suite isn't mistaken for full coverage.
 
+> **⚠️ Blocked on a small refactor (finding, 2026-07-01).** `AudioEngine`'s render lives in the
+> **private** `audioDeviceIOCallbackWithContext`, driven by `juce::AudioIODeviceCallback`, and
+> `initialise()` opens the **default hardware device** — neither is reachable from a headless test
+> (CI runners have no audio device, and the callback can't be invoked without one). To make this
+> testable, first extract the block-render + scheduler into a **public, device-independent entry
+> point** — e.g. `void renderBlock(float* const* out, int numChannels, int numSamples)` that the
+> device callback also calls — so a test can `setSequence(...)` then pump blocks directly, no
+> `AudioDeviceManager`. That is an RT-core change; do it deliberately (with the real-time-safety
+> caveats in mind), not as part of a test sweep. Until then, the two synths are covered
+> independently (`sf_smoketest` + `sfz_smoketest`); the engine's scheduling/mix/EQ integration and
+> the live-input/recording stack remain **manual-only** (`SFZ_TEST_CHECKLIST.md`).
+
 ---
 
 ## Priority 5 (later) — One end-to-end app smoke test
