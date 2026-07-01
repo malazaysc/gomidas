@@ -1,0 +1,143 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden import -> MIDI (real alphaTab model) > a mixed-duration phrase with a rest 1`] = `
+{
+  "events": [
+    [
+      0,
+      0,
+      58,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      960,
+      0,
+      58,
+      0,
+      false,
+      25,
+      false,
+    ],
+    [
+      960,
+      0,
+      55,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      1920,
+      0,
+      55,
+      0,
+      false,
+      25,
+      false,
+    ],
+    [
+      3840,
+      0,
+      58,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      4320,
+      0,
+      58,
+      0,
+      false,
+      25,
+      false,
+    ],
+    [
+      4320,
+      0,
+      57,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      4800,
+      0,
+      57,
+      0,
+      false,
+      25,
+      false,
+    ],
+  ],
+  "lengthTicks": 7680,
+}
+`;
+
+exports[`golden import -> MIDI (real alphaTab model) > whole and half notes 1`] = `
+{
+  "events": [
+    [
+      0,
+      0,
+      58,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      3840,
+      0,
+      58,
+      0,
+      false,
+      25,
+      false,
+    ],
+    [
+      3840,
+      0,
+      58,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      5760,
+      0,
+      58,
+      0,
+      false,
+      25,
+      false,
+    ],
+    [
+      5760,
+      0,
+      60,
+      0.8,
+      true,
+      25,
+      false,
+    ],
+    [
+      7680,
+      0,
+      60,
+      0,
+      false,
+      25,
+      false,
+    ],
+  ],
+  "lengthTicks": 7680,
+}
+`;

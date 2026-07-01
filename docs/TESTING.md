@@ -26,11 +26,14 @@ Both run in CI on every push / PR (`.github/workflows/ci.yml`): a fast `web-test
   gain/pan, the `.gomidas` envelope, **articulation note-shaping** (`shapeNote`), **repeat/D.C./D.S.
   unrolling** (`computePlaybackOrder`), crescendo hairpins, the free-channel picker, and the whole
   **model→MIDI walk** (`buildSequence`).
-- 🟡 **P2 (core done) — model→MIDI coverage.** `buildSequence` (the full playback walk) is extracted
-  and covered by 12 integration tests over hand-built plain-object scores (notes, rests, dead-note
-  shaping, ties, swing, repeats, percussion + drum-gains, metronome). This pins the "right notes at
-  right ticks" behavior. _Remaining:_ feed **real `.gp` fixtures** through alphaTab-in-Node → the
-  same walk → committed golden snapshots (catches parser-side regressions too).
+- ✅ **P2 — import→MIDI golden tests.** `buildSequence` (the full playback walk) is extracted and
+  covered two ways: 12 integration tests over hand-built plain-object scores (notes, rests,
+  dead-note shaping, ties, swing, repeats, percussion + drum-gains, metronome), **plus** golden
+  snapshots that parse **real alphaTex with the real alphaTab engine in Node** (`@coderline/alphatab`
+  dev-dep, pinned to the embedded 1.8.3) → `buildSequence` → committed snapshot
+  (`web/tests/__snapshots__`). The latter also catches drift between our assumed model shape and
+  alphaTab's. _Optional extension:_ add binary `.gp` fixtures (alphaTex already exercises the walk;
+  `.gp` would additionally cover the GP binary parser).
 - ✅ **P3 (partial) — C++ `ctest` + CI.** `sfz_smoketest` wired into `ctest` (guitar + bass);
   GitHub Actions runs both suites, **green**. _Caught a real gap: the bass renders silent at middle C
   (samples top out ~key 46) — the test now plays E2._ Still TODO: `SoundFontSynth`/EQ/routing cases.
