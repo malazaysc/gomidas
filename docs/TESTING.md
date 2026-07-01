@@ -11,7 +11,7 @@ cd web && npm ci && npm test          # or: npm run test:watch
 
 # Native audio-path smoke tests (sfizz SFZ load + render) via ctest.
 cmake -B build -DGOMIDAS_BUILD_TESTS=ON
-cmake --build build --target sfz_smoketest
+cmake --build build --target gomidas_tests    # builds all test executables
 ctest --test-dir build --output-on-failure
 ```
 

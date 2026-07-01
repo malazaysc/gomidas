@@ -156,6 +156,10 @@ if(GOMIDAS_BUILD_TESTS)
   # Assert the bundled GM SoundFont loads and renders a note via TinySoundFont.
   add_test(NAME sf_gm_note
            COMMAND sf_smoketest "${CMAKE_SOURCE_DIR}/assets/soundfont/sonivox.sf2")
+
+  # Aggregate target so CI (and `cmake --build build --target gomidas_tests`) builds every
+  # test executable at once — adding a new test target here needs no CI change.
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest)
 endif()
 
 target_link_libraries(Gomidas PRIVATE

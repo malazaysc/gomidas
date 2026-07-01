@@ -43,7 +43,7 @@ jobs:
           key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGOMIDAS_BUILD_TESTS=ON
-      - name: Build test target
-        run: cmake --build build --target sfz_smoketest
+      - name: Build test targets
+        run: cmake --build build --target gomidas_tests
       - name: Run ctest
         run: ctest --test-dir build --output-on-failure
