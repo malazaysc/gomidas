@@ -165,6 +165,43 @@
                     : (K >= 8 ? 8 : K >= 4 ? 4 : K >= 2 ? 2 : 1);
   }
 
+  // ── Sequence-assembly helpers ─────────────────────────────────────────────────
+
+  // Per-beat velocity multipliers for crescendo / diminuendo hairpins: a run of
+  // consecutive beats carrying the same crescendo type ramps 0.6→1.0 (cresc) or 1.0→0.6
+  // (dim) across the span. Returns an array aligned to `beats`. `CT` is
+  // alphaTab.model.CrescendoType (defaults to the standard None/Crescendo/Decrescendo).
+  function crescendoFactors(beats, CT) {
+    CT = CT || { None: 0, Crescendo: 1, Decrescendo: 2 };
+    const f = new Array(beats.length).fill(1);
+    let i = 0;
+    while (i < beats.length) {
+      const c = beats[i].crescendo | 0;
+      if (!c || c === CT.None) { i++; continue; }
+      let j = i;
+      while (j < beats.length && (beats[j].crescendo | 0) === c) j++;
+      const run = j - i;
+      for (let k = 0; k < run; k++) {
+        const frac = run > 1 ? k / (run - 1) : 1;
+        f[i + k] = (c === CT.Crescendo) ? (0.6 + 0.4 * frac) : (1.0 - 0.4 * frac);
+      }
+      i = j;
+    }
+    return f;
+  }
+
+  // First MIDI channel not used by any track (and not percussion channel 9), e.g. for the
+  // metronome's melodic wood-block. Returns -1 if all 16 are taken.
+  function freeMelodicChannel(score) {
+    const used = new Set([9]);
+    for (const t of (score && score.tracks) || []) {
+      const c = t.playbackInfo && t.playbackInfo.primaryChannel;
+      if (c != null) used.add(c & 0x0f);
+    }
+    for (let c = 0; c < 16; c++) if (!used.has(c)) return c;
+    return -1;
+  }
+
   // ── Playback order (repeat barlines + D.C./D.S. jumps) ────────────────────────
 
   // Expand repeat barlines AND D.C./D.S. jumps into the order master bars are actually
@@ -278,7 +315,7 @@
     dynamicsToVelocity, ottavaSemitones, swungTickInBar,
     bendValueToSemitones, semitonesToWheel, emitBendEvents,
     laneBeatK,
-    computePlaybackOrder, shapeNote,
+    crescendoFactors, freeMelodicChannel, computePlaybackOrder, shapeNote,
     anyTrackSoloed, computeChannelMix,
     buildEnvelope, parseEnvelope,
   };

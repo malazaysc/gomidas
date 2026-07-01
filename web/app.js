@@ -110,15 +110,7 @@ function masterBarTicks(score, i) { return GomidasCore.masterBarTicks(score.mast
 
 // First MIDI channel not used by any track (and not the percussion channel 9), for the
 // metronome's melodic wood-block. Returns -1 if all 16 are taken (then we use channel 9).
-function freeMelodicChannel(score) {
-  const used = new Set([9]);
-  for (const t of score.tracks) {
-    const c = t.playbackInfo && t.playbackInfo.primaryChannel;
-    if (c != null) used.add(c & 0x0f);
-  }
-  for (let c = 0; c < 16; c++) if (!used.has(c)) return c;
-  return -1;
-}
+function freeMelodicChannel(score) { return GomidasCore.freeMelodicChannel(score); }
 
 // Expand repeat barlines AND D.C./D.S. jumps into the order master bars are actually
 // played. Repeat end (repeatCount>0) replays from the last repeat-start; a Da Capo /
@@ -145,22 +137,7 @@ window.gomidasFreeClickChannel = function () { return (api && api.score) ? freeM
 // consecutive beats carrying the same crescendo type ramps 0.6→1.0 (cresc) or
 // 1.0→0.6 (dim) across the span. Returns an array aligned to `beats`.
 function crescendoFactors(beats) {
-  const CT = (alphaTab.model && alphaTab.model.CrescendoType) || { None: 0, Crescendo: 1, Decrescendo: 2 };
-  const f = new Array(beats.length).fill(1);
-  let i = 0;
-  while (i < beats.length) {
-    const c = beats[i].crescendo | 0;
-    if (!c || c === CT.None) { i++; continue; }
-    let j = i;
-    while (j < beats.length && (beats[j].crescendo | 0) === c) j++;
-    const run = j - i;
-    for (let k = 0; k < run; k++) {
-      const frac = run > 1 ? k / (run - 1) : 1;
-      f[i + k] = (c === CT.Crescendo) ? (0.6 + 0.4 * frac) : (1.0 - 0.4 * frac);
-    }
-    i = j;
-  }
-  return f;
+  return GomidasCore.crescendoFactors(beats, (alphaTab.model && alphaTab.model.CrescendoType) || null);
 }
 
 // Swing map for triplet-feel bars: warps a within-bar tick onto a triplet 8th grid
