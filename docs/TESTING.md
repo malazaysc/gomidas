@@ -21,15 +21,20 @@ Both run in CI on every push / PR (`.github/workflows/ci.yml`): a fast `web-test
 ## Progress (2026-07-01)
 
 - ✅ **P1 — pure JS unit tests (Vitest).** Pure logic extracted to `web/core/gomidas-core.js`;
-  `app.js` / `editor.js` now **delegate** to it (one implementation, no drift). **93 tests** across
-  ticks/bend/mixer/envelope/lane/shape/playback-order/sequence-helpers. Extracted so far: tick &
-  bar math, dynamics/octave/swing, pitch-bend emission, beat-lane grid, mixer gain/pan, the
-  `.gomidas` envelope, **articulation note-shaping** (`shapeNote`), **repeat/D.C./D.S. unrolling**
-  (`computePlaybackOrder`), crescendo hairpins, and the free-channel picker.
+  `app.js` / `editor.js` now **delegate** to it (one implementation, no drift). **105 tests**.
+  Extracted: tick & bar math, dynamics/octave/swing, pitch-bend emission, beat-lane grid, mixer
+  gain/pan, the `.gomidas` envelope, **articulation note-shaping** (`shapeNote`), **repeat/D.C./D.S.
+  unrolling** (`computePlaybackOrder`), crescendo hairpins, the free-channel picker, and the whole
+  **model→MIDI walk** (`buildSequence`).
+- 🟡 **P2 (core done) — model→MIDI coverage.** `buildSequence` (the full playback walk) is extracted
+  and covered by 12 integration tests over hand-built plain-object scores (notes, rests, dead-note
+  shaping, ties, swing, repeats, percussion + drum-gains, metronome). This pins the "right notes at
+  right ticks" behavior. _Remaining:_ feed **real `.gp` fixtures** through alphaTab-in-Node → the
+  same walk → committed golden snapshots (catches parser-side regressions too).
 - ✅ **P3 (partial) — C++ `ctest` + CI.** `sfz_smoketest` wired into `ctest` (guitar + bass);
-  GitHub Actions runs both suites. _Caught a real gap: the bass renders silent at middle C
+  GitHub Actions runs both suites, **green**. _Caught a real gap: the bass renders silent at middle C
   (samples top out ~key 46) — the test now plays E2._ Still TODO: `SoundFontSynth`/EQ/routing cases.
-- ⬜ **P2 / P4 / P5** — not started (see below).
+- ⬜ **P4 / P5** — not started (see below).
 
 ## Where we are
 

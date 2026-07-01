@@ -161,128 +161,18 @@ function emitBendEvents(events, channel, program, onTick, offTick, bendPoints) {
 
 function rebuildSequence() {
   const score = api.score;
-  const TF = (alphaTab.model && alphaTab.model.TripletFeel) || { NoTripletFeel: 0, Triplet8th: 1 };
-  const events = [];
-  const tickMap = [];               // [{tick, beat}] ascending, primary rendered track
-  let lengthTicks = 0;
-  const primaryTrack = renderedTracks[0] || score.tracks[0];
-  const playbackOrder = computePlaybackOrder(score);   // unroll repeat barlines
-
-  // Mute/solo/volume are applied LIVE via per-channel gain (see applyMixer), not by
-  // dropping events here — so toggling them takes effect instantly during playback.
-  score.tracks.forEach((track, trackIndex) => {
-    const pb = track.playbackInfo || {};
-    const program = pb.program | 0;
-    const channel = (pb.primaryChannel != null) ? (pb.primaryChannel & 0x0f) : 0;
-    const percussion = (channel === 9);
-    const isPrimary = (track === primaryTrack);
-    const lastOff = {};   // "channel:key" -> note-off event, so ties can extend it
-
-    for (const stave of track.staves) {
-      let trackTick = 0;
-      const ringOff = {};   // note.string -> note-off of a let-ring note still sounding on that string
-      for (const mbIndex of playbackOrder) {
-        const bar = stave.bars[mbIndex];
-        if (!bar) continue;
-        const barStart = trackTick;
-        let barEnd = barStart;
-        // Triplet feel → swing the within-bar 8th grid (identity otherwise).
-        const mbar = score.masterBars[mbIndex];
-        const swung = !!(mbar && mbar.tripletFeel === TF.Triplet8th);
-        const sw = swung ? (abs) => barStart + swungTickInBar(abs - barStart) : (abs) => abs;
-        for (const voice of bar.voices) {
-          let t = barStart;
-          const cresc = crescendoFactors(voice.beats);   // hairpin velocity ramp
-          let bIdx = -1;
-          for (const beat of voice.beats) {
-            bIdx++;
-            const dur = beatTicks(beat);
-            if (isPrimary && voice.index === 0) tickMap.push({ tick: sw(t), beat });
-            if (!beat.isEmpty && !beat.isRest) {
-              const vel = dynamicsToVelocity(beat.dynamics) * cresc[bIdx];
-              const ottava = percussion ? 0 : ottavaSemitones(beat.ottava);
-              for (const note of beat.notes) {
-                let key;
-                if (percussion) {
-                  // Percussion: map articulation index -> GM drum MIDI note.
-                  const arts = track.percussionArticulations;
-                  const ai = note.percussionArticulation | 0;
-                  key = (arts && arts[ai] && arts[ai].outputMidiNumber != null)
-                        ? arts[ai].outputMidiNumber : note.realValue;
-                } else {
-                  key = note.realValue + ottava;
-                }
-                if (key == null || key < 0 || key > 127) continue;
-                // Articulation → audible MIDI shape (extracted + unit-tested: shape.test.js).
-                let { vel: noteVel, dur: noteDur } = GomidasCore.shapeNote(note, vel, dur);
-                // Per-piece drum level (set by the kit MIXER tab): scales the hit velocity.
-                if (percussion && window.gomidasDrumGains) {
-                  const g = window.gomidasDrumGains[key];
-                  if (g != null) noteVel = Math.max(0, Math.min(1, noteVel * g));
-                }
-                const onTick = sw(t), offTick = sw(t + noteDur);
-                const id = channel + ':' + key;
-                // Tie: don't re-trigger — extend the still-ringing note's note-off.
-                if (note.isTieDestination && lastOff[id]) { lastOff[id][0] = offTick; continue; }
-                // A new note on a string cuts (or, for a let-ring note, extends) any
-                // let-ring note still sounding on that same string.
-                const stringNo = (!percussion && note.string != null) ? note.string : null;
-                if (stringNo != null && ringOff[stringNo]) { ringOff[stringNo][0] = onTick; ringOff[stringNo] = null; }
-                events.push([onTick, channel, key, noteVel, true, program, percussion]);
-                const off = [offTick, channel, key, 0.0, false, program, percussion];
-                events.push(off);
-                lastOff[id] = off;
-                // Pitch-bend curve for bent notes (imported or edited). Per-channel; resets
-                // to centre at the note end. Skipped for percussion and tie destinations.
-                if (!percussion && !note.isTieDestination && note.bendPoints && note.bendPoints.length)
-                  emitBendEvents(events, channel, program, onTick, offTick, note.bendPoints);
-                // Let ring: hold until the next note on this string (or the track end).
-                if (note.isLetRing && stringNo != null) ringOff[stringNo] = off;
-              }
-            }
-            t += dur;
-          }
-          if (t > barEnd) barEnd = t;
-        }
-        // A bar always spans its full time-signature duration (silence-pad the
-        // remainder) so the next bar starts on the downbeat — never early.
-        const capacity = masterBarTicks(score, mbIndex);
-        trackTick = barStart + Math.max(capacity, barEnd - barStart);
-      }
-      // Any let-ring note never cut by a later same-string note rings to the track end.
-      for (const k in ringOff) if (ringOff[k]) { ringOff[k][0] = Math.max(ringOff[k][0], trackTick); ringOff[k] = null; }
-      if (trackTick > lengthTicks) lengthTicks = trackTick;
-    }
+  const model = (typeof alphaTab !== 'undefined' && alphaTab.model) || {};
+  // The model→MIDI walk is extracted + unit-tested (see build-sequence.test.js). Here we
+  // just feed it the alphaTab enums + session globals and do the two side effects.
+  const { events, tickMap, lengthTicks } = GomidasCore.buildSequence(score, {
+    primaryTrack: renderedTracks[0] || score.tracks[0],
+    tripletFeel: model.TripletFeel,
+    ottava: model.Ottava,
+    crescendoType: model.CrescendoType,
+    direction: model.Direction,
+    metronomeOn: metronomeOn,
+    drumGains: window.gomidasDrumGains || null,
   });
-
-  // Metronome: a wood-block click on each time-signature beat (downbeat accented),
-  // following the same unrolled playback order so it loops/repeats with the music.
-  // Uses a free melodic channel (GM Woodblock) when available, else percussion ch 9.
-  if (metronomeOn) {
-    const mch = freeMelodicChannel(score);
-    const melodic = (mch >= 0);
-    const ch = melodic ? mch : 9;
-    const prog = melodic ? 115 : 0;          // 115 = GM Woodblock
-    const perc = !melodic;
-    const hi = melodic ? 84 : 76, lo = melodic ? 72 : 77;
-    let mtick = 0;
-    for (const mbIndex of playbackOrder) {
-      const mb = score.masterBars[mbIndex];
-      const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
-      const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
-      const unit = WHOLE_TICKS / den;
-      for (let bi = 0; bi < num; bi++) {
-        const t = Math.round(mtick + bi * unit);
-        const key = (bi === 0) ? hi : lo;
-        const vel = (bi === 0) ? 1.0 : 0.7;
-        events.push([t, ch, key, vel, true, prog, perc]);
-        events.push([t + 30, ch, key, 0.0, false, prog, perc]);
-      }
-      mtick += masterBarTicks(score, mbIndex);
-    }
-  }
-
-  tickMap.sort((a, b) => a.tick - b.tick);
   window.gomidasTickMap = tickMap;
   nativeInvoke('setSequence', { lengthTicks, events });
 }
