@@ -602,23 +602,12 @@
 
   // ---- bar capacity (ticks) — keep bars within their time signature ----------
   const WHOLE_TICKS = 3840;        // PPQ(960) * 4; mirrors app.js
-  function beatTicksOf(b) {
-    let t = WHOLE_TICKS / b.duration;
-    if (b.dots) t *= (2 - Math.pow(0.5, b.dots));
-    if (b.tupletNumerator && b.tupletNumerator > 0) t *= b.tupletDenominator / b.tupletNumerator;
-    return t;
-  }
-  function barCapacityTicks(barIndex) {
-    const mb = api.score.masterBars[barIndex];
-    const num = mb ? (mb.timeSignatureNumerator || 4) : 4;
-    const den = mb ? (mb.timeSignatureDenominator || 4) : 4;
-    return WHOLE_TICKS * num / den;
-  }
+  // Thin adapters over the unit-tested core (web/core/gomidas-core.js; docs/TESTING.md).
+  function beatTicksOf(b) { return GomidasCore.beatTicksRaw(b); }
+  function barCapacityTicks(barIndex) { return GomidasCore.barCapacityTicks(api.score.masterBars, barIndex); }
   function barFilledTicks(barIndex, voiceIndex) {
-    const st = staff(); const bar = st && st.bars[barIndex];
-    const v = bar && bar.voices[voiceIndex || 0];
-    if (!v) return 0;
-    return v.beats.reduce((s, b) => s + beatTicksOf(b), 0);
+    const st = staff();
+    return GomidasCore.barFilledTicks(st && st.bars[barIndex], voiceIndex);
   }
   // A bar is "full" once its beats occupy its whole time-signature length.
   function barIsFull(barIndex, voiceIndex) {
@@ -2050,17 +2039,7 @@
     return '·';
   }
   // Adaptive subdivisions-per-beat from the smallest straight value present in the bar.
-  function laneBeatK(bar, beatUnit, compound) {
-    const v0 = bar && bar.voices && bar.voices[0];
-    let minDur = Infinity;
-    if (v0) for (const be of v0.beats) {
-      if (be.tupletNumerator && be.tupletNumerator > 0) continue;
-      const d = beatTicks(be); if (d > 0 && d < minDur) minDur = d;
-    }
-    if (!isFinite(minDur)) minDur = beatUnit;
-    let K = Math.max(1, Math.round(beatUnit / Math.max(minDur, WHOLE_TICKS / 16)));
-    return compound ? (K >= 5 ? 6 : K >= 2 ? 3 : 1) : (K >= 8 ? 8 : K >= 4 ? 4 : K >= 2 ? 2 : 1);
-  }
+  function laneBeatK(bar, beatUnit, compound) { return GomidasCore.laneBeatK(bar, beatUnit, compound); }
 
   // Vertical-layout metrics (shared by render + cursors), derived from the panel height.
   function laneMetrics() {

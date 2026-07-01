@@ -70,6 +70,7 @@ juce_add_binary_data(GomidasAssets
   NAMESPACE   GomidasAssets
   SOURCES
     web/index.html
+    web/core/gomidas-core.js
     web/app.js
     web/editor.js
     web/fretboard.js
@@ -125,11 +126,40 @@ target_compile_definitions(Gomidas PRIVATE
   JUCE_PLUGINHOST_VST3=1)
 
 # Standalone test tools (off by default): -DGOMIDAS_BUILD_TESTS=ON
+# Run with: cmake --build build && ctest --test-dir build --output-on-failure
 option(GOMIDAS_BUILD_TESTS "Build standalone test tools (sfz_smoketest)" OFF)
 if(GOMIDAS_BUILD_TESTS)
+  enable_testing()
+
   add_executable(sfz_smoketest tests/sfz_smoketest.cpp)
   target_link_libraries(sfz_smoketest PRIVATE sfizz::sfizz)
   set_target_properties(sfz_smoketest PROPERTIES CXX_STANDARD 17)
+
+  # TSF / SoundFontSynth smoke test — the default MIDI sound path. Compiles the synth
+  # source directly (it defines TSF_IMPLEMENTATION) and links juce_audio_basics.
+  add_executable(sf_smoketest tests/sf_smoketest.cpp src/synth/SoundFontSynth.cpp)
+  target_include_directories(sf_smoketest PRIVATE src)
+  target_link_libraries(sf_smoketest PRIVATE
+    juce::juce_audio_basics
+    juce::juce_recommended_config_flags)
+  set_target_properties(sf_smoketest PROPERTIES CXX_STANDARD 20)
+
+  # Assert each bundled CC0 SFZ instrument loads (incl. FLAC decode) and renders audio.
+  add_test(NAME sfz_classical_guitar
+           COMMAND sfz_smoketest
+                   "${CMAKE_SOURCE_DIR}/assets/instruments/classical-guitar/classical-guitar.sfz")
+  # Bass samples top out around key 46 — play E2 (40), in range, not middle C (60 is silent).
+  add_test(NAME sfz_electric_bass
+           COMMAND sfz_smoketest
+                   "${CMAKE_SOURCE_DIR}/assets/instruments/electric-bass/electric-bass.sfz" 40)
+
+  # Assert the bundled GM SoundFont loads and renders a note via TinySoundFont.
+  add_test(NAME sf_gm_note
+           COMMAND sf_smoketest "${CMAKE_SOURCE_DIR}/assets/soundfont/sonivox.sf2")
+
+  # Aggregate target so CI (and `cmake --build build --target gomidas_tests`) builds every
+  # test executable at once — adding a new test target here needs no CI change.
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest)
 endif()
 
 target_link_libraries(Gomidas PRIVATE

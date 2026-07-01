@@ -1,0 +1,15 @@
+{
+  "name": "gomidas-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gomidas WebView layer — pure logic unit tests (Vitest). See docs/TESTING.md.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@coderline/alphatab": "^1.8.3",
+    "vitest": "^2.1.8"
+  }
+}
