@@ -165,6 +165,68 @@
                     : (K >= 8 ? 8 : K >= 4 ? 4 : K >= 2 ? 2 : 1);
   }
 
+  // ── Playback order (repeat barlines + D.C./D.S. jumps) ────────────────────────
+
+  // Expand repeat barlines AND D.C./D.S. jumps into the order master bars are actually
+  // played. Repeat end (repeatCount>0) replays from the last repeat-start; a Da Capo /
+  // Dal Segno jump (executed once) returns to the start / Segno, optionally stopping at
+  // Fine. Alternate endings + al-Coda variants aren't handled. With no repeats/directions
+  // this is just [0,1,…,n-1]. `D` is alphaTab.model.Direction (pass null to skip all
+  // direction handling — repeats still work); `mb.directions` is a Set of Direction values.
+  function computePlaybackOrder(score, D) {
+    const mbs = (score && score.masterBars) || [];
+    const has = (mb, v) => !!(D && v != null && mb.directions && mb.directions.has && mb.directions.has(v));
+    // Marker bars (first occurrence).
+    let segnoBar = -1, fineBar = -1;
+    if (D) for (let k = 0; k < mbs.length; k++) {
+      if (segnoBar < 0 && has(mbs[k], D.TargetSegno)) segnoBar = k;
+      if (fineBar < 0 && has(mbs[k], D.TargetFine)) fineBar = k;
+    }
+    const order = [];
+    const passes = {};            // repeat-end bar index -> completed passes
+    let i = 0, repeatStart = 0, guard = 0;
+    let jumpUsed = false;         // a D.C./D.S. jump fires once
+    let fineActive = false;       // Fine stops the song only after an "al Fine" jump
+    while (i < mbs.length && guard++ < 50000) {
+      order.push(i);
+      const mb = mbs[i];
+      if (mb.isRepeatStart) repeatStart = i;
+      const rc = mb.repeatCount | 0;
+      if (rc > 0) {
+        passes[i] = (passes[i] || 0) + 1;
+        if (passes[i] < rc) { i = repeatStart; continue; }
+        passes[i] = 0;            // reset so an enclosing repeat can re-trigger this end
+      }
+      if (fineActive && fineBar === i) break;   // "al Fine" reached → stop
+      if (D && !jumpUsed) {
+        if (has(mb, D.JumpDaCapo))       { jumpUsed = true; i = 0; continue; }            // D.C.
+        if (has(mb, D.JumpDaCapoAlFine)) { jumpUsed = true; fineActive = true; i = 0; continue; } // D.C. al Fine
+        if (segnoBar >= 0 && has(mb, D.JumpDalSegno))       { jumpUsed = true; i = segnoBar; continue; }            // D.S.
+        if (segnoBar >= 0 && has(mb, D.JumpDalSegnoAlFine)) { jumpUsed = true; fineActive = true; i = segnoBar; continue; } // D.S. al Fine
+      }
+      i++;
+    }
+    return order.length ? order : mbs.map((_, k) => k);
+  }
+
+  // ── Articulation → MIDI note shape (velocity + duration) ──────────────────────
+
+  // Reshape a note's velocity/duration for its articulations, matching how the played
+  // note should sound: dead = short percussive thunk, palm-mute = shorter+softer,
+  // staccato = halved, ghost = quiet, accent = louder, legato (hammer/pull dest) = softer
+  // (not picked). `vel` is 0..1, `dur` is in ticks; returns the shaped { vel, dur }.
+  function shapeNote(note, vel, dur) {
+    let noteVel = vel, noteDur = dur;
+    if (note.isDead) { noteVel = vel * 0.6; noteDur = Math.max(1, Math.round(dur * 0.12)); }
+    else if (note.isPalmMute) { noteVel = vel * 0.85; noteDur = Math.max(1, Math.round(dur * 0.45)); }
+    if (note.isStaccato) noteDur = Math.max(1, Math.round(noteDur * 0.5));
+    if (note.isGhost) noteVel *= 0.55;
+    if (note.accentuated === 2) noteVel = Math.min(1, noteVel * 1.3);       // heavy accent
+    else if (note.accentuated === 1) noteVel = Math.min(1, noteVel * 1.15); // accent
+    if (note.isHammerPullDestination) noteVel *= 0.7;                       // legato: not picked
+    return { vel: noteVel, dur: noteDur };
+  }
+
   // ── Mixer (vol / mute / solo / pan → per-channel gain) ────────────────────────
 
   // True if any track is soloed (mute is then overridden by solo).
@@ -216,6 +278,7 @@
     dynamicsToVelocity, ottavaSemitones, swungTickInBar,
     bendValueToSemitones, semitonesToWheel, emitBendEvents,
     laneBeatK,
+    computePlaybackOrder, shapeNote,
     anyTrackSoloed, computeChannelMix,
     buildEnvelope, parseEnvelope,
   };

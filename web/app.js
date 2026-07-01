@@ -126,40 +126,8 @@ function freeMelodicChannel(score) {
 // Fine. Alternate endings + al-Coda variants aren't handled. With no repeats/directions
 // this is just [0,1,…,n-1], so plain scores are unchanged.
 function computePlaybackOrder(score) {
-  const mbs = (score && score.masterBars) || [];
-  const D = (typeof alphaTab !== 'undefined' && alphaTab.model && alphaTab.model.Direction) || null;
-  const has = (mb, v) => !!(D && v != null && mb.directions && mb.directions.has && mb.directions.has(v));
-  // Marker bars (first occurrence).
-  let segnoBar = -1, fineBar = -1;
-  if (D) for (let k = 0; k < mbs.length; k++) {
-    if (segnoBar < 0 && has(mbs[k], D.TargetSegno)) segnoBar = k;
-    if (fineBar < 0 && has(mbs[k], D.TargetFine)) fineBar = k;
-  }
-  const order = [];
-  const passes = {};            // repeat-end bar index -> completed passes
-  let i = 0, repeatStart = 0, guard = 0;
-  let jumpUsed = false;         // a D.C./D.S. jump fires once
-  let fineActive = false;       // Fine stops the song only after an "al Fine" jump
-  while (i < mbs.length && guard++ < 50000) {
-    order.push(i);
-    const mb = mbs[i];
-    if (mb.isRepeatStart) repeatStart = i;
-    const rc = mb.repeatCount | 0;
-    if (rc > 0) {
-      passes[i] = (passes[i] || 0) + 1;
-      if (passes[i] < rc) { i = repeatStart; continue; }
-      passes[i] = 0;            // reset so an enclosing repeat can re-trigger this end
-    }
-    if (fineActive && fineBar === i) break;   // "al Fine" reached → stop
-    if (D && !jumpUsed) {
-      if (has(mb, D.JumpDaCapo))       { jumpUsed = true; i = 0; continue; }            // D.C.
-      if (has(mb, D.JumpDaCapoAlFine)) { jumpUsed = true; fineActive = true; i = 0; continue; } // D.C. al Fine
-      if (segnoBar >= 0 && has(mb, D.JumpDalSegno))       { jumpUsed = true; i = segnoBar; continue; }            // D.S.
-      if (segnoBar >= 0 && has(mb, D.JumpDalSegnoAlFine)) { jumpUsed = true; fineActive = true; i = segnoBar; continue; } // D.S. al Fine
-    }
-    i++;
-  }
-  return order.length ? order : mbs.map((_, k) => k);
+  return GomidasCore.computePlaybackOrder(score,
+    (typeof alphaTab !== 'undefined' && alphaTab.model && alphaTab.model.Direction) || null);
 }
 
 let metronomeOn = false;
@@ -268,16 +236,8 @@ function rebuildSequence() {
                   key = note.realValue + ottava;
                 }
                 if (key == null || key < 0 || key > 127) continue;
-                // Articulation → audible MIDI shape: dead = short percussive thunk,
-                // palm mute = shorter+softer, let ring = sustains past its duration.
-                let noteVel = vel, noteDur = dur;
-                if (note.isDead) { noteVel = vel * 0.6; noteDur = Math.max(1, Math.round(dur * 0.12)); }
-                else if (note.isPalmMute) { noteVel = vel * 0.85; noteDur = Math.max(1, Math.round(dur * 0.45)); }
-                if (note.isStaccato) noteDur = Math.max(1, Math.round(noteDur * 0.5));
-                if (note.isGhost) noteVel *= 0.55;
-                if (note.accentuated === 2) noteVel = Math.min(1, noteVel * 1.3);       // heavy accent
-                else if (note.accentuated === 1) noteVel = Math.min(1, noteVel * 1.15); // accent
-                if (note.isHammerPullDestination) noteVel *= 0.7; // legato: hammered/pulled note isn't picked
+                // Articulation → audible MIDI shape (extracted + unit-tested: shape.test.js).
+                let { vel: noteVel, dur: noteDur } = GomidasCore.shapeNote(note, vel, dur);
                 // Per-piece drum level (set by the kit MIXER tab): scales the hit velocity.
                 if (percussion && window.gomidasDrumGains) {
                   const g = window.gomidasDrumGains[key];
