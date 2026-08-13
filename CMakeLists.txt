@@ -71,6 +71,7 @@ juce_add_binary_data(GomidasAssets
   SOURCES
     web/index.html
     web/core/gomidas-core.js
+    web/core/backend.js
     web/app.js
     web/editor.js
     web/fretboard.js

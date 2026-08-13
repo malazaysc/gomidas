@@ -31,6 +31,7 @@ const Asset kAssets[] = {
     { "/index.html",     "index_html",      "text/html" },
     // Note: JUCE mangles "gomidas-core.js" to "gomidascore_js" (hyphen dropped).
     { "/core/gomidas-core.js", "gomidascore_js", "text/javascript" },
+    { "/core/backend.js", "backend_js",         "text/javascript" },
     { "/app.js",         "app_js",          "text/javascript" },
     { "/editor.js",      "editor_js",       "text/javascript" },
     { "/fretboard.js",   "fretboard_js",    "text/javascript" },
