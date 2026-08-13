@@ -450,6 +450,132 @@ function buildFxChain(ctx: AudioContext, chainSpec: any): { input: AudioNode; ou
   return { input, output: tail, nodes };
 }
 
+/**
+ * General MIDI instrument backed by the bundled SoundFont (GMD-36). This is what makes an
+ * arbitrary imported .gp — piano, strings, organ — actually play.
+ *
+ * One AudioBuffer per SF2 sample, decoded lazily from the shared PCM block and cached across
+ * every channel: a GM bank has hundreds of samples and converting all of them up front would
+ * stall the page for seconds.
+ */
+function createSf2Instrument(ctx: AudioContext, bank: any, program: number, percussion: boolean,
+                             bufferCache: Map<number, AudioBuffer>): Instrument {
+  const SF2 = (window as any).GomidasSf2;
+  const output = ctx.createGain();
+  const preset = percussion
+    ? (bank.presets.find((p: any) => p.bank === 128) || bank.findPreset(128, program) || bank.findPreset(0, program))
+    : bank.findPreset(0, program);
+  const voices = new Map<number, Array<{ src: AudioBufferSourceNode; gain: GainNode; release: number }>>();
+  let bendSemis = 0;
+
+  function bufferFor(index: number): AudioBuffer | null {
+    let buf = bufferCache.get(index);
+    if (buf) return buf;
+    const s = bank.samples[index];
+    if (!s || s.end <= s.start) return null;
+    const len = s.end - s.start;
+    buf = ctx.createBuffer(1, len, s.sampleRate > 0 ? s.sampleRate : 44100);
+    const out = buf.getChannelData(0);
+    const pcm = bank.pcm;
+    for (let i = 0; i < len; i++) out[i] = pcm[s.start + i] / 32768;
+    bufferCache.set(index, buf);
+    return buf;
+  }
+
+  function noteOn(key: number, velocity: number, when: number): void {
+    if (!preset) return;
+    const vel = Math.max(1, Math.min(127, Math.round(velocity * 127)));
+    const zones = SF2.zonesFor(preset, key, vel);
+    if (!zones.length) return;
+    // Layered presets legitimately stack zones (piano + string pad). Cap it: a pathological
+    // bank could otherwise spawn dozens of voices per note.
+    for (const z of zones.slice(0, 4)) {
+      const buf = bufferFor(z.sampleIndex);
+      if (!buf) continue;
+      const s = bank.samples[z.sampleIndex];
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.setValueAtTime(
+        SF2.rateFor(z, s, key, buf.sampleRate) * Math.pow(2, bendSemis / 12), when);
+      if (z.loopMode === 1 || z.loopMode === 3) {
+        const loopStart = (s.startLoop - s.start) / buf.sampleRate;
+        const loopEnd = (s.endLoop - s.start) / buf.sampleRate;
+        if (loopEnd > loopStart && loopEnd <= buf.duration) {
+          src.loop = true; src.loopStart = loopStart; src.loopEnd = loopEnd;
+        }
+      }
+      const gain = ctx.createGain();
+      const atten = Math.pow(10, -(z.attenuationDb || 0) / 20);
+      const peak = Math.max(0.0001, Math.min(1, velocity) * atten);
+      // Approximate the SF2 volume envelope: attack -> hold -> decay to sustain.
+      const a = Math.max(0.001, z.attack || 0.001);
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.linearRampToValueAtTime(peak, when + a);
+      const sustainLevel = Math.max(0.0001, peak * (z.sustain != null ? z.sustain : 1));
+      if (z.decay > 0.001) {
+        gain.gain.setTargetAtTime(sustainLevel, when + a + (z.hold || 0), Math.max(0.01, z.decay / 3));
+      }
+      let node: AudioNode = gain;
+      if (z.pan) {
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = Math.max(-1, Math.min(1, z.pan * 2));
+        gain.connect(pan); node = pan;
+      }
+      src.connect(gain); node.connect(output);
+      src.start(when);
+      const list = voices.get(key) || [];
+      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3) });
+      voices.set(key, list);
+    }
+  }
+
+  function releaseVoice(v: { src: AudioBufferSourceNode; gain: GainNode; release: number }, at: number): void {
+    try {
+      v.gain.gain.cancelScheduledValues(at);
+      v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), at);
+      v.gain.gain.exponentialRampToValueAtTime(0.0001, at + v.release);
+      v.src.stop(at + v.release + 0.02);
+    } catch (e) { /* already stopped */ }
+  }
+
+  return {
+    noteOn,
+    noteOff(key: number, when: number) {
+      const list = voices.get(key);
+      if (!list || !list.length) return;
+      const at = Math.max(when, ctx.currentTime);
+      // A layered note put several voices under one key; release them together.
+      for (const v of list) releaseVoice(v, at);
+      voices.delete(key);
+    },
+    pitchBend(value: number) {
+      bendSemis = ((value - 8192) / 8192) * 12;   // +/-12, matching the native engine
+      const now = ctx.currentTime;
+      for (const [key, list] of voices) {
+        const zones = SF2.zonesFor(preset, key, 100);
+        if (!zones.length) continue;
+        for (let i = 0; i < list.length; i++) {
+          const z = zones[Math.min(i, zones.length - 1)];
+          const s = bank.samples[z.sampleIndex];
+          const buf = bufferCache.get(z.sampleIndex);
+          if (!buf) continue;
+          try {
+            list[i].src.playbackRate.setTargetAtTime(
+              SF2.rateFor(z, s, key, buf.sampleRate) * Math.pow(2, bendSemis / 12), now, 0.01);
+          } catch (e) { /* voice ended */ }
+        }
+      }
+    },
+    cc() { /* modulators are deliberately not implemented — see core/sf2.ts */ },
+    allNotesOff() {
+      const now = ctx.currentTime;
+      for (const list of voices.values()) for (const v of list) releaseVoice(v, now);
+      voices.clear();
+    },
+    output
+  };
+}
+
 interface ChannelStrip {
   input: GainNode;
   fxIn: GainNode;
@@ -503,6 +629,7 @@ function createWebAudioBackend(BackendLib: any): any {
     analyser.connect(ctx.destination);
     master = { eq, gain, pan, analyser };
     meterData = new Uint8Array(analyser.fftSize);
+    loadGmBank();
     return ctx;
   }
 
@@ -552,12 +679,42 @@ function createWebAudioBackend(BackendLib: any): any {
   // see a program mismatch and swap the sampler back out for the placeholder tone.
   const sfzChannels = new Set<number>();
 
+  // The bundled GM bank (GMD-36). Loaded once, lazily, and shared by every channel; the sample
+  // buffer cache is shared too, since a piano and a string pad often reference the same sample.
+  let gmBank: any = null;
+  let gmLoading: Promise<any> | null = null;
+  const gmBuffers = new Map<number, AudioBuffer>();
+
+  function loadGmBank(): Promise<any> {
+    if (gmBank) return Promise.resolve(gmBank);
+    if (gmLoading) return gmLoading;
+    // 1.35MB. FluidR3 (144MB) is emphatically not going over the wire (§8).
+    gmLoading = fetch('soundfont/sonivox.sf2')
+      .then(r => { if (!r.ok) throw new Error('sf2 ' + r.status); return r.arrayBuffer(); })
+      .then(buf => {
+        gmBank = (window as any).GomidasSf2.parseSf2(buf);
+        // Re-create instruments built from the placeholder tone before the bank arrived, so the
+        // first seconds of playback are not permanently stuck on oscillators.
+        for (let ch = 0; ch < channels.length; ch++) {
+          const st = channels[ch];
+          if (st && st.instrument && !sfzChannels.has(ch)) { st.instrument.allNotesOff(); st.instrument = null; }
+        }
+        return gmBank;
+      })
+      .catch(() => { gmLoading = null; return null; });   // fall back to the tone
+    return gmLoading;
+  }
+
   function instrumentFor(ch: number, program: number, percussion: boolean): Instrument {
     const s = strip(ch);
     if (sfzChannels.has(ch) && s.instrument) return s.instrument;
     if (!s.instrument || s.program !== program || s.percussion !== percussion) {
       if (s.instrument) s.instrument.allNotesOff();
-      s.instrument = createToneInstrument(ctx!, percussion || ch === 9);
+      // Prefer the real GM bank; fall back to the placeholder tone only while it is still
+      // loading or if it failed to load at all.
+      s.instrument = gmBank
+        ? createSf2Instrument(ctx!, gmBank, program | 0, percussion || ch === 9, gmBuffers)
+        : createToneInstrument(ctx!, percussion || ch === 9);
       s.instrument.output.connect(s.input);
       s.program = program;
       s.percussion = percussion || ch === 9;
