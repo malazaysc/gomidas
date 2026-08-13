@@ -4,7 +4,7 @@
 // JUCE wire format: every method must emit the SAME call name and payload shape the old
 // nativeInvoke() call sites used. If one of these fails, the Mac app has silently changed.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createEventBus, createJuceBackends, JUCE_CAPS } from '../core/backend.js';
+import { createEventBus, createJuceBackends, JUCE_CAPS } from '../core/backend.ts';
 
 /** Fake JUCE host that records every emitEvent call. */
 function fakeWindow() {

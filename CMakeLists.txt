@@ -62,26 +62,72 @@ juce_add_gui_app(Gomidas
 
 juce_generate_juce_header(Gomidas)
 
+# ---- Web front-end: TypeScript codegen (GMD-31) ------------------------------
+# The editor is TypeScript, compiled per-file to plain <script>-tag JavaScript in web/dist/
+# (see web/tsconfig.json). tsc IS the whole build — no bundler — so the only thing CMake needs
+# is to run it before reading the emitted files.
+#
+# This runs at CONFIGURE time on purpose: juce_add_binary_data() reads the files while
+# generating, so they must already exist. The custom target below re-runs it per build, which
+# is what catches an edited .ts.
+#
+# It also means `cmake --build` now depends on Node. That is the documented cost of the
+# TypeScript decision (docs/WEB_PORT.md §1.1) and it fails loudly rather than embedding stale
+# JavaScript — a silently out-of-date bundle is far worse than a clear error.
+find_program(NPX_EXECUTABLE npx)
+if (NOT NPX_EXECUTABLE)
+  message(FATAL_ERROR
+    "npx not found, but the web front-end is TypeScript and must be compiled before it can be "
+    "embedded. Install Node 20+, then run: cd web && npm install")
+endif()
+
+set(GOMIDAS_WEB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/web")
+set(GOMIDAS_WEB_DIST "${GOMIDAS_WEB_SRC}/dist")
+
+execute_process(
+  COMMAND "${NPX_EXECUTABLE}" tsc -p tsconfig.json
+  WORKING_DIRECTORY "${GOMIDAS_WEB_SRC}"
+  RESULT_VARIABLE GOMIDAS_TSC_RESULT
+  OUTPUT_VARIABLE GOMIDAS_TSC_OUTPUT
+  ERROR_VARIABLE  GOMIDAS_TSC_OUTPUT)
+if (NOT GOMIDAS_TSC_RESULT EQUAL 0)
+  message(FATAL_ERROR "TypeScript build failed:\n${GOMIDAS_TSC_OUTPUT}")
+endif()
+
+# Re-emit on every build so an edited .ts cannot leave a stale .js embedded.
+add_custom_target(GomidasWeb ALL
+  COMMAND "${NPX_EXECUTABLE}" tsc -p tsconfig.json
+  WORKING_DIRECTORY "${GOMIDAS_WEB_SRC}"
+  COMMENT "Compiling web front-end (tsc -> web/dist)"
+  VERBATIM)
+
 # ---- Embedded web front-end (alphaTab) + GM SoundFont ------------------------
 # Served to the WebBrowserComponent from memory via a ResourceProvider, and the
 # SoundFont is loaded by the native TinySoundFont synth from memory.
+#
+# JavaScript comes from web/dist/ (tsc output). Everything else is embedded straight from web/:
+# index.html is not compiled, and alphaTab.min.js / juce_native_interop.js are excluded from
+# the TypeScript project on purpose (a third-party bundle and a verbatim JUCE vendor file).
 juce_add_binary_data(GomidasAssets
   HEADER_NAME GomidasAssets.h
   NAMESPACE   GomidasAssets
   SOURCES
     web/index.html
-    web/core/gomidas-core.js
-    web/core/backend.js
-    web/app.js
-    web/editor.js
-    web/fretboard.js
-    web/grooves.js
+    web/dist/core/gomidas-core.js
+    web/dist/core/backend.js
+    web/dist/app.js
+    web/dist/editor.js
+    web/dist/fretboard.js
+    web/dist/grooves.js
     web/juce_native_interop.js
     web/alphaTab.min.js
     web/Bravura.woff2
     web/Bravura.woff
     web/drumkit.png
     assets/soundfont/sonivox.sf2)
+
+# The embedded blob is generated from tsc output, so it must wait for tsc.
+add_dependencies(GomidasAssets GomidasWeb)
 
 target_sources(Gomidas PRIVATE
   src/Main.cpp

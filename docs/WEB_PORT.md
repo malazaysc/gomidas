@@ -60,9 +60,27 @@ No ES modules, no bundler, no build step anywhere in the repo (`web/package.json
 Vitest + alphaTab). `gomidas-core.js` is deliberately dual-mode — `window.GomidasCore` in the
 browser, `module.exports` under Node.
 
-Therefore **`tsc` alone suffices — no bundler.** With `module: none` and per-file emit, one `.js`
-comes out per `.ts`, the script order is unchanged, and `juce_add_binary_data` simply points at
-`web/dist/` instead of `web/`. The desktop app never learns that TypeScript exists.
+Therefore **`tsc` alone suffices — no bundler.** With per-file emit, one `.js` comes out per
+`.ts`, the script order is unchanged, and `juce_add_binary_data` simply points at `web/dist/`
+instead of `web/`. The desktop app never learns that TypeScript exists.
+
+**Corrections from actually building it (GMD-31, TypeScript 7.0.2):**
+
+- **`module: "none"` no longer exists.** TypeScript 7 removed it, along with
+  `moduleResolution: "classic"` and `alwaysStrict`. The config uses `module: "preserve"`.
+- **The script-vs-module guarantee is now a discipline rule, not a compiler error.** A source
+  file with no top-level `import`/`export` is a *script* and emits as one; add a single `export`
+  and it becomes a module, the globals stop being global, and the desktop app breaks at load.
+  `module: "none"` used to reject that outright. Nothing does now except the desktop build.
+- **tsc re-prints every file from its AST**, including un-migrated `.js` passing through under
+  `allowJs`. Formatting only — nothing is downlevelled at ES2020, no semantics change — but
+  **line numbers in `dist/` do not match the source**, so the `window.onerror → nlog`
+  diagnostic reports positions in the emitted file. Source maps would not fix this
+  (`window.onerror` reports the executed file's positions regardless).
+- **`"use strict"` is injected into files that don't already declare it.** On this codebase that
+  is only `grooves.js` — `app.js`, `editor.js`, `fretboard.js` and `gomidas-core.js` all declare
+  it themselves. Checked for implicit globals and other strict hazards, and loaded clean.
+  Re-check this when converting any remaining non-strict file.
 
 What it genuinely costs:
 
