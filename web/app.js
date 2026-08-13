@@ -1096,7 +1096,12 @@ function saveProject() {
     const m = window.gomidasMaster;
     mix.master = { vol: m.vol, pan: m.pan, eq: Object.assign({ low: 0, mid: 0, high: 0 }, m.eq || {}) };
   }
-  const payload = JSON.stringify(GomidasCore.buildEnvelope(scoreJson, { instruments, mix }));
+  // Effect chains (GMD-35). Written on BOTH products: desktop does not render them yet but must
+  // not lose them (WEB_PORT §5.2).
+  const fx = (window.gomidasTrackFx && Object.keys(window.gomidasTrackFx).length) || window.gomidasMasterFx
+    ? { tracks: window.gomidasTrackFx || {}, master: window.gomidasMasterFx || null }
+    : null;
+  const payload = JSON.stringify(GomidasCore.buildEnvelope(scoreJson, { instruments, mix, fx }));
   Host.saveProject(payload);
   if (window.GomidasEditor.markClean) window.GomidasEditor.markClean();
 }
@@ -1126,7 +1131,7 @@ window.gomidasExportGp = exportGp;
 window.gomidasLoadProject = function (json) {
   // Envelope vs legacy raw-score parsing is extracted + unit-tested (see envelope.test.js).
   const parsed = GomidasCore.parseEnvelope(json);
-  let scoreJson = parsed.scoreJson, instruments = parsed.instruments, mix = parsed.mix;
+  let scoreJson = parsed.scoreJson, instruments = parsed.instruments, mix = parsed.mix, fx = parsed.fx;
   // Clear SFZ instruments left on the engine by the previous project, then reset state.
   const prev = window.gomidasTrackSfz || {};
   for (const ch in prev) Audio.clearTrackInstrument(parseInt(ch, 10));
@@ -1151,6 +1156,14 @@ window.gomidasLoadProject = function (json) {
         eq: Object.assign({ low: 0, mid: 0, high: 0 }, mix.master.eq || {})
       });
       if (window.gomidasApplyMixer) window.gomidasApplyMixer();
+    }
+    // Effect chains: kept in memory on every host (so save round-trips them) and pushed to the
+    // engine only where the backend can actually render them.
+    window.gomidasTrackFx = (fx && fx.tracks) || {};
+    window.gomidasMasterFx = (fx && fx.master) || null;
+    if (Audio.setTrackFx) {
+      for (const ch in window.gomidasTrackFx) Audio.setTrackFx(parseInt(ch, 10), window.gomidasTrackFx[ch]);
+      if (window.gomidasMasterFx) Audio.setMasterFx(window.gomidasMasterFx);
     }
     focusEditor();
   }

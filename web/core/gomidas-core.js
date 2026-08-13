@@ -443,7 +443,13 @@
   // `.gomidas`. `scoreJson` is alphaTab's score JSON (string or object).
   function buildEnvelope(scoreJson, opts) {
     const o = opts || {};
-    return { gomidasVersion: 1, instruments: o.instruments || {}, mix: o.mix || null, score: scoreJson };
+    const env = { gomidasVersion: 1, instruments: o.instruments || {}, mix: o.mix || null, score: scoreJson };
+    // Effect chains (GMD-35). CRITICAL: the DESKTOP build must write this back even though it
+    // does not render effects (WEB_PORT §5.2) — otherwise opening a web-authored project on
+    // macOS and saving silently destroys its effects. app.js is shared, so passing `fx` straight
+    // through here is what makes desktop preservation automatic.
+    if (o.fx) env.fx = o.fx;
+    return env;
   }
 
   // Parse a `.gomidas` file. Understands both the versioned envelope and the legacy
@@ -454,9 +460,10 @@
     try {
       const env = JSON.parse(json);
       if (env && env.gomidasVersion && env.score != null)
-        return { scoreJson: env.score, instruments: env.instruments || {}, mix: env.mix || null, legacy: false };
+        return { scoreJson: env.score, instruments: env.instruments || {}, mix: env.mix || null,
+                 fx: env.fx || null, legacy: false };
     } catch (e) { /* not an envelope — treat as a legacy raw-score JSON string */ }
-    return { scoreJson: json, instruments: null, mix: null, legacy: true };
+    return { scoreJson: json, instruments: null, mix: null, fx: null, legacy: true };
   }
 
   return {
