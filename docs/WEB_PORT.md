@@ -10,7 +10,7 @@ Work is tracked in Samu as `GMD-30`…`GMD-39` (project `GMD`, workspace `gomida
 
 ## 0. The decision, in one paragraph
 
-Gomidas is already ~74% a web app: ~6,400 lines of JS/HTML in `web/` versus ~2,330 lines of
+Gomidas is already ~74% a web app: ~6,400 lines of JS/HTML in `packages/core/` versus ~2,330 lines of
 C++ in `src/`. alphaTab owns parsing and rendering; the entire editing layer — cursor, keymap,
 effects, drum kit view, groove library, beat grid, inspector, track list — is JavaScript that
 runs unmodified in a browser today. The C++ is four things: the audio engine, two synths, and
@@ -37,9 +37,9 @@ The shared code is not "similar" between the two apps — it is *the same files*
 means copying 4,200 lines of editor JS and drifting within a week. A branch gives the same
 isolation with none of the divergence.
 
-**Do not restructure up front.** Add `apps/web/` alongside the existing `web/` and import
+**Do not restructure up front.** Add `apps/web/` alongside the existing `packages/core/` and import
 directly from `../../web/`. Let the seam emerge from real work. The eventual
-`web/` → `packages/core/` rename is **the last step**, not the first — it is cosmetic and
+`packages/core/` → `packages/core/` rename is **the last step**, not the first — it is cosmetic and
 should only happen once the boundary is proven.
 
 ### Hard rule
@@ -55,14 +55,14 @@ The decision in §11 is **TypeScript**, against this document's original recomme
 premise that recommendation rested on — *shared files stay byte-identical* — does die. What
 replaces it is nearly as good, and the reason is a property of how the app already loads:
 
-`web/index.html:701-707` loads every script as a plain `<script src>` tag exporting **globals**.
-No ES modules, no bundler, no build step anywhere in the repo (`web/package.json` has only
+`packages/core/index.html:701-707` loads every script as a plain `<script src>` tag exporting **globals**.
+No ES modules, no bundler, no build step anywhere in the repo (`packages/core/package.json` has only
 Vitest + alphaTab). `gomidas-core.js` is deliberately dual-mode — `window.GomidasCore` in the
 browser, `module.exports` under Node.
 
 Therefore **`tsc` alone suffices — no bundler.** With per-file emit, one `.js` comes out per
-`.ts`, the script order is unchanged, and `juce_add_binary_data` simply points at `web/dist/`
-instead of `web/`. The desktop app never learns that TypeScript exists.
+`.ts`, the script order is unchanged, and `juce_add_binary_data` simply points at `packages/core/dist/`
+instead of `packages/core/`. The desktop app never learns that TypeScript exists.
 
 **Corrections from actually building it (GMD-31, TypeScript 7.0.2):**
 
@@ -98,9 +98,9 @@ phase, raise strictness as you go. Start with `backend.ts` and `gomidas-core.ts`
 
 | What | Where |
 |---|---|
-| Embedded web assets | `CMakeLists.txt:72-83` — twelve file-path strings in `juce_add_binary_data` (repoint to `web/dist/` in Phase 0.5) |
-| CI web job | `.github/workflows/ci.yml` — `working-directory: web`, `cache-dependency-path` |
-| Test imports | `web/tests/*.js` — relative `../core/gomidas-core.js` |
+| Embedded web assets | `CMakeLists.txt:72-83` — twelve file-path strings in `juce_add_binary_data` (repoint to `packages/core/dist/` in Phase 0.5) |
+| CI web job | `.github/workflows/ci.yml` — `working-directory: packages/core`, `cache-dependency-path` |
+| Test imports | `packages/core/tests/*.js` — relative `../core/gomidas-core.js` |
 
 Also add a `paths-ignore` filter to the `native-tests` CI job so web-only pushes don't spin up a
 macOS runner to build JUCE and sfizz.
@@ -110,7 +110,7 @@ macOS runner to build JUCE and sfizz.
 ## 2. The seam — two interfaces, not one
 
 Today there is exactly one door between the editor and the host: `nativeInvoke(name, payload)`
-at `web/app.js:17`, with **29 distinct call names**. That door becomes two typed interfaces.
+at `packages/core/app.js:17`, with **29 distinct call names**. That door becomes two typed interfaces.
 
 The calls split cleanly, and the split matters — the file/shell group is the one that differs
 most between platforms and it has nothing to do with audio.
@@ -217,7 +217,7 @@ on the desktop side and the web shell supplies its own equivalents.
 
 The first commit series touches **only the existing desktop app**:
 
-1. Define the interfaces above in `web/core/backend.js`.
+1. Define the interfaces above in `packages/core/core/backend.js`.
 2. Implement `JuceAudioBackend` / `JuceHostBackend` that wrap the existing `nativeInvoke` calls
    verbatim.
 3. Replace every direct `nativeInvoke(...)` call site in `app.js`, `editor.js`, `fretboard.js`
@@ -518,7 +518,7 @@ path, and it produces a deterministic mix.
 
 ## 9. Testing
 
-`web/core/gomidas-core.js` already has 62 Vitest tests running in CI on plain Node. **Extend that
+`packages/core/core/gomidas-core.js` already has 62 Vitest tests running in CI on plain Node. **Extend that
 convention** — every new piece of pure logic goes in a testable module with no DOM and no
 `AudioContext`:
 
@@ -536,20 +536,25 @@ tested modules.
 
 ## 10. Order of work
 
-| Phase | Deliverable | Acceptance |
+| Phase | Deliverable | Status |
 |---|---|---|
-| **0** | Extract `AudioBackend` / `HostBackend`; `Juce*` implementations. **Stays JS.** | Mac app behaves identically; `cmake --build build` green. Recording/live-input/plugin judged at the bridge only — see §3 |
-| **0.5** | TypeScript infrastructure: `tsconfig` (`allowJs`, `module: none`, per-file emit → `web/dist/`), CMake repointed, Node in CI `native-tests`. Migrate `backend.ts` + `gomidas-core.ts` | `cmake --build build` green from generated output; Mac app identical; 62 Vitest tests still pass |
-| **1** | `apps/web/` — Vite + alphaTab rendering, no audio | A `.gp` loads and renders in a browser |
-| **2** | `WebAudioBackend` — scheduler, channel strip, mixer, EQ | A score plays with correct timing; mute/solo/vol/pan/EQ live |
-| **3** | SFZ-lite sample player | Guitar and bass tracks sound like the Mac app; A/B it |
-| **4** | Effects — chain schema, inserts, sends **+ desktop preserves the `fx` block** (§5.2) | Drive + cab + delay on a guitar track; round-trips through `.gomidas`; a web-authored file saved on macOS keeps its effects |
-| **5** | GM fallback (TSF → WASM) | An imported multi-instrument `.gp` plays in full |
-| **6** | File handling — picker + download/IndexedDB fallback. **No server** (§11) | Works in Safari and Chrome |
-| **7** | Editor parity pass — the largest phase | Full keymap, drums (kit view + grooves), inspector, beat grid |
-| **8** | Monorepo tidy — `web/` → `packages/core/`, `apps/desktop/` | Both apps build from the shared core |
+| **0** | Extract `AudioBackend` / `HostBackend`; `Juce*` implementations. **Stays JS.** | ✅ `GMD-30` |
+| **0.5** | TypeScript infrastructure: `tsconfig` (`allowJs`, per-file emit → `packages/core/dist/`), CMake repointed, Node in CI `native-tests`. Migrate `backend.ts` + `gomidas-core.ts` | ✅ `GMD-31` |
+| **1** | `apps/web/` — Vite + alphaTab rendering, no audio | ✅ `GMD-32` |
+| **2** | `WebAudioBackend` — scheduler, channel strip, mixer, EQ | ✅ `GMD-33` |
+| **3** | SFZ-lite sample player | ✅ `GMD-34` |
+| **4** | Effects — chain schema, inserts, sends **+ desktop preserves the `fx` block** (§5.2) | ✅ `GMD-35` |
+| **5** | GM fallback — SF2 reader in JS, not TSF→WASM (§6.2 fallback) | ✅ `GMD-36` |
+| **6** | File handling — picker + download/IndexedDB fallback. **No server** (§11) | ✅ `GMD-37` |
+| **7** | Editor parity pass — the largest phase | ✅ `GMD-38` |
+| **8** | Monorepo tidy — shared editor to `packages/core/`, browser shell in `apps/web/` | ✅ `GMD-39` |
 
-Phase 8 is deliberately last. Do not start there.
+All ten phases shipped 2026-08-13 (`GMD-30`…`GMD-39`), each merged to `main` with the desktop
+app verified building and launching at every step.
+
+**What the web build deliberately does NOT have:** VST/AU hosting and live input (§8 — they are
+why the desktop app exists), a real recorded cab IR (generated impulses stand in), and
+sample-identical GM playback (§6.2 fallback: an independent SF2 reader, not TSF-in-WASM).
 
 TypeScript conversion **continues across every phase** as a ratchet (§1.1) — one file per phase,
 strictness rising. Phase 0.5 only builds the machinery; it does not finish the migration.

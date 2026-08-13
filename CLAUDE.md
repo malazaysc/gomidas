@@ -70,6 +70,15 @@ stay in sync off one master transport.
 
 ## Layout
 
+Monorepo since 2026-08-13 (GMD-39). **`packages/core/` is the shared editor** — the same files
+the desktop app embeds and the browser build serves; there is only one copy of everything.
+
+```
+packages/core/              shared editor (TypeScript -> dist/, see tsconfig.json)
+apps/web/                   browser build: Vite shell whose root IS packages/core
+CMakeLists.txt, src/        macOS app (kept at the repo root; assets/ is shared with the web build)
+```
+
 ```
 CMakeLists.txt              juce_add_gui_app + juce_add_binary_data(GomidasAssets)
 src/Main.cpp                JUCEApplication + DocumentWindow
@@ -77,13 +86,13 @@ src/ui/MainComponent.*      WebBrowserComponent + JS↔C++ bridge + native macOS
 src/engine/AudioEngine.*    device, transport, scheduler, Sequence hand-off
 src/synth/SoundFontSynth.*  TinySoundFont wrapper
 src/synth/tsf/tsf.h         vendored TinySoundFont (MIT)
-web/index.html              GP8-style dark 4-panel layout (transport / palette / center / inspector / tracks)
+packages/core/index.html              GP8-style dark 4-panel layout (transport / palette / center / inspector / tracks)
                             + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here
-web/app.js                  alphaTab host, model→MIDI (self-computed ticks), bridge
-web/editor.js               tab editor: cursor/nav/entry, mouse select, edit+play cursors
-web/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
-web/alphaTab.min.js          alphaTab classic bundle (embedded)
-web/Bravura.woff2/.woff      music notation font (embedded)
+packages/core/app.js                  alphaTab host, model→MIDI (self-computed ticks), bridge
+packages/core/editor.js               tab editor: cursor/nav/entry, mouse select, edit+play cursors
+packages/core/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
+packages/core/alphaTab.min.js          alphaTab classic bundle (embedded)
+packages/core/Bravura.woff2/.woff      music notation font (embedded)
 assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth)
 ```
 
@@ -107,7 +116,7 @@ open "build/Gomidas_artefacts/Debug/Gomidas.app"
 > Feature status + GP8 key mapping live in **`docs/FEATURES.md`** and **`docs/BACKLOG.md`**
 > (GP reference: `docs/references/gp8-keyboard-shortcuts.md`). Update those when features land.
 
-**UI: GP8-style dark layout** (`web/index.html`): top **transport** (home/zoom/undo·redo · ◀◀ ▶ ▶▶ +
+**UI: GP8-style dark layout** (`packages/core/index.html`): top **transport** (home/zoom/undo·redo · ◀◀ ▶ ▶▶ +
 track chip with tempo · New/Open/Save/Import/track-select), left **palette** (`#editbar`, built by
 `fretboard.js buildEditBar` — nav/duration/fx/articulation/bar-ops), center **score** (`#at`) + **time-grid
 tab** (`#beatlane-panel`, see below) + **fretboard
@@ -174,11 +183,11 @@ current beat; inlay dots; note badges show the current beat. **Click any beat in
 (incl. empty bars) to move the cursor — uses `boundsLookup.getBeatAtPos`.
 **Drums — KIT VIEW** (reference redesign 2026-06-28; `fretboard.js renderDrumPalette` builds it,
 shown when `staff.isPercussion`): a 3-tab panel **KIT VIEW / GROOVE EDITOR / MIXER** in `#fretboard`
-(`.kit` class makes it taller). KIT VIEW = `web/drumkit.png` (bundled; served `/drumkit.png`) with
+(`.kit` class makes it taller). KIT VIEW = `packages/core/drumkit.png` (bundled; served `/drumkit.png`) with
 percent-positioned **hotspots** (`KIT_PIECES`) → click toggles `toggleDrum(midi)` on the current beat
 per the **Quick Tools** mode (draw/erase/paint/select) + Accent/Ghost/Repeat/Tie actions; an
 **Articulation** panel picks each piece's GM key + a velocity→dynamic slider. A **Pattern Library**
-(grooves in `web/grooves.js`, keyed by category, 16-step lanes; favourites + user grooves in
+(grooves in `packages/core/grooves.js`, keyed by category, 16-step lanes; favourites + user grooves in
 localStorage) inserts via `E.insertGroove` (writes sixteen 16th-step beats; Replace-Bar/Append per
 `gomidasInsertMode`, target `cur.voice`). **GROOVE EDITOR** = step grid over `E.readBarGrid`/
 `toggleGridCell`. **Generate Variation** (`E.generateVariation`, seeded) humanizes the current bar.
@@ -260,7 +269,7 @@ branch** (`feat/web-app`); the hard rule is that **every commit leaves `cmake --
 the macOS app behaving identically**. Decided 2026-08-13: full editor parity for v1 · pure
 client-side, no server · effects web-only but with a backend-agnostic schema · **TypeScript**
 (cheap here — `index.html` loads plain `<script>` globals, so `tsc` per-file emit needs no bundler;
-`juce_add_binary_data` just repoints at `web/dist/`).
+`juce_add_binary_data` just repoints at `packages/core/dist/`).
 - **Phase 1 — editor: DONE.** load/render GP3–8, tab+notation, edit notes/durations/beats/bars,
   multi-track + add/delete-track, New/Open/Save (.gomidas), undo/redo, native MIDI playback + transport
   (starts from the edit cursor) + FluidR3 SoundFont, per-note audition. Selection + copy/cut/paste, voices

@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Gomidas browser build — Vite shell over the shared editor in web/. See docs/WEB_PORT.md.",
   "scripts": {
-    "dev": "npm --prefix ../../web run build && vite",
-    "build": "npm --prefix ../../web run build && vite build",
+    "dev": "npm --prefix ../../packages/core run build && vite",
+    "build": "npm --prefix ../../packages/core run build && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {

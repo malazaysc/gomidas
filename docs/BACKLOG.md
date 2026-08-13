@@ -61,23 +61,23 @@ downstream work (especially Realistic Sound Phase B, which reuses the live-input
 **Core bugs (P3 / high-value, low-risk):**
 - [x] **RSE pill opens the file finder** — the RSE/MIDI pill is now a status indicator: the **MIDI**
   segment switches the track back to GM (`clearsfz`); the **RSE** segment no longer opens a dialog (you
-  enter RSE by picking a preset). Custom SFZ load lives only in Preset → *Load file…* (`web/fretboard.js`).
+  enter RSE by picking a preset). Custom SFZ load lives only in Preset → *Load file…* (`packages/core/fretboard.js`).
 - [x] **Playback resumes from the blue edit cursor, not the green play cursor** — on stop the green play
   beat is captured (`captureResume`); the next Play resumes from it unless the edit cursor moved since
   (`resumeBeat`/`resumeAtCursor`, `seekForPlay`/`seekToBeat` in `editor.js`). Falls back to `cur` on a
   reposition; cleared on score load.
 - [x] **Pattern Library shows in all three drum tabs** — `buildPatternLib()` now lives inside the `kit`
-  `.dp-pane`, so tab show/hide hides it for the Groove/Mixer tabs (`web/fretboard.js`).
+  `.dp-pane`, so tab show/hide hides it for the Groove/Mixer tabs (`packages/core/fretboard.js`).
 - [x] **New drum-only track is silent even after inserting a pattern** — `clearDrumRegistration` now
   captures each percussion track's populated `percussionArticulations`, strips the registration notes,
   finishes, then **restores** the kit (instead of letting `finish()` re-derive an empty one). Groove/kit
-  entry resolves articulation indices again (`web/editor.js`).
+  entry resolves articulation indices again (`packages/core/editor.js`).
 
 **Instrument SOUNDS panel (P3 / UX consistency):**
 - [x] **RSE highlighted but MIDI controls shown** — the SOUNDS controls now follow the engine mode: when
   an SFZ is loaded (RSE) the GM Sound/Kit picker is hidden (it's overridden by sfizz); the Preset dropdown
   groups sample instruments under an `<optgroup>` ("Sample instruments (RSE)") separate from "GM SoundFont
-  (MIDI)". Pill, dropdown, and visible controls stay consistent (`web/fretboard.js`).
+  (MIDI)". Pill, dropdown, and visible controls stay consistent (`packages/core/fretboard.js`).
 
 **Drum KIT VIEW visual (P3):**
 - [ ] **Kit hotspot circles misaligned** — `.kit-frame` uses `height:100%` + `max-width:100%`, so when
@@ -99,7 +99,7 @@ downstream work (especially Realistic Sound Phase B, which reuses the live-input
 **Tuning (P3 → small + feature):**
 - [x] **Re-tuning an existing track** — `INSP_TUNINGS` expanded (6-string: Drop C, DADGAD, Open G/D/E…;
   7/8-string; 4/5/6-string bass), the select is labelled a re-tune control (tooltip + "Custom (…)" readout),
-  and saved user tunings are merged in (★). (`web/fretboard.js`)
+  and saved user tunings are merged in (★). (`packages/core/fretboard.js`)
 - [x] **Custom tunings: author + save/load** — per-string tuning editor modal (`gomidasOpenTuningEditor`,
   `app.js`) reached via the inspector tuning dropdown's "Custom / Edit…" option; **Save & apply** persists
   to `localStorage` (`gomidasUserTunings`) and the saved tuning appears in the preset list for matching

@@ -13,7 +13,7 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath, URL } from 'node:url';
 
-const webRoot = fileURLToPath(new URL('../../web', import.meta.url));
+const webRoot = fileURLToPath(new URL('../../packages/core', import.meta.url));
 
 export default defineConfig({
   root: webRoot,

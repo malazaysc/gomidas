@@ -63,8 +63,8 @@ juce_add_gui_app(Gomidas
 juce_generate_juce_header(Gomidas)
 
 # ---- Web front-end: TypeScript codegen (GMD-31) ------------------------------
-# The editor is TypeScript, compiled per-file to plain <script>-tag JavaScript in web/dist/
-# (see web/tsconfig.json). tsc IS the whole build — no bundler — so the only thing CMake needs
+# The editor is TypeScript, compiled per-file to plain <script>-tag JavaScript in packages/core/dist/
+# (see packages/core/tsconfig.json). tsc IS the whole build — no bundler — so the only thing CMake needs
 # is to run it before reading the emitted files.
 #
 # This runs at CONFIGURE time on purpose: juce_add_binary_data() reads the files while
@@ -78,10 +78,10 @@ find_program(NPX_EXECUTABLE npx)
 if (NOT NPX_EXECUTABLE)
   message(FATAL_ERROR
     "npx not found, but the web front-end is TypeScript and must be compiled before it can be "
-    "embedded. Install Node 20+, then run: cd web && npm install")
+    "embedded. Install Node 20+, then run: cd packages/core && npm install")
 endif()
 
-set(GOMIDAS_WEB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/web")
+set(GOMIDAS_WEB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/packages/core")
 set(GOMIDAS_WEB_DIST "${GOMIDAS_WEB_SRC}/dist")
 
 execute_process(
@@ -105,33 +105,33 @@ add_custom_target(GomidasWeb ALL
 # Served to the WebBrowserComponent from memory via a ResourceProvider, and the
 # SoundFont is loaded by the native TinySoundFont synth from memory.
 #
-# JavaScript comes from web/dist/ (tsc output). Everything else is embedded straight from web/:
+# JavaScript comes from packages/core/dist/ (tsc output). Everything else is embedded straight from web/:
 # index.html is not compiled, and alphaTab.min.js / juce_native_interop.js are excluded from
 # the TypeScript project on purpose (a third-party bundle and a verbatim JUCE vendor file).
 juce_add_binary_data(GomidasAssets
   HEADER_NAME GomidasAssets.h
   NAMESPACE   GomidasAssets
   SOURCES
-    web/index.html
-    web/dist/core/gomidas-core.js
-    web/dist/core/backend.js
-    web/dist/core/timebase.js
-    web/dist/core/sfz.js
-    web/dist/core/fx.js
-    web/dist/core/sf2.js
-    web/dist/core/webfiles.js
-    web/dist/core/menus.js
-    web/dist/core/webshell.js
-    web/dist/core/webaudio.js
-    web/dist/app.js
-    web/dist/editor.js
-    web/dist/fretboard.js
-    web/dist/grooves.js
-    web/juce_native_interop.js
-    web/alphaTab.min.js
-    web/Bravura.woff2
-    web/Bravura.woff
-    web/drumkit.png
+    packages/core/index.html
+    packages/core/dist/core/gomidas-core.js
+    packages/core/dist/core/backend.js
+    packages/core/dist/core/timebase.js
+    packages/core/dist/core/sfz.js
+    packages/core/dist/core/fx.js
+    packages/core/dist/core/sf2.js
+    packages/core/dist/core/webfiles.js
+    packages/core/dist/core/menus.js
+    packages/core/dist/core/webshell.js
+    packages/core/dist/core/webaudio.js
+    packages/core/dist/app.js
+    packages/core/dist/editor.js
+    packages/core/dist/fretboard.js
+    packages/core/dist/grooves.js
+    packages/core/juce_native_interop.js
+    packages/core/alphaTab.min.js
+    packages/core/Bravura.woff2
+    packages/core/Bravura.woff
+    packages/core/drumkit.png
     assets/soundfont/sonivox.sf2)
 
 # The embedded blob is generated from tsc output, so it must wait for tsc.

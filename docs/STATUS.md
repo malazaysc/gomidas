@@ -72,7 +72,7 @@ downstream work (especially Realistic Sound Phase B, which reuses the live-input
 
 See [`SFZ_TEST_CHECKLIST.md`](./SFZ_TEST_CHECKLIST.md) for the SFZ manual pass, and
 [`TESTING.md`](./TESTING.md) for the automated-test strategy. **Now in place:** 62 Vitest unit
-tests over the extracted pure editor/model logic (`web/core/gomidas-core.js`) + `ctest` SFZ
+tests over the extracted pure editor/model logic (`packages/core/core/gomidas-core.js`) + `ctest` SFZ
 audio-path smoke tests (guitar + bass), both run in CI (`.github/workflows/ci.yml`).
 
 ---
