@@ -120,6 +120,8 @@ juce_add_binary_data(GomidasAssets
     web/dist/core/fx.js
     web/dist/core/sf2.js
     web/dist/core/webfiles.js
+    web/dist/core/menus.js
+    web/dist/core/webshell.js
     web/dist/core/webaudio.js
     web/dist/app.js
     web/dist/editor.js
