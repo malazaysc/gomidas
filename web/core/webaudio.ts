@@ -975,6 +975,65 @@ function createWebAudioBackend(BackendLib: any): any {
 
   let masterFx: { input: AudioNode; output: AudioNode; nodes: AudioNode[] } | null = null;
 
+  let rendering = false;
+
+  /** Render the current sequence offline and return WAV bytes. */
+  async function renderOffline(): Promise<ArrayBuffer | null> {
+    const Files = (window as any).GomidasFiles;
+    if (!Files || !sequence.events.length) return null;
+    const sampleRate = ctx ? ctx.sampleRate : 44100;
+    const seconds = TB.tickToSeconds(sequence.lengthTicks || 0, bpm, rate) + 2;  // +tail
+    const off = new (window as any).OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
+
+    // Rebuild a minimal graph in the offline context. The instrument factories take a context
+    // precisely so they can be reused here rather than duplicated.
+    const master = { eq: makeEqNodes(off, 0, 0, 0), gain: off.createGain() };
+    master.eq[2].connect(master.gain);
+    master.gain.connect(off.destination);
+
+    const strips = new Map<number, { input: GainNode; inst: Instrument }>();
+    const offBuffers = new Map<number, AudioBuffer>();
+    const instFor = (ch: number, program: number, percussion: boolean) => {
+      let st = strips.get(ch);
+      if (st) return st.inst;
+      const input = off.createGain();
+      const live = channels[ch];
+      // Mirror the live mixer so the bounce matches what you were hearing.
+      input.gain.value = live ? live.gain.gain.value : 1;
+      const pan = off.createStereoPanner();
+      pan.pan.value = live ? live.pan.pan.value : 0;
+      const eq = makeEqNodes(off, live ? live.eq[0].gain.value : 0,
+                                  live ? live.eq[1].gain.value : 0,
+                                  live ? live.eq[2].gain.value : 0);
+      input.connect(pan); pan.connect(eq[0]);
+      eq[2].connect(master.eq[0]);
+      const inst = gmBank
+        ? createSf2Instrument(off as any, gmBank, program | 0, percussion || ch === 9, offBuffers)
+        : createToneInstrument(off as any, percussion || ch === 9);
+      inst.output.connect(input);
+      st = { input, inst };
+      strips.set(ch, st);
+      return inst;
+    };
+
+    // No lookahead offline: schedule every event up front against its exact time.
+    for (const e of sequence.events) {
+      const when = TB.tickToSeconds(e[0], bpm, rate);
+      const [, channel, key, velocity, on, program, percussion] = e;
+      const kind = e.length >= 9 ? e[7] : 0;
+      const inst = instFor(channel, program | 0, !!percussion);
+      if (kind === 1) inst.pitchBend(e[8], when);
+      else if (kind === 2) inst.cc(key, e[8], when);
+      else if (on) inst.noteOn(key, velocity, when);
+      else inst.noteOff(key, when);
+    }
+
+    const buffer = await off.startRendering();
+    const chans: Float32Array[] = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+    return Files.encodeWav(chans, buffer.sampleRate);
+  }
+
   const backend: any = {
     caps: BackendLib.WEB_CAPS,
     on: bus.on,
@@ -1058,8 +1117,33 @@ function createWebAudioBackend(BackendLib: any): any {
       }
     },
 
-    startRecording() { /* offline bounce — GMD-37 */ },
-    stopRecording() { /* offline bounce — GMD-37 */ },
+    /**
+     * Recording is an OFFLINE BOUNCE (§7.3), not a realtime capture: render the whole song
+     * through an OfflineAudioContext faster than wall-clock, then encode to WAV. Cleaner than
+     * the desktop ThreadedWriter path and deterministic — the same project always produces the
+     * same file.
+     *
+     * Consequence worth knowing: unlike the desktop recorder this captures the SEQUENCE, not
+     * whatever is currently audible. There is no live input on web to capture anyway
+     * (caps.liveInput is false), so nothing is lost.
+     */
+    startRecording() {
+      if (rendering) return;
+      rendering = true;
+      bus.emit('recordingState', { recording: true, name: 'rendering…' });
+      renderOffline()
+        .then((wav) => {
+          rendering = false;
+          bus.emit('recordingState', { recording: false, name: 'mix.wav' });
+          const Files = (window as any).GomidasFiles;
+          if (Files && wav) Files.saveData('mix.wav', wav, 'audio/wav');
+        })
+        .catch(() => {
+          rendering = false;
+          bus.emit('recordingState', { recording: false, name: '' });
+        });
+    },
+    stopRecording() { /* an offline render cannot be usefully interrupted; it is near-instant */ },
 
     // Exposed for tests and for the shell's "click to start audio" affordance.
     _context: () => ctx,
