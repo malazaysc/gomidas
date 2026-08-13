@@ -263,25 +263,29 @@ const WEB_CAPS: BackendCaps = {
 // interface, so that is a swap, not a rewrite.
 function createWebBackends(): { audio: AudioBackend; host: HostBackend } {
   const bus = createEventBus();
-  const noop = () => { /* silent until GMD-33 */ };
+  const noop = () => { /* not available on web */ };
 
-  const audio: AudioBackend = {
-    caps: WEB_CAPS,
-    on: bus.on,
-    emit: bus.emit,
-    listenerCount: bus.listenerCount,
-    invoke: noop,
-
-    setSequence: noop, play: noop, stop: noop, seek: noop, panic: noop,
-    setLoop: noop, setTempo: noop, setPlaybackRate: noop,
-    setChannelMix: noop, setMasterMix: noop, setTrackEq: noop, setMasterEq: noop,
-    loadTrackPreset: noop, loadTrackInstrumentFile: noop, clearTrackInstrument: noop,
-    preview: noop,
-    startRecording: noop, stopRecording: noop
-    // setLiveInput / loadInputPlugin / clearInputPlugin / showPluginEditor are ABSENT on
-    // purpose: caps.liveInput and caps.pluginHost are false, and the UI must check those rather
-    // than call a method that silently does nothing.
-  };
+  // GMD-33: the real Web Audio engine when it is loaded (index.html includes it), and a silent
+  // stand-in otherwise so the editor still runs headless (tests, a shell without audio).
+  // setLiveInput / loadInputPlugin / clearInputPlugin / showPluginEditor stay ABSENT either way:
+  // caps.liveInput and caps.pluginHost are false, and UI must check those rather than call a
+  // method that silently does nothing.
+  const wa = typeof window !== 'undefined' ? (window as any).GomidasWebAudio : null;
+  const audio: AudioBackend = wa
+    ? wa.createWebAudioBackend({ createEventBus, WEB_CAPS })
+    : {
+      caps: WEB_CAPS,
+      on: bus.on,
+      emit: bus.emit,
+      listenerCount: bus.listenerCount,
+      invoke: noop,
+      setSequence: noop, play: noop, stop: noop, seek: noop, panic: noop,
+      setLoop: noop, setTempo: noop, setPlaybackRate: noop,
+      setChannelMix: noop, setMasterMix: noop, setTrackEq: noop, setMasterEq: noop,
+      loadTrackPreset: noop, loadTrackInstrumentFile: noop, clearTrackInstrument: noop,
+      preview: noop,
+      startRecording: noop, stopRecording: noop
+    };
 
   // Reuses the exact entry points native drives, so the load path is identical in both products:
   // .gomidas -> window.gomidasLoadProject(json), everything else -> window.gomidasLoadBinary(b64).
