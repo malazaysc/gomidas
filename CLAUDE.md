@@ -23,6 +23,25 @@ via MIDI/SoundFont — then (later) play on top with your own instrument through
 
 **First deliverable the user asked for: a tab editor with MIDI playback.**
 
+## Project tracking — use Samu (not GitHub Issues)
+
+All open work is tracked in **Samu**, a local issue tracker (workspace `gomidas`, project
+`GMD`). **Samu now supersedes GitHub Issues** — do not file or update GitHub issues.
+`docs/BACKLOG.md`, `STATUS.md`, and `FEATURES.md` remain as **design/spec docs**, not the work list.
+
+⚠️ **The board was rebuilt 2026-08-13.** The `GMD` project had vanished from the Samu server, so
+the original `GMD-1…GMD-23` (migrated from GitHub Issues) are **lost and the keys were reused**.
+It was reseeded from `BACKLOG.md`/`STATUS.md` as `GMD-1…GMD-29`, plus `GMD-30…GMD-39` for the web
+port. **Any `GMD-<n>` reference in a commit before 2026-08-13 now points at an unrelated ticket** —
+don't trust it.
+
+Follow the **`samu` skill** (`.claude/skills/samu/`): before starting, `samu ticket ls` and
+claim a ticket (`samu ticket move <KEY> "In Progress"`); file anything you discover
+(`samu ticket create …`); on finishing a verified chunk, move it to `Done` and
+`samu status log …`. You're pre-authenticated as the coding-agent (via `SAMU_CONFIG`). Never
+mark a ticket Done until the change is actually built and exercised. Reference the ticket key
+in commits (e.g. `GMD-8: …`). The board is at http://127.0.0.1:8080 (workspace `gomidas`).
+
 ## Architecture (decided)
 
 ```
@@ -229,6 +248,19 @@ and/or a bar-window render (`settings.display.startBar`/`barCount`) around the c
 
 ## Roadmap
 > Authoritative feature status lives in **`docs/FEATURES.md`** / **`docs/BACKLOG.md`** — keep them current.
+
+### ⭐ Current top priority (user, 2026-08-13): the **web app**
+The browser build now **outranks every other line of work**, including the desktop verification debt
+and per-track VST instruments. Spec + decisions: **`docs/WEB_PORT.md`**. Tracked as `GMD-30…GMD-39`
+under the **Web port v1** milestone (label `web-port`); start at **`GMD-30`** (Phase 0) and go in order.
+
+It is a **second product built from one shared core**, not a replacement — desktop keeps VST/AU
+hosting and low-latency live input, which cannot exist in a browser. Work happens **in this repo on a
+branch** (`feat/web-app`); the hard rule is that **every commit leaves `cmake --build build` green and
+the macOS app behaving identically**. Decided 2026-08-13: full editor parity for v1 · pure
+client-side, no server · effects web-only but with a backend-agnostic schema · **TypeScript**
+(cheap here — `index.html` loads plain `<script>` globals, so `tsc` per-file emit needs no bundler;
+`juce_add_binary_data` just repoints at `web/dist/`).
 - **Phase 1 — editor: DONE.** load/render GP3–8, tab+notation, edit notes/durations/beats/bars,
   multi-track + add/delete-track, New/Open/Save (.gomidas), undo/redo, native MIDI playback + transport
   (starts from the edit cursor) + FluidR3 SoundFont, per-note audition. Selection + copy/cut/paste, voices
