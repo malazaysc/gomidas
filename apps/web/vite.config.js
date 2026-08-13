@@ -17,6 +17,10 @@ const webRoot = fileURLToPath(new URL('../../web', import.meta.url));
 
 export default defineConfig({
   root: webRoot,
+  // Bundled CC0 SFZ instruments live in assets/, outside the web root. Serving that directory
+  // as the public dir puts them at /instruments/... — the same relative path the desktop app
+  // resolves inside Gomidas.app/Contents/Resources.
+  publicDir: fileURLToPath(new URL('../../assets', import.meta.url)),
   // Everything is same-origin and relative, so the app works from a subpath too.
   base: './',
   server: {

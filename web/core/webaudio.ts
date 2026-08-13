@@ -170,6 +170,102 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
   };
 }
 
+/**
+ * SFZ sample instrument (GMD-34). Same Instrument interface as the tone placeholder, so the
+ * channel does not know or care which it got.
+ *
+ * Browsers decode FLAC natively via decodeAudioData, so there is no WASM, no worklet and no
+ * build step — the entire "sampler" is an AudioBufferSourceNode per note with playbackRate set
+ * from the region's pitch centre, plus a GainNode for the ampeg envelope.
+ */
+function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<string, AudioBuffer>): Instrument {
+  const SFZ = (window as any).GomidasSfz;
+  const output = ctx.createGain();
+  const voices = new Map<number, Array<{ src: AudioBufferSourceNode; gain: GainNode; release: number }>>();
+  let bendSemis = 0;
+
+  function noteOn(key: number, velocity: number, when: number): void {
+    const region = SFZ.findRegion(regions, key, Math.round(Math.max(0, Math.min(1, velocity)) * 127));
+    // No region: stay SILENT rather than play a wrong-pitched neighbour. A missing note is a
+    // reportable gap; a wrong note sounds like a broken instrument.
+    if (!region) return;
+    const buf = buffers.get(region.sample);
+    if (!buf) return;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const rate = SFZ.playbackRateFor(region, key) * Math.pow(2, bendSemis / 12);
+    src.playbackRate.setValueAtTime(rate, when);
+    if (region.loopMode && /loop_continuous|loop_sustain/.test(region.loopMode)) src.loop = true;
+
+    const gain = ctx.createGain();
+    const peak = Math.max(0.0001, Math.min(1, velocity) * Math.pow(10, (region.volume || 0) / 20));
+    gain.gain.setValueAtTime(peak, when);
+    // ampeg_decay here is the SFZ decay-to-sustain; the bundled sets use it as a gentle fade.
+    if (region.ampegDecay > 0) {
+      gain.gain.setTargetAtTime(peak * 0.7, when, Math.max(0.01, region.ampegDecay));
+    }
+    src.connect(gain); gain.connect(output);
+    src.start(when);
+
+    const list = voices.get(key) || [];
+    list.push({ src, gain, release: region.ampegRelease });
+    voices.set(key, list);
+  }
+
+  function noteOff(key: number, when: number): void {
+    const list = voices.get(key);
+    if (!list || !list.length) return;
+    const v = list.shift()!;
+    if (!list.length) voices.delete(key);
+    const at = Math.max(when, ctx.currentTime);
+    const rel = Math.max(0.02, v.release || 0.3);
+    try {
+      v.gain.gain.cancelScheduledValues(at);
+      v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), at);
+      v.gain.gain.exponentialRampToValueAtTime(0.0001, at + rel);
+      v.src.stop(at + rel + 0.02);
+    } catch (e) { /* already stopped */ }
+  }
+
+  return {
+    noteOn,
+    noteOff,
+    pitchBend(value: number) {
+      // Region bend range in cents (the bundled sets carry +/-1200 = an octave).
+      const r = regions[0];
+      const span = value >= 8192 ? (r && r.bendUp ? r.bendUp : 200) : Math.abs(r && r.bendDown ? r.bendDown : 200);
+      bendSemis = ((value - 8192) / 8192) * (span / 100);
+      const now = ctx.currentTime;
+      for (const [key, list] of voices) {
+        for (const v of list) {
+          const region = SFZ.findRegion(regions, key, 100);
+          if (!region) continue;
+          try {
+            v.src.playbackRate.setTargetAtTime(
+              SFZ.playbackRateFor(region, key) * Math.pow(2, bendSemis / 12), now, 0.01);
+          } catch (e) { /* voice ended */ }
+        }
+      }
+    },
+    cc() { /* GMD-35 */ },
+    allNotesOff() {
+      const now = ctx.currentTime;
+      for (const list of voices.values()) {
+        for (const v of list) {
+          try {
+            v.gain.gain.cancelScheduledValues(now);
+            v.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+            v.src.stop(now + 0.08);
+          } catch (e) { /* already stopped */ }
+        }
+      }
+      voices.clear();
+    },
+    output
+  };
+}
+
 interface ChannelStrip {
   input: GainNode;
   gain: GainNode;
@@ -252,8 +348,13 @@ function createWebAudioBackend(BackendLib: any): any {
     return s;
   }
 
+  // Channels holding a loaded SFZ. Without this, the first note-on after a preset load would
+  // see a program mismatch and swap the sampler back out for the placeholder tone.
+  const sfzChannels = new Set<number>();
+
   function instrumentFor(ch: number, program: number, percussion: boolean): Instrument {
     const s = strip(ch);
+    if (sfzChannels.has(ch) && s.instrument) return s.instrument;
     if (!s.instrument || s.program !== program || s.percussion !== percussion) {
       if (s.instrument) s.instrument.allNotesOff();
       s.instrument = createToneInstrument(ctx!, percussion || ch === 9);
@@ -428,6 +529,48 @@ function createWebAudioBackend(BackendLib: any): any {
     bus.emit('tick', { tick: positionTick });
   }
 
+  // Parsed instruments are cached by preset id: switching a track back and forth must not
+  // re-download several MB of FLAC. GMD-37 adds the IndexedDB layer under this.
+  const presetCache = new Map<string, { regions: any[]; buffers: Map<string, AudioBuffer> }>();
+
+  async function loadPreset(ch: number, preset: any): Promise<void> {
+    const c = ensureContext();
+    const id = preset && (preset.id || preset.file || preset.name);
+    if (!id) return;
+    try {
+      let entry = presetCache.get(id);
+      if (!entry) {
+        const url = 'instruments/' + preset.file;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('sfz ' + res.status);
+        const regions = (window as any).GomidasSfz.parseSfz(await res.text());
+        const base = url.slice(0, url.lastIndexOf('/') + 1);
+        const names = (window as any).GomidasSfz.sampleList(regions);
+        const buffers = new Map<string, AudioBuffer>();
+        // Sequential rather than Promise.all: a guitar is ~40 files and firing them all at once
+        // just queues them in the browser anyway, while making failures harder to attribute.
+        for (const name of names) {
+          try {
+            const r = await fetch(base + name);
+            if (!r.ok) continue;
+            buffers.set(name, await c.decodeAudioData(await r.arrayBuffer()));
+          } catch (e) { /* skip this sample; findRegion will simply produce no voice */ }
+        }
+        if (!buffers.size) throw new Error('no samples decoded');
+        entry = { regions, buffers };
+        presetCache.set(id, entry);
+      }
+      const st = strip(ch);
+      if (st.instrument) st.instrument.allNotesOff();
+      st.instrument = createSfzInstrument(c, entry.regions, entry.buffers);
+      st.instrument.output.connect(st.input);
+      sfzChannels.add(ch);
+      bus.emit('instrumentLoaded', { channel: ch, ok: true, name: preset.name || id });
+    } catch (e) {
+      bus.emit('instrumentLoaded', { channel: ch, ok: false, name: preset.name || String(id) });
+    }
+  }
+
   const backend: any = {
     caps: BackendLib.WEB_CAPS,
     on: bus.on,
@@ -479,10 +622,17 @@ function createWebAudioBackend(BackendLib: any): any {
       master!.eq[0].gain.value = low; master!.eq[1].gain.value = mid; master!.eq[2].gain.value = high;
     },
 
-    loadTrackPreset() { /* GMD-34 */ },
-    loadTrackInstrumentFile() { /* GMD-34 */ },
+    loadTrackPreset(ch: number, preset: any) {
+      loadPreset(ch, preset).catch(() => { /* reported via the instrumentLoaded event */ });
+    },
+    loadTrackInstrumentFile() {
+      // A custom .sfz means reading a whole sample folder, which a file input cannot give us.
+      // Needs the File System Access directory picker — GMD-37, and unavailable in Safari.
+      bus.emit('instrumentLoaded', { channel: -1, ok: false, name: 'custom SFZ needs a folder picker' });
+    },
     clearTrackInstrument(ch: number) {
       const s = channels[ch];
+      sfzChannels.delete(ch);
       if (s && s.instrument) { s.instrument.allNotesOff(); s.instrument = null; }
     },
     preview(channel: number, program: number, percussion: boolean, keys: number[]) {

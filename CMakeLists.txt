@@ -115,6 +115,9 @@ juce_add_binary_data(GomidasAssets
     web/index.html
     web/dist/core/gomidas-core.js
     web/dist/core/backend.js
+    web/dist/core/timebase.js
+    web/dist/core/sfz.js
+    web/dist/core/webaudio.js
     web/dist/app.js
     web/dist/editor.js
     web/dist/fretboard.js

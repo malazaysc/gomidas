@@ -34,6 +34,11 @@ const Asset kAssets[] = {
     // Note: JUCE mangles "gomidas-core.js" to "gomidascore_js" (hyphen dropped).
     { "/dist/core/gomidas-core.js", "gomidascore_js", "text/javascript" },
     { "/dist/core/backend.js", "backend_js",    "text/javascript" },
+    // Web Audio engine files. The desktop app does not USE them (it has AudioEngine), but
+    // index.html is shared, so they must resolve or the page 404s mid-load.
+    { "/dist/core/timebase.js", "timebase_js",  "text/javascript" },
+    { "/dist/core/sfz.js",      "sfz_js",       "text/javascript" },
+    { "/dist/core/webaudio.js", "webaudio_js",  "text/javascript" },
     { "/dist/app.js",    "app_js",          "text/javascript" },
     { "/dist/editor.js", "editor_js",       "text/javascript" },
     { "/dist/fretboard.js", "fretboard_js", "text/javascript" },
