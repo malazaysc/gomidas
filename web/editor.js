@@ -41,8 +41,12 @@
 
   const cur = { track: 0, bar: 0, voice: 0, beat: 0, string: 0 };
 
-  function nlog(m) { try { window.__JUCE__.backend.emitEvent('__juce__invoke',
-      { name: 'log', params: ['[editor] ' + m], resultId: 0 }); } catch (e) {} }
+  // Backend seam (GMD-30). Resolved lazily: app.js creates the backends, and load order is not
+  // guaranteed to have run by the time this module body evaluates.
+  const A = () => window.GomidasAudio;
+  const H = () => window.GomidasHost;
+
+  function nlog(m) { try { H().log('[editor] ' + m); } catch (e) {} }
 
   // ---- model accessors -------------------------------------------------------
   function track() { return api.score.tracks[cur.track]; }
@@ -934,8 +938,7 @@
     }
     keys = keys.filter(k => k != null && k >= 0 && k <= 127);
     if (!keys.length) return;
-    if (window.gomidasNativeInvoke)
-      window.gomidasNativeInvoke('preview', { channel, program: pb.program | 0, percussion, keys });
+    if (A()) A().preview(channel, pb.program | 0, percussion, keys);
   }
 
   // ---- drums -----------------------------------------------------------------
@@ -984,8 +987,7 @@
       const n = new alphaTab.model.Note();
       n.percussionArticulation = ai;
       b.addNote(n);
-      if (window.gomidasNativeInvoke)
-        window.gomidasNativeInvoke('preview', { channel: 9, program: 0, percussion: true, keys: [midi] });
+      if (A()) A().preview(9, 0, true, [midi]);
     }
     b.isEmpty = false;
     applyEdit(true);
@@ -1641,7 +1643,7 @@
         if (mb && mb.tempoAutomation) mb.tempoAutomation.value = bpm;
       } catch (e2) {}
     }
-    if (window.gomidasNativeInvoke) window.gomidasNativeInvoke('setTempo', bpm);
+    if (A()) A().setTempo(bpm);
     const tf = document.getElementById('tempo'); if (tf) tf.value = String(bpm);
     markDirty();
     scheduleHeavy();
@@ -1826,7 +1828,7 @@
     countInRunning = false;
     isPlaying = true; lastPlayBeat = null;
     if (window.gomidasSeekToCursor) window.gomidasSeekToCursor(cur.track, cur.bar, cur.voice, cur.beat);
-    window.__JUCE__.backend.emitEvent('__juce__invoke', { name: 'play', params: [1], resultId: 0 });
+    A().play();
     if (window.GomidasUI) window.GomidasUI.refresh(getState());
   }
 
@@ -1850,8 +1852,7 @@
     const step = () => {
       if (!countInRunning) return;
       const beatInBar = i % num;
-      if (window.gomidasNativeInvoke)
-        window.gomidasNativeInvoke('preview', { channel: ch, program: 115, percussion: false, keys: [(beatInBar === 0) ? 84 : 72] });
+      if (A()) A().preview(ch, 115, false, [(beatInBar === 0) ? 84 : 72]);
       // Visual count: count up within each bar (1..num), GP-style.
       showCountdownNumber(beatInBar + 1);
       i++;
@@ -1887,8 +1888,7 @@
       commitPlayPositionToCursor();   // single cursor: land where playback stopped
       refreshCursor();
     }
-    window.__JUCE__.backend.emitEvent('__juce__invoke',
-      { name: isPlaying ? 'play' : 'stop', params: [1], resultId: 0 });
+    if (isPlaying) A().play(); else A().stop();
   }
 
   // ---- cursors (overlays inside #at) -----------------------------------------

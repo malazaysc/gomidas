@@ -12,6 +12,7 @@ _Last reviewed: 2026-06-30._
 
 | Phase | Goal | Status |
 | --- | --- | --- |
+| **⭐ Web app** | Browser build — full editor parity minus VST + live input | 🔵 **TOP PRIORITY** (user, 2026-08-13). Planned, not started. Spec [`WEB_PORT.md`](./WEB_PORT.md); `GMD-30…GMD-39`, start at `GMD-30` |
 | **Phase 1** | Tab editor + MIDI playback | ✅ **DONE** |
 | **Phase 2** | Play on top (mixer, live input, VST insert, recording) | ✅ **DONE** except depth items; ⚠️ live-input / plugin / recording stack **builds + links but is UNVERIFIED at runtime** |
 | **Realistic Sound** | RSE-equivalent: bundled SFZ default (A) → per-track VST (B) | 🟡 **Phase A mostly done**; Phase B (per-track VST instruments) **not started** |
@@ -110,4 +111,9 @@ audio-path smoke tests (guitar + bass), both run in CI (`.github/workflows/ci.ym
 **The honest read:** breadth is essentially complete through Phase 2 — the gating risk isn't
 *missing* features, it's a **cluster of unverified runtime paths** (live input, VST insert,
 recording, in-app SFZ, `.gp` round-trip). Phase B (per-track VST instruments) is the next
-net-new roadmap item, but it explicitly depends on verifying the live-input host first.
+net-new *desktop* roadmap item, but it explicitly depends on verifying the live-input host first.
+
+**As of 2026-08-13 that is no longer what gets worked on next.** The user set the **web app** above
+everything, so the verification debt and Phase B now sit behind `GMD-30…GMD-39`. The debt has not
+been *resolved* — `GMD-1` dropped from urgent to high because it gates desktop-only work, not
+because the risk went away. It still blocks Phase B whenever Phase B resumes.

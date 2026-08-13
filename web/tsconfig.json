@@ -1,0 +1,57 @@
+{
+  // GMD-31 — TypeScript infrastructure for the web port (docs/WEB_PORT.md §1.1).
+  //
+  // The app loads plain <script src> tags exporting GLOBALS — no ES modules, no bundler. So
+  // `tsc` alone is the whole build: one .js emitted per input, script order unchanged, and
+  // juce_add_binary_data just points at dist/ instead of the source tree.
+  //
+  // THE RULE THAT KEEPS THAT TRUE: source files must contain no top-level `import`/`export`.
+  // A file with none is a *script* — tsc emits it unchanged in that respect, its declarations go
+  // to global scope, and the <script> tags keep working. Add one `export` to a file and it
+  // becomes a module: the globals stop being global and the desktop app breaks at load.
+  // (TypeScript 7 removed `module: "none"`, which used to enforce this by erroring. "preserve"
+  // is the closest equivalent — it does not synthesise module syntax — but it does NOT reject
+  // an `export` you write yourself. Discipline, plus the desktop build, is the check now.)
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "preserve",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "outDir": "dist",
+    "rootDir": ".",
+
+    // The ratchet (§1.1): allowJs lets un-migrated files pass through to dist untouched, so the
+    // desktop build keeps working while files convert one at a time. checkJs stays off until
+    // everything is .ts — turning it on now would bury us in errors from 5,700 lines at once.
+    "allowJs": true,
+    "checkJs": false,
+
+    // Strictness ratchets up as files convert. Raise these as the migration proceeds.
+    "strict": true,
+    "noImplicitAny": false,
+    "noEmitOnError": true,
+
+    // Two things to know about the emitted JavaScript (measured on this codebase, GMD-31):
+    //
+    // 1. tsc RE-PRINTS every file from its AST, including un-migrated .js passing through under
+    //    allowJs. Statements get split, braces expand, joined lines separate. It is formatting
+    //    only — no syntax is downlevelled at ES2020 and no semantics change — but it means
+    //    LINE NUMBERS IN dist/ DO NOT MATCH THE SOURCE. The window.onerror -> nlog diagnostic
+    //    reports positions in the emitted file. Source maps would not fix that (window.onerror
+    //    reports the executed file's positions regardless); they would only help in devtools.
+    // 2. "use strict" is injected into files that do not already declare it. app.js, editor.js,
+    //    fretboard.js and gomidas-core.js all declare it themselves, so only grooves.js changed
+    //    — checked for implicit globals and other strict hazards, and loaded clean under Node.
+    //    Watch for this when converting any remaining non-strict file.
+    "removeComments": false,
+    "newLine": "lf",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+
+  // Only what the app actually ships. Vendored and pre-built bundles are excluded on purpose:
+  //   alphaTab.min.js        — a minified third-party bundle; nothing to gain, slow to parse
+  //   juce_native_interop.js — vendored verbatim from JUCE; must stay byte-identical
+  // Both keep being embedded straight from web/ by CMakeLists.
+  "include": ["core/**/*", "app.js", "editor.js", "fretboard.js", "grooves.js"],
+  "exclude": ["node_modules", "dist", "tests", "alphaTab.min.js", "juce_native_interop.js"]
+}

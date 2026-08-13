@@ -11,29 +11,32 @@ const statusEl = document.getElementById('status');
 function setStatus(s) { statusEl.textContent = s; }
 
 // ---- native bridge -----------------------------------------------------------
-// JUCE WebView wire format (see juce_native_interop.js Backend.emitEvent):
-// postMessage {eventId:"__juce__invoke", payload:{name, params, resultId}}.
-let __juceResultId = 0;
-function nativeInvoke(name, payload) {
-  try {
-    const j = window.__JUCE__;
-    if (j && j.backend && j.backend.emitEvent) {
-      j.backend.emitEvent('__juce__invoke',
-        { name: name, params: [payload], resultId: __juceResultId++ });
-    }
-  } catch (e) { /* swallow to avoid recursion in the error handler */ }
-}
-function nlog(msg) { nativeInvoke('log', String(msg)); }
-window.gomidasNativeInvoke = nativeInvoke; // used by editor.js for preview/transport
+// ---- backend seam (GMD-30, docs/WEB_PORT.md §2) -------------------------------------------
+// Everything that used to call nativeInvoke() directly now goes through these two interfaces.
+// The browser build (GMD-33) swaps in a Web Audio implementation here and nothing above this
+// line changes. core/backend.js owns the JUCE wire format.
+const { audio: Audio, host: Host } = window.GomidasBackend.createBackends(window);
+window.GomidasAudio = Audio;   // editor.js / fretboard.js reach the backend through these
+window.GomidasHost = Host;
+
+function nlog(msg) { Host.log(msg); }
+// Startup banner. Deliberately the FIRST thing JS says to native: if core/backend.js ever fails
+// to load, app.js throws here — before window.onerror below is installed — and the failure is
+// otherwise completely silent. Absence of this line in the log means the seam is broken.
+nlog('backend ready (' + (window.GomidasBackend.hasJuceBridge(window) ? 'juce' : 'web') + '), caps=' + JSON.stringify(Audio.caps));
 window.onerror = (m, src, line, col, err) =>
   nlog('JS error: ' + m + ' @' + line + ':' + col + (err && err.stack ? '\n' + err.stack : ''));
 const _origErr = console.error.bind(console);
 console.error = (...a) => { try { nlog('console.error: ' + a.map(String).join(' ')); } catch (e) {} _origErr(...a); };
 
-// Called by native (~30Hz) with the current transport position in ticks.
+// ---- native -> editor events --------------------------------------------------------------
+// MainComponent.cpp calls these globals BY LITERAL NAME through evaluateJavascript
+// (src/ui/MainComponent.cpp:879 etc.), so they must keep existing. They are now thin adapters
+// that emit onto the backend's event bus; consumers subscribe with Audio.on(...).
 window.gomidas = {
-  onTick(tick) { if (window.GomidasEditor) window.GomidasEditor.onPlayTick(tick); }
+  onTick(tick) { Audio.emit('tick', { tick }); }
 };
+Audio.on('tick', ({ tick }) => { if (window.GomidasEditor) window.GomidasEditor.onPlayTick(tick); });
 
 // ---- alphaTab ----------------------------------------------------------------
 let api = null;
@@ -174,7 +177,7 @@ function rebuildSequence() {
     drumGains: window.gomidasDrumGains || null,
   });
   window.gomidasTickMap = tickMap;
-  nativeInvoke('setSequence', { lengthTicks, events });
+  Audio.setSequence({ lengthTicks, events });
 }
 window.gomidasRebuild = rebuildSequence;
 window.gomidasGetRenderedTracks = () => renderedTracks;
@@ -210,7 +213,7 @@ function tickForCursor(trackIndex, barIdx, voiceIdx, beatIdx) {
 // Seek the native transport to the edit cursor; returns the tick.
 window.gomidasSeekToCursor = function (trackIndex, barIdx, voiceIdx, beatIdx) {
   const tick = tickForCursor(trackIndex | 0, barIdx | 0, voiceIdx | 0, beatIdx | 0);
-  nativeInvoke('seek', tick);
+  Audio.seek(tick);
   return tick;
 };
 
@@ -224,17 +227,17 @@ window.gomidasSetLoopBars = function (trackIndex, bar0, voice0, beat0, bar1, voi
   const lastVoice = stave && stave.bars[bar1] && stave.bars[bar1].voices[voice1];
   const lastBeat = lastVoice && lastVoice.beats[beat1];
   const endTick = tickForCursor(trackIndex, bar1, voice1, beat1) + (lastBeat ? beatTicks(lastBeat) : WHOLE_TICKS);
-  nativeInvoke('setLoop', { start: startTick, end: endTick });
+  Audio.setLoop(true, startTick, endTick);
   return { startTick, endTick };
 };
-window.gomidasClearLoop = function () { nativeInvoke('setLoop', { start: -1, end: -1 }); };
+window.gomidasClearLoop = function () { Audio.setLoop(false); };
 
 // Push the loaded score's tempo to the native clock + the tempo field, so opening
 // a file plays at its own tempo instead of a hard-coded 120.
 function applyScoreTempo(score) {
   let bpm = score && score.tempo;
   if (!(bpm >= 20 && bpm <= 400)) bpm = 120;
-  nativeInvoke('setTempo', bpm);
+  Audio.setTempo(bpm);
   const tf = document.getElementById('tempo');
   if (tf) tf.value = String(Math.round(bpm));
 }
@@ -315,21 +318,25 @@ window.gomidasSfzPresets = [
 window.gomidasLoadSfzPreset = function (p) {
   const ch = currentTrackChannel();
   if (ch == null || !p) return;
-  nativeInvoke('loadTrackSfzPreset', { channel: ch, file: p.file, name: p.name });
+  Audio.loadTrackPreset(ch, p);
 };
 
-// Native reports the result of a per-track SFZ load (channel, ok, instrument name).
+// Native reports the result of a per-track instrument load. The global is the C++ entry point
+// (MainComponent.cpp:354/379) and only adapts onto the bus; the handler is the real consumer.
 window.gomidasSfzLoaded = function (channel, ok, name) {
+  Audio.emit('instrumentLoaded', { channel, ok, name });
+};
+Audio.on('instrumentLoaded', ({ channel, ok, name }) => {
   if (ok) window.gomidasTrackSfz[channel] = name;
   setStatus(ok ? ('SFZ instrument loaded: ' + name) : 'SFZ load failed');
   if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
-};
+});
 
 // Clear the SFZ instrument on the current track (back to the GM SoundFont).
 window.gomidasClearTrackSfz = function () {
   const ch = currentTrackChannel();
   if (ch == null) return;
-  nativeInvoke('clearTrackSfz', { channel: ch });
+  Audio.clearTrackInstrument(ch);
   delete window.gomidasTrackSfz[ch];
   setStatus('SFZ instrument cleared');
   if (window.gomidasRefreshInspector) window.gomidasRefreshInspector();
@@ -345,8 +352,8 @@ function applyMixer() {
     // Gain (vol × mute/solo) + pan resolution is extracted + unit-tested (see mixer.test.js).
     const { gain, pan } = GomidasCore.computeChannelMix(track, f, anySolo);
     const ch = trackChannel(track);
-    nativeInvoke('setChannelMix', { channel: ch, gain, pan });
-    if (f.eq) nativeInvoke('setTrackEq', { channel: ch, low: f.eq.low || 0, mid: f.eq.mid || 0, high: f.eq.high || 0 });
+    Audio.setChannelMix(ch, gain, pan);
+    if (f.eq) Audio.setTrackEq(ch, f.eq.low || 0, f.eq.mid || 0, f.eq.high || 0);
   });
   applyMaster();
 }
@@ -359,16 +366,16 @@ window.gomidasApplyTrackFlags = function () { window.gomidasShowMulti(); applyMi
 window.gomidasMaster = window.gomidasMaster || { vol: 1, pan: 0.5, eq: { low: 0, mid: 0, high: 0 } };
 function applyMaster() {
   const m = window.gomidasMaster;
-  nativeInvoke('setMasterMix', { gain: Math.max(0, Math.min(1.5, m.vol)), pan: Math.max(0, Math.min(1, m.pan)) });
-  nativeInvoke('setMasterEq', { low: m.eq.low || 0, mid: m.eq.mid || 0, high: m.eq.high || 0 });
+  Audio.setMasterMix(Math.max(0, Math.min(1.5, m.vol)), Math.max(0, Math.min(1, m.pan)));
+  Audio.setMasterEq(m.eq.low || 0, m.eq.mid || 0, m.eq.high || 0);
 }
 window.gomidasApplyMaster = applyMaster;
 // Direct EQ setters (used by the EQ popups for live feedback while dragging).
 window.gomidasSetTrackEq = function (channel, low, mid, high) {
-  nativeInvoke('setTrackEq', { channel, low, mid, high });
+  Audio.setTrackEq(channel, low, mid, high);
 };
 window.gomidasSetMasterEq = function (low, mid, high) {
-  nativeInvoke('setMasterEq', { low, mid, high });
+  Audio.setMasterEq(low, mid, high);
 };
 
 // ---- sample / file loading ---------------------------------------------------
@@ -512,7 +519,7 @@ function stopGroovePreview() {
   if (!groovePreviewTimers.length && groovePreviewName == null) return;
   groovePreviewTimers.forEach(clearTimeout); groovePreviewTimers = [];
   groovePreviewName = null;
-  nativeInvoke('preview', { channel: 9, program: 0, percussion: true, keys: [] }); // silence ringing hits
+  Audio.preview(9, 0, true, []); // silence ringing hits
   refreshGrooveUI();
 }
 window.gomidasStopGroovePreview = stopGroovePreview;
@@ -533,7 +540,7 @@ window.gomidasPreviewGroove = function (groove) {
       const keys = [];
       for (const lane in lanes) { if (lanes[lane][s]) { const m = G.LANE_MIDI[lane]; if (m != null) keys.push(m); } }
       if (keys.length)
-        groovePreviewTimers.push(setTimeout(() => nativeInvoke('preview', { channel: 9, program: 0, percussion: true, keys }), s * stepMs));
+        groovePreviewTimers.push(setTimeout(() => Audio.preview(9, 0, true, keys), s * stepMs));
     }
     groovePreviewTimers.push(setTimeout(() => { if (groovePreviewName) playOnce(); }, stepMs * 16)); // loop the bar
   };
@@ -1090,10 +1097,10 @@ function saveProject() {
     mix.master = { vol: m.vol, pan: m.pan, eq: Object.assign({ low: 0, mid: 0, high: 0 }, m.eq || {}) };
   }
   const payload = JSON.stringify(GomidasCore.buildEnvelope(scoreJson, { instruments, mix }));
-  nativeInvoke('saveProject', payload);
+  Host.saveProject(payload);
   if (window.GomidasEditor.markClean) window.GomidasEditor.markClean();
 }
-function openProject() { nativeInvoke('openProject', 1); }
+function openProject() { Host.openProject(); }
 // Export the current score to a Guitar Pro (.gp) file via alphaTab's Gp7Exporter,
 // then hand the bytes (base64) to the native save dialog.
 function exportGp() {
@@ -1109,7 +1116,7 @@ function exportGp() {
     const CHUNK = 0x8000;
     for (let i = 0; i < bytes.length; i += CHUNK)
       bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    nativeInvoke('saveBinary', { ext: 'gp', b64: btoa(bin) });
+    Host.saveBinary('gp', btoa(bin));
     setStatus('Exported .gp (' + bytes.length + ' bytes)');
   } catch (e) { setStatus('GP export failed: ' + e); nlog('exportGp: ' + (e && e.stack || e)); }
 }
@@ -1122,14 +1129,14 @@ window.gomidasLoadProject = function (json) {
   let scoreJson = parsed.scoreJson, instruments = parsed.instruments, mix = parsed.mix;
   // Clear SFZ instruments left on the engine by the previous project, then reset state.
   const prev = window.gomidasTrackSfz || {};
-  for (const ch in prev) nativeInvoke('clearTrackSfz', { channel: parseInt(ch, 10) });
+  for (const ch in prev) Audio.clearTrackInstrument(parseInt(ch, 10));
   window.gomidasTrackSfz = {};
   if (window.GomidasEditor && window.GomidasEditor.loadProject(scoreJson)) {
     if (instruments) {
       const presets = window.gomidasSfzPresets || [];
       for (const ch in instruments) {
         const p = presets.find(x => x.id === instruments[ch]);
-        if (p) nativeInvoke('loadTrackSfzPreset', { channel: parseInt(ch, 10), file: p.file, name: p.name });
+        if (p) Audio.loadTrackPreset(parseInt(ch, 10), p);
       }
     }
     // Restore per-track + master EQ (loadProject reset gomidasTrackFlags to {}).
@@ -1162,7 +1169,7 @@ window.gomidasLoadBinary = function (b64) {
 };
 // Native "Open Recent" routes here first so the unsaved-changes guard runs.
 window.gomidasConfirmOpenRecent = function (index) {
-  confirmDiscard(() => nativeInvoke('openRecent', index));
+  confirmDiscard(() => Host.openRecent(index));
 };
 // Called by native (MainComponent::keyPressed) so editor keys work even when the
 // WebView doesn't hold first-responder focus.
@@ -1179,7 +1186,7 @@ window.gomidasMenu = function (action) {
   const arg = i < 0 ? '' : action.slice(i + 1);
   switch (cmd) {
     case 'new': openNewDialog(arg); break;
-    case 'open': confirmDiscard(() => nativeInvoke('openFile')); break;
+    case 'open': confirmDiscard(() => Host.openFile()); break;
     case 'save': saveProject(); break;
     case 'exportgp': exportGp(); break;
     case 'sample': loadSample(); focusEditor(); break;
@@ -1207,8 +1214,8 @@ window.gomidasMenu = function (action) {
     case 'lyrics': openLyricsDialog(); break;
     case 'transpose': openTransposeDialog(); break;
     case 'print': try { window.print(); } catch (e) { nlog('print: ' + e); } break;
-    case 'minimize': nativeInvoke('minimizeWindow', 1); break;
-    case 'about': nativeInvoke('showAbout', 1); break;
+    case 'minimize': Host.minimizeWindow(); break;
+    case 'about': Host.showAbout(); break;
     case 'dur': E.setDuration(parseInt(arg, 10)); break;
     case 'voice': E.selectVoice(parseInt(arg, 10) - 1); break;
     case 'tuplet': E.setTuplet(parseInt(arg, 10)); break;
@@ -1237,7 +1244,7 @@ window.gomidasMenu = function (action) {
       (m[arg] || (() => {}))(); break;
     }
     case 'play': E.togglePlay(); break;
-    case 'panic': nativeInvoke('panic', 1); E.notifyStopped(); setStatus('All notes off'); break;
+    case 'panic': Audio.panic(); E.notifyStopped(); setStatus('All notes off'); break;
     case 'loopsel': E.loopSelection(); break;
     case 'loopclear': E.clearLoop(); break;
     case 'metronome': { const on = window.gomidasToggleMetronome();
@@ -1245,10 +1252,10 @@ window.gomidasMenu = function (action) {
     case 'countin': { const on = E.toggleCountIn();
       const b = document.getElementById('countin-btn'); if (b) b.classList.toggle('on', on); break; }
     case 'liveinput': toggleLiveInput(); break;
-    case 'loadplugin': nativeInvoke('loadInputPlugin', 1); break;
-    case 'showplugineditor': nativeInvoke('showPluginEditor', 1); break;
-    case 'clearplugin': nativeInvoke('clearInputPlugin', 1); setStatus('Input plugin cleared'); break;
-    case 'loadsfz': { const ch = currentTrackChannel(); if (ch != null) nativeInvoke('loadTrackSfz', { channel: ch }); break; }
+    case 'loadplugin': Audio.loadInputPlugin(); break;
+    case 'showplugineditor': Audio.showPluginEditor(); break;
+    case 'clearplugin': Audio.clearInputPlugin(); setStatus('Input plugin cleared'); break;
+    case 'loadsfz': { const ch = currentTrackChannel(); if (ch != null) Audio.loadTrackInstrumentFile(ch); break; }
     case 'clearsfz': window.gomidasClearTrackSfz(); break;
     case 'record': toggleRecord(); break;
     case 'zoom': window.gomidasZoom(arg === 'in' ? 1 : -1); break;
@@ -1268,7 +1275,7 @@ document.getElementById('addtrack-select').addEventListener('change', (ev) => {
 document.getElementById('save-btn').addEventListener('click', saveProject);
 // "Open" opens any supported file directly (.gp / .gpx / .gp3-8 / MusicXML / .gomidas).
 document.getElementById('openproj-btn').addEventListener('click',
-  () => confirmDiscard(() => nativeInvoke('openFile')));
+  () => confirmDiscard(() => Host.openFile()));
 document.getElementById('sample-btn').addEventListener('click',
   () => confirmDiscard(() => { loadSample(); focusEditor(); }));
 document.getElementById('new-select').addEventListener('change', (ev) => {
@@ -1288,7 +1295,7 @@ onClick('zoom-in', () => window.gomidasZoom(1));
 onClick('zoom-out', () => window.gomidasZoom(-1));
 onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(); focusEditor(); });
 onClick('redo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.redo(); focusEditor(); });
-onClick('rewind-btn', () => { if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); nativeInvoke('stop', 1); focusEditor(); });
+onClick('rewind-btn', () => { if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); Audio.stop(); focusEditor(); });
 onClick('print-btn', () => window.gomidasMenu('print'));
 {
   const cib = document.getElementById('countin-bars');
@@ -1321,53 +1328,57 @@ onClick('countin-btn', () => {
 let liveInputOn = false, inputGain = 1.0;
 function toggleLiveInput() {
   liveInputOn = !liveInputOn;
-  nativeInvoke('setLiveInput', { enabled: liveInputOn, gain: inputGain });
+  Audio.setLiveInput(liveInputOn, inputGain);
   const b = document.getElementById('liveinput-btn'); if (b) b.classList.toggle('on', liveInputOn);
   if (!liveInputOn) window.gomidasMeter(0);   // reset the meter when monitoring stops
 }
 // Output level meter (native pushes peak 0..1 ~30Hz while playing or monitoring).
-window.gomidasMeter = function (peak) {
+window.gomidasMeter = function (peak) { Audio.emit('meter', { peak }); };
+Audio.on('meter', ({ peak }) => {
   const f = document.getElementById('vu-fill');
   if (!f) return;
   f.style.width = Math.min(100, Math.round(peak * 100)) + '%';
   f.style.background = peak > 0.92 ? '#e25' : (peak > 0.6 ? '#ec5' : '#5c8');
-};
+});
 window.gomidasToggleLiveInput = toggleLiveInput;
 onClick('liveinput-btn', () => { toggleLiveInput(); focusEditor(); });
 
 // Record the output mix to a WAV (backing tracks + live input).
 let recording = false;
 function toggleRecord() {
-  if (recording) nativeInvoke('stopRecording', 1);
-  else nativeInvoke('startRecording', 1);   // opens a save dialog; state set in callback
+  if (recording) Audio.stopRecording();
+  else Audio.startRecording();   // opens a save dialog; state set in callback
 }
 window.gomidasToggleRecord = toggleRecord;
 onClick('record-btn', () => { toggleRecord(); focusEditor(); });
 // Native callback with the actual recording state.
-window.gomidasRecording = function (on, name) {
-  recording = !!on;
+window.gomidasRecording = function (on, name) { Audio.emit('recordingState', { recording: !!on, name }); };
+Audio.on('recordingState', (ev) => {
+  recording = ev.recording;
   const b = document.getElementById('record-btn'); if (b) b.classList.toggle('rec', recording);
-  setStatus(recording ? ('Recording → ' + (name || 'WAV')) : (name ? '' : 'Recording stopped'));
-};
-// Native callback after a plugin-file is chosen (loaded into the live-input insert).
-window.gomidasInputPluginLoaded = function (ok, name) {
+  setStatus(recording ? ('Recording → ' + (ev.name || 'WAV')) : (ev.name ? '' : 'Recording stopped'));
+});
+// Native callback after a plugin-file is chosen (loaded into the live-input insert). Desktop
+// only — caps.pluginHost is false on web, where this event never fires.
+window.gomidasInputPluginLoaded = function (ok, name) { Audio.emit('pluginLoaded', { ok, name }); };
+Audio.on('pluginLoaded', ({ ok, name }) => {
   setStatus(ok ? ('Input plugin: ' + (name || 'loaded')) : 'Plugin load failed (not a valid AU/VST3)');
-};
+});
 // Clicking anywhere in the score grabs keyboard focus for the editor.
 document.getElementById('at-wrap').addEventListener('mousedown', focusEditor);
 document.getElementById('tempo').addEventListener('change', (ev) => {
   const bpm = parseInt(ev.target.value, 10);
-  if (bpm >= 40 && bpm <= 240) nativeInvoke('setTempo', bpm);
+  if (bpm >= 40 && bpm <= 240) Audio.setTempo(bpm);
 });
 // Input gain for live-input monitoring (applied live when monitoring is on).
 document.getElementById('ingain').addEventListener('input', (ev) => {
   inputGain = (parseInt(ev.target.value, 10) || 100) / 100;
-  if (liveInputOn) nativeInvoke('setLiveInput', { enabled: true, gain: inputGain });
+  if (liveInputOn) Audio.setLiveInput(true, inputGain);
 });
 // Practice speed: scales playback tempo (pitch unchanged — it's re-sequenced MIDI).
 document.getElementById('speed-select').addEventListener('change', (ev) => {
   const rate = parseFloat(ev.target.value);
-  if (rate > 0) nativeInvoke('setPlaybackRate', rate);
+  if (rate > 0) Audio.setPlaybackRate(rate);
   focusEditor();
 });
 document.getElementById('file-input').addEventListener('change', (ev) => {

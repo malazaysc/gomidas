@@ -25,16 +25,19 @@ struct MainComponent::PluginEditorWindow : public juce::DocumentWindow
 namespace
 {
 // Map a requested URL path to an embedded resource name + MIME type.
+// JS lives under /dist/ because tsc emits there (GMD-31) and index.html is SHARED with the
+// browser build (GMD-32), where those files are served straight off disk. Keep the two in sync.
 struct Asset { const char* path; const char* resource; const char* mime; };
 const Asset kAssets[] = {
     { "/",               "index_html",      "text/html" },
     { "/index.html",     "index_html",      "text/html" },
     // Note: JUCE mangles "gomidas-core.js" to "gomidascore_js" (hyphen dropped).
-    { "/core/gomidas-core.js", "gomidascore_js", "text/javascript" },
-    { "/app.js",         "app_js",          "text/javascript" },
-    { "/editor.js",      "editor_js",       "text/javascript" },
-    { "/fretboard.js",   "fretboard_js",    "text/javascript" },
-    { "/grooves.js",     "grooves_js",      "text/javascript" },
+    { "/dist/core/gomidas-core.js", "gomidascore_js", "text/javascript" },
+    { "/dist/core/backend.js", "backend_js",    "text/javascript" },
+    { "/dist/app.js",    "app_js",          "text/javascript" },
+    { "/dist/editor.js", "editor_js",       "text/javascript" },
+    { "/dist/fretboard.js", "fretboard_js", "text/javascript" },
+    { "/dist/grooves.js", "grooves_js",     "text/javascript" },
     { "/juce_native_interop.js", "juce_native_interop_js", "text/javascript" },
     { "/alphaTab.min.js","alphaTab_min_js", "text/javascript" },
     { "/Bravura.woff2",  "Bravura_woff2",   "font/woff2" },

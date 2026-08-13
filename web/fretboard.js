@@ -16,8 +16,7 @@
     { v: 32, label: '𝅘𝅥𝅰', name: '32nd' }
   ].map(d => ({ v: d.v, name: d.name, label: ({ 1: '1', 2: '½', 4: '¼', 8: '⅛', 16: '16', 32: '32' })[d.v] }));
   const E = window.GomidasEditor;
-  function nlog(m) { try { window.__JUCE__.backend.emitEvent('__juce__invoke',
-      { name: 'log', params: ['[fretboard] ' + m], resultId: 0 }); } catch (e) {} }
+  function nlog(m) { try { window.GomidasHost.log('[fretboard] ' + m); } catch (e) {} }
 
   let gridStrings = -1;          // # strings currently laid out
   let cellEls = [];              // cellEls[row][fret] -> div
