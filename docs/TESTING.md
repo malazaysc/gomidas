@@ -7,7 +7,7 @@ and [`SFZ_TEST_CHECKLIST.md`](./SFZ_TEST_CHECKLIST.md) (manual SFZ pass)._
 
 ```bash
 # Web layer — pure logic (fast, no native build). 62 tests.
-cd web && npm ci && npm test          # or: npm run test:watch
+cd packages/core && npm ci && npm test          # or: npm run test:watch
 
 # Native audio-path smoke tests (sfizz SFZ load + render) via ctest.
 cmake -B build -DGOMIDAS_BUILD_TESTS=ON
@@ -20,7 +20,7 @@ Both run in CI on every push / PR (`.github/workflows/ci.yml`): a fast `web-test
 
 ## Progress (2026-07-01)
 
-- ✅ **P1 — pure JS unit tests (Vitest).** Pure logic extracted to `web/core/gomidas-core.js`;
+- ✅ **P1 — pure JS unit tests (Vitest).** Pure logic extracted to `packages/core/core/gomidas-core.js`;
   `app.js` / `editor.js` now **delegate** to it (one implementation, no drift). **105 tests**.
   Extracted: tick & bar math, dynamics/octave/swing, pitch-bend emission, beat-lane grid, mixer
   gain/pan, the `.gomidas` envelope, **articulation note-shaping** (`shapeNote`), **repeat/D.C./D.S.
@@ -31,7 +31,7 @@ Both run in CI on every push / PR (`.github/workflows/ci.yml`): a fast `web-test
   dead-note shaping, ties, swing, repeats, percussion + drum-gains, metronome), **plus** golden
   snapshots that parse **real alphaTex with the real alphaTab engine in Node** (`@coderline/alphatab`
   dev-dep, pinned to the embedded 1.8.3) → `buildSequence` → committed snapshot
-  (`web/tests/__snapshots__`). The latter also catches drift between our assumed model shape and
+  (`packages/core/tests/__snapshots__`). The latter also catches drift between our assumed model shape and
   alphaTab's. _Optional extension:_ add binary `.gp` fixtures (alphaTex already exercises the walk;
   `.gp` would additionally cover the GP binary parser).
 - 🟡 **P3 — C++ `ctest` + CI.** Three native smoke tests in `ctest`, all green in CI: `sfz_smoketest`
@@ -67,9 +67,9 @@ silent event drops.
 Highest ROI. The tick/capacity/model→MIDI functions are already pure — they just wear browser
 clothing (`window`, `alphaTab`, JUCE bridge globals). Appetite for refactoring is confirmed, so:
 
-**Shipped:** `web/core/gomidas-core.js` (dual-mode: `window.GomidasCore` in the browser,
-`module.exports` under Node) holds the pure functions below; `web/index.html` loads it first and
-`app.js` / `editor.js` delegate to it. Tests: `web/tests/*.test.js` (62 tests). The list below is
+**Shipped:** `packages/core/core/gomidas-core.js` (dual-mode: `window.GomidasCore` in the browser,
+`module.exports` under Node) holds the pure functions below; `packages/core/index.html` loads it first and
+`app.js` / `editor.js` delegate to it. Tests: `packages/core/tests/*.test.js` (62 tests). The list below is
 what actually got extracted:
 - ticks: `beatTicks`/`beatTicksRaw`, `masterBarTicks`, `barCapacityTicks`, `barFilledTicks`, `barIsFull`
 - dynamics/octave/swing: `dynamicsToVelocity`, `ottavaSemitones`, `swungTickInBar`
@@ -81,9 +81,9 @@ what actually got extracted:
 _Original plan (for reference):_
 
 **Refactor shape.** For each target, split the pure core from the DOM/bridge shell:
-- New `web/core/` (or `web/lib/`) ES modules exporting pure functions: `(data) => data`, no
+- New `packages/core/core/` (or `web/lib/`) ES modules exporting pure functions: `(data) => data`, no
   `window`/`document`/`alphaTab` singletons touched.
-- Existing files import from `web/core/` and keep the glue (event wiring, bridge calls, rendering).
+- Existing files import from `packages/core/core/` and keep the glue (event wiring, bridge calls, rendering).
 - Modules must be importable in Node with no browser globals.
 
 **First extraction targets (pure, high-value):**
@@ -95,7 +95,7 @@ _Original plan (for reference):_
   `applyMixer` gain/pan computation (vol × mute/solo → per-channel gain).
 
 **Harness:** [Vitest](https://vitest.dev) — runs ESM directly, no bundler/build step. Add a
-minimal `web/package.json` (`"type": "module"`, `vitest` devDep) + `npm test`.
+minimal `packages/core/package.json` (`"type": "module"`, `vitest` devDep) + `npm test`.
 
 **What to assert:** exact tick boundaries, that a full bar overflows correctly, bend centre-reset
 sorts *before* the next note-on, envelope round-trips (save→load identity), mixer solo overrides

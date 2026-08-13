@@ -35,8 +35,8 @@ cmake --build build
 open "build/Gomidas_artefacts/Debug/Gomidas.app"
 ```
 
-The web front-end (`web/`) and the GM SoundFont (`assets/`) are embedded into the binary via
-`juce_add_binary_data`, so there are no runtime asset paths to manage — editing a file under `web/`
+The web front-end (`packages/core/`) and the GM SoundFont (`assets/`) are embedded into the binary via
+`juce_add_binary_data`, so there are no runtime asset paths to manage — editing a file under `packages/core/`
 and rebuilding re-embeds it.
 
 ### SoundFonts
@@ -100,11 +100,11 @@ src/ui/MainComponent.*       WebView host + JS↔C++ bridge + native menu bar + 
 src/engine/AudioEngine.*     device, transport, scheduler, per-channel mixer, Sequence hand-off
 src/synth/SoundFontSynth.*   TinySoundFont wrapper
 src/synth/tsf/tsf.h          vendored TinySoundFont (MIT)
-web/index.html               GP8-style dark 4-panel layout
-web/app.js                   alphaTab host, model→MIDI, native bridge, mixer/view, New dialog
-web/editor.js                tab editor: cursor/nav/entry, effects, drums, cursors, auto-scroll
-web/fretboard.js             left edit bar, fretboard / drum palette, inspector, track list
-web/alphaTab.min.js          alphaTab bundle (embedded)
+packages/core/index.html               GP8-style dark 4-panel layout
+packages/core/app.js                   alphaTab host, model→MIDI, native bridge, mixer/view, New dialog
+packages/core/editor.js                tab editor: cursor/nav/entry, effects, drums, cursors, auto-scroll
+packages/core/fretboard.js             left edit bar, fretboard / drum palette, inspector, track list
+packages/core/alphaTab.min.js          alphaTab bundle (embedded)
 assets/soundfont/            GM SoundFont (embedded; native synth)
 docs/FEATURES.md             implemented features (+ GP8 key mapping)
 docs/BACKLOG.md              roadmap / not-yet-built

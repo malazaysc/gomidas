@@ -126,7 +126,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Feature | How | Notes |
 | --- | --- | --- |
 | Purple theme + colored timeline | app-wide | ✅ reference palette; track-kind colors (drums purple / bass blue / guitar orange); continuous per-track timeline bands |
-| **KIT VIEW** | drum track, bottom panel | ✅ photoreal kit (`web/drumkit.png`) with clickable hotspots per piece → toggle hit on the current beat + select; hit pieces ring purple |
+| **KIT VIEW** | drum track, bottom panel | ✅ photoreal kit (`packages/core/drumkit.png`) with clickable hotspots per piece → toggle hit on the current beat + select; hit pieces ring purple |
 | Quick Tools | KIT VIEW rail | ✅ Select/Draw/Erase/Paint entry modes + Accent/Ghost/Repeat/Tie actions |
 | Articulation panel | KIT VIEW right | ✅ per-piece GM articulation (Hi-Hat Closed/Open/Pedal, Snare Center/Side-stick, Ride/Bell…) + Velocity→dynamic |
 | **Pattern Library** | row under the kit | ✅ categories + search, groove cards with dot-grid preview, ▶ audition, ＋ insert, ♡ favourite (localStorage); **Add Pattern** captures the current bar as a User Groove |

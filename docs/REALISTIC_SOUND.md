@@ -59,7 +59,7 @@ What exists today (the playback path we're extending):
   `{ double tick; int channel; int key; float velocity; bool on; int program; bool percussion; }`.
   **No pitch-bend, no CC, no keyswitch concept.** Per-event channel exists. Transport is 960 PPQ
   (`AudioEngine.h:59`).
-- **JS builds the events.** `web/app.js rebuildSequence` walks the alphaTab model into a flat array
+- **JS builds the events.** `packages/core/app.js rebuildSequence` walks the alphaTab model into a flat array
   `[tick, channel, key, vel, on, program, percussion]` (`app.js:263-265`) and ships it via
   `nativeInvoke('setSequence', …)` (`app.js:315`). Articulation reshaping (velocity/duration only)
   is at `app.js:241-255` — dead/palm-mute/staccato/ghost/accent/hammer-pull-dest. Everything else
@@ -136,7 +136,7 @@ chain downstream is unchanged.
 
 ### 3.4 Articulation-mapping layer (Phase C — the genuinely-ours part)
 
-In `web/app.js rebuildSequence`, insertion point ~`app.js:251` (after the existing velocity/duration
+In `packages/core/app.js rebuildSequence`, insertion point ~`app.js:251` (after the existing velocity/duration
 reshaping, before the note-on is pushed). Emit, per note/beat:
 - **Pitch-bend ramps** for slides (`slideOutType`) and bends — *universal*, work on any backend.
 - **Keyswitches** for palm-mute / harmonic / dead / etc. — only where we control the mapping

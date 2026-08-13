@@ -1,15 +1,15 @@
 # Gomidas — browser build
 
-Vite shell over the shared editor. **Not a copy**: Vite's root is `../../web`, the same
+Vite shell over the shared editor. **Not a copy**: Vite's root is `../../packages/core`, the same
 directory the desktop app embeds, so both products serve one `index.html` and one set of
 compiled JavaScript. There is nothing to keep in sync because there is only one of everything.
 
 ```bash
 npm install
-npm run dev      # compiles ../../web with tsc, then serves it at http://localhost:5173
+npm run dev      # compiles ../../packages/core with tsc, then serves it at http://localhost:5173
 ```
 
-`npm run dev` and `npm run build` both run the TypeScript build first (`npm --prefix ../../web
+`npm run dev` and `npm run build` both run the TypeScript build first (`npm --prefix ../../packages/core
 run build`), because `index.html` loads `dist/*.js` — the same paths the JUCE WebView resolves
 through `MainComponent`'s `kAssets` table. **Adding a script tag means adding a row there too.**
 
