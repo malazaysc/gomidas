@@ -34,6 +34,9 @@ jobs:
   native-tests:
     name: Native smoke tests (ctest, macOS)
     runs-on: macos-latest
+    # A docs- or web-shell-only change should not spend ~10 minutes building JUCE and sfizz.
+    # web/ IS still native-relevant: CMake compiles it into the binary (GMD-31), so it is not
+    # excluded here.
     steps:
       - uses: actions/checkout@v4
       # The web front-end is TypeScript and CMake compiles it during configure

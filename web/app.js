@@ -15,7 +15,7 @@ function setStatus(s) { statusEl.textContent = s; }
 // Everything that used to call nativeInvoke() directly now goes through these two interfaces.
 // The browser build (GMD-33) swaps in a Web Audio implementation here and nothing above this
 // line changes. core/backend.js owns the JUCE wire format.
-const { audio: Audio, host: Host } = window.GomidasBackend.createJuceBackends(window);
+const { audio: Audio, host: Host } = window.GomidasBackend.createBackends(window);
 window.GomidasAudio = Audio;   // editor.js / fretboard.js reach the backend through these
 window.GomidasHost = Host;
 
@@ -23,7 +23,7 @@ function nlog(msg) { Host.log(msg); }
 // Startup banner. Deliberately the FIRST thing JS says to native: if core/backend.js ever fails
 // to load, app.js throws here — before window.onerror below is installed — and the failure is
 // otherwise completely silent. Absence of this line in the log means the seam is broken.
-nlog('backend ready (juce), caps=' + JSON.stringify(Audio.caps));
+nlog('backend ready (' + (window.GomidasBackend.hasJuceBridge(window) ? 'juce' : 'web') + '), caps=' + JSON.stringify(Audio.caps));
 window.onerror = (m, src, line, col, err) =>
   nlog('JS error: ' + m + ' @' + line + ':' + col + (err && err.stack ? '\n' + err.stack : ''));
 const _origErr = console.error.bind(console);

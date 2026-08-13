@@ -232,9 +232,123 @@ function createJuceBackends(win?: JuceBridgeWindow): { audio: AudioBackend; host
   return { audio, host };
 }
 
+// ---- host detection -------------------------------------------------------------------------
+// juce_native_interop.js is DEFENSIVE: loaded in a plain browser it warns and installs a
+// placeholder window.__JUCE__ with a no-op postMessage. So "does window.__JUCE__ exist" is NOT a
+// valid test — it is always true once that file has run, and a JUCE backend would happily post
+// messages into the void.
+//
+// The placeholder sets initialisationData.__juce__platform to an EMPTY array; a real host fills
+// it in. That is the discriminator, and it is what lets one index.html serve both products.
+function hasJuceBridge(win?: any): boolean {
+  try {
+    const j = (win || window).__JUCE__;
+    const platform = j && j.initialisationData && j.initialisationData.__juce__platform;
+    return Array.isArray(platform) && platform.length > 0;
+  } catch (e) { return false; }
+}
+
+const WEB_CAPS: BackendCaps = {
+  liveInput: false,     // getUserMedia works, but ~20-40ms round trip kills "play on top"
+  pluginHost: false,    // VST/AU does not exist in a browser. Never true.
+  nativeMenus: false,   // the web shell supplies its own
+  fileSystem: typeof window !== 'undefined' && 'showOpenFilePicker' in window ? 'picker' : 'download',
+  offlineRender: true   // OfflineAudioContext bounce (§7.3)
+};
+
+// ---- web implementation ---------------------------------------------------------------------
+// GMD-32 ships the HOST half (open/save) and a SILENT audio backend: the shell must render a
+// score in a browser before any audio exists. GMD-33 replaces the silent one with the Web Audio
+// scheduler + channel strip. Everything above this file is already written against the
+// interface, so that is a swap, not a rewrite.
+function createWebBackends(): { audio: AudioBackend; host: HostBackend } {
+  const bus = createEventBus();
+  const noop = () => { /* silent until GMD-33 */ };
+
+  const audio: AudioBackend = {
+    caps: WEB_CAPS,
+    on: bus.on,
+    emit: bus.emit,
+    listenerCount: bus.listenerCount,
+    invoke: noop,
+
+    setSequence: noop, play: noop, stop: noop, seek: noop, panic: noop,
+    setLoop: noop, setTempo: noop, setPlaybackRate: noop,
+    setChannelMix: noop, setMasterMix: noop, setTrackEq: noop, setMasterEq: noop,
+    loadTrackPreset: noop, loadTrackInstrumentFile: noop, clearTrackInstrument: noop,
+    preview: noop,
+    startRecording: noop, stopRecording: noop
+    // setLiveInput / loadInputPlugin / clearInputPlugin / showPluginEditor are ABSENT on
+    // purpose: caps.liveInput and caps.pluginHost are false, and the UI must check those rather
+    // than call a method that silently does nothing.
+  };
+
+  // Reuses the exact entry points native drives, so the load path is identical in both products:
+  // .gomidas -> window.gomidasLoadProject(json), everything else -> window.gomidasLoadBinary(b64).
+  function pickFile(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.gp,.gp3,.gp4,.gp5,.gpx,.gomidas,.musicxml,.xml,.cap';
+    input.style.display = 'none';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const w = window as any;
+        if (/\.gomidas$/i.test(file.name)) {
+          if (w.gomidasLoadProject) w.gomidasLoadProject(String(reader.result));
+        } else {
+          // Same base64 hand-off MainComponent uses, minus the data: URL prefix.
+          const b64 = String(reader.result).replace(/^data:[^;]*;base64,/, '');
+          if (w.gomidasLoadBinary) w.gomidasLoadBinary(b64);
+        }
+      };
+      if (/\.gomidas$/i.test(file.name)) reader.readAsText(file);
+      else reader.readAsDataURL(file);
+      input.remove();
+    });
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  function download(name: string, data: BlobPart, mime: string): void {
+    const url = URL.createObjectURL(new Blob([data], { type: mime }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const host: HostBackend = {
+    caps: WEB_CAPS,
+    openFile: pickFile,
+    openProject: pickFile,
+    openRecent: () => { /* no recent-files list without a host; GMD-37 */ },
+    saveProject: (json) => download('score.gomidas', json, 'application/json'),
+    saveBinary: (ext, b64) => {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      download('score.' + ext, bytes, 'application/octet-stream');
+    },
+    log: (msg) => { try { console.log('[gomidas]', String(msg)); } catch (e) { /* ignore */ } }
+    // minimizeWindow / showAbout absent — caps.nativeMenus is false.
+  };
+
+  return { audio, host };
+}
+
+/** Pick the backend for whatever is hosting us. The one call site is app.js. */
+function createBackends(win?: any): { audio: AudioBackend; host: HostBackend } {
+  return hasJuceBridge(win) ? createJuceBackends(win) : createWebBackends();
+}
+
 // Dual-mode publication, matching core/gomidas-core.js: a browser global for the <script> tags,
 // module.exports for Node/Vitest. Assigned (not `export`ed) so the emitted file stays a script.
 (function publish(api: unknown) {
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasBackend = api;
-}({ createEventBus, createJuceBackends, JUCE_CAPS }));
+}({ createEventBus, createJuceBackends, createWebBackends, createBackends, hasJuceBridge, JUCE_CAPS, WEB_CAPS }));
