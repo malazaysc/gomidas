@@ -266,8 +266,195 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
   };
 }
 
+/**
+ * Deterministic impulse response. No Math.random (renders must be reproducible) and no shipped
+ * asset — the `ir` identifier resolves to one of these for now. Swapping in real recorded IRs
+ * later is a CONTENT change, not a code change, which is the point of `ir` being an identifier
+ * rather than a path (§5.1).
+ */
+function makeImpulse(ctx: AudioContext, seconds: number, decay: number, lowpassHz: number, seed: number): AudioBuffer {
+  const len = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  let rnd = seed >>> 0;
+  for (let c = 0; c < 2; c++) {
+    const data = buf.getChannelData(c);
+    let lp = 0;
+    const coeff = Math.min(1, (2 * Math.PI * lowpassHz) / ctx.sampleRate);
+    for (let i = 0; i < len; i++) {
+      rnd = (rnd * 1664525 + 1013904223) >>> 0;
+      const white = (rnd / 0x7fffffff) - 1;
+      lp += coeff * (white - lp);                       // one-pole lowpass = darker tail
+      data[i] = lp * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+/** Resolve an `ir` identifier to a generated impulse. Unknown ids fall back rather than fail. */
+function irFor(ctx: AudioContext, id: string, kind: 'cab' | 'reverb'): AudioBuffer {
+  if (kind === 'cab') {
+    // Short, dark, and the single most important part of the tone (§5): a dry DI through a
+    // waveshaper sounds like a bee in a jar; through a 4x12 it sounds like an amp.
+    const presets: Record<string, [number, number, number]> = {
+      '4x12-v30':      [0.045, 7, 4200],
+      '2x12-alnico':   [0.055, 6, 5200],
+      '1x12-combo':    [0.040, 8, 6000],
+      'greenback-1960':[0.050, 7, 3800]
+    };
+    const [sec, decay, lp] = presets[id] || presets['4x12-v30'];
+    return makeImpulse(ctx, sec, decay, lp, 0x5eed);
+  }
+  const presets: Record<string, [number, number, number]> = {
+    'room-small':   [0.6, 3.0, 8000],
+    'hall-medium':  [1.8, 2.2, 6000],
+    'hall-large':   [3.2, 1.8, 5000],
+    'plate':        [1.2, 2.6, 9000]
+  };
+  const [sec, decay, lp] = presets[id] || presets['hall-medium'];
+  return makeImpulse(ctx, sec, decay, lp, 0xbeef);
+}
+
+/**
+ * Build an insert chain from the schema. Returns an input/output pair so the caller can splice
+ * it in; unknown and bypassed entries are skipped (but were already preserved by normalizeChain).
+ */
+function makeEqNodes(c: AudioContext, low: number, mid: number, high: number): BiquadFilterNode[] {
+  const l = c.createBiquadFilter(); l.type = 'lowshelf'; l.frequency.value = 200; l.gain.value = low;
+  const m = c.createBiquadFilter(); m.type = 'peaking'; m.frequency.value = 1000; m.Q.value = 0.9; m.gain.value = mid;
+  const h = c.createBiquadFilter(); h.type = 'highshelf'; h.frequency.value = 4000; h.gain.value = high;
+  l.connect(m); m.connect(h);
+  return [l, m, h];
+}
+
+function buildFxChain(ctx: AudioContext, chainSpec: any): { input: AudioNode; output: AudioNode; nodes: AudioNode[] } {
+  const FX = (window as any).GomidasFx;
+  const spec = FX.normalizeChain(chainSpec);
+  const input = ctx.createGain();
+  const nodes: AudioNode[] = [input];
+  let tail: AudioNode = input;
+
+  const connect = (n: AudioNode) => { tail.connect(n); tail = n; nodes.push(n); };
+  // Wet/dry helper: many of these are mix effects, and a 100% wet chorus is not a chorus.
+  const wetDry = (make: () => { input: AudioNode; output: AudioNode }, mix: number) => {
+    const split = ctx.createGain();
+    const dry = ctx.createGain(); dry.gain.value = 1 - mix;
+    const wet = ctx.createGain(); wet.gain.value = mix;
+    const merge = ctx.createGain();
+    const unit = make();
+    tail.connect(split);
+    split.connect(dry); dry.connect(merge);
+    split.connect(unit.input); unit.output.connect(wet); wet.connect(merge);
+    nodes.push(split, dry, wet, merge, unit.input, unit.output);
+    tail = merge;
+  };
+
+  for (const fx of spec.chain) {
+    if (fx.bypass || fx._unknown) continue;
+    const p = fx.params;
+    switch (fx.type) {
+      case 'compressor': {
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = p.threshold; comp.ratio.value = p.ratio;
+        comp.attack.value = p.attack; comp.release.value = p.release; comp.knee.value = p.knee;
+        connect(comp);
+        break;
+      }
+      case 'drive': {
+        const ws = ctx.createWaveShaper();
+        ws.curve = FX.makeDriveCurve(p.mode, p.drive);
+        ws.oversample = '4x';           // mitigates aliasing; does not eliminate it (§8)
+        const tone = ctx.createBiquadFilter();
+        tone.type = 'lowpass';
+        tone.frequency.value = 800 + p.tone * 7000;
+        const level = ctx.createGain(); level.gain.value = p.level;
+        connect(ws); connect(tone); connect(level);
+        break;
+      }
+      case 'eq3': {
+        const eq = makeEqNodes(ctx, p.low, p.mid, p.high);
+        for (const n of eq) connect(n);
+        break;
+      }
+      case 'tremolo': {
+        const amp = ctx.createGain(); amp.gain.value = 1 - p.depth / 2;
+        const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate;
+        const lfoGain = ctx.createGain(); lfoGain.gain.value = p.depth / 2;
+        lfo.connect(lfoGain); lfoGain.connect(amp.gain); lfo.start();
+        nodes.push(lfo, lfoGain);
+        connect(amp);
+        break;
+      }
+      case 'wah': {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = p.freq; bp.Q.value = p.q;
+        wetDry(() => ({ input: bp, output: bp }), p.mix);
+        break;
+      }
+      case 'chorus':
+      case 'flanger': {
+        const d = ctx.createDelay(0.1);
+        d.delayTime.value = p.delayMs / 1000;
+        const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate;
+        const depth = ctx.createGain(); depth.gain.value = (p.depth * p.delayMs) / 2000;
+        lfo.connect(depth); depth.connect(d.delayTime); lfo.start();
+        nodes.push(lfo, depth);
+        let head: AudioNode = d;
+        if (fx.type === 'flanger' && p.feedback > 0) {
+          const fb = ctx.createGain(); fb.gain.value = p.feedback;
+          d.connect(fb); fb.connect(d);
+          nodes.push(fb);
+        }
+        wetDry(() => ({ input: head, output: d }), p.mix);
+        break;
+      }
+      case 'phaser': {
+        const stages: BiquadFilterNode[] = [];
+        for (let i = 0; i < 4; i++) {
+          const ap = ctx.createBiquadFilter();
+          ap.type = 'allpass';
+          ap.frequency.value = 300 * Math.pow(2, i);
+          stages.push(ap);
+          if (i > 0) stages[i - 1].connect(ap);
+        }
+        const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate;
+        const depth = ctx.createGain(); depth.gain.value = 800 * p.depth;
+        lfo.connect(depth);
+        for (const st of stages) depth.connect(st.frequency);
+        lfo.start();
+        nodes.push(lfo, depth, ...stages);
+        wetDry(() => ({ input: stages[0], output: stages[stages.length - 1] }), p.mix);
+        break;
+      }
+      case 'delay': {
+        const d = ctx.createDelay(2.1);
+        d.delayTime.value = p.timeMs / 1000;
+        const fb = ctx.createGain(); fb.gain.value = p.feedback;
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.tone;
+        d.connect(lp); lp.connect(fb); fb.connect(d);       // filter INSIDE the feedback loop
+        nodes.push(fb, lp);
+        wetDry(() => ({ input: d, output: d }), p.mix);
+        break;
+      }
+      case 'cab':
+      case 'reverb': {
+        const conv = ctx.createConvolver();
+        conv.normalize = true;
+        conv.buffer = irFor(ctx, String(p.ir || ''), fx.type === 'cab' ? 'cab' : 'reverb');
+        nodes.push(conv);
+        wetDry(() => ({ input: conv, output: conv }), fx.type === 'cab' ? 1 : p.mix);
+        break;
+      }
+      default: break;
+    }
+  }
+  return { input, output: tail, nodes };
+}
+
 interface ChannelStrip {
   input: GainNode;
+  fxIn: GainNode;
+  sends: Record<string, GainNode>;
+  fx: { input: AudioNode; output: AudioNode; nodes: AudioNode[] } | null;
   gain: GainNode;
   pan: StereoPannerNode;
   eq: BiquadFilterNode[];
@@ -311,6 +498,7 @@ function createWebAudioBackend(BackendLib: any): any {
     const pan = ctx.createStereoPanner();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
+    // eq[2] -> gain is spliced by applyFx('master', ...) when a master chain is set.
     chain([...eq, gain, pan, analyser]);
     analyser.connect(ctx.destination);
     master = { eq, gain, pan, analyser };
@@ -337,13 +525,25 @@ function createWebAudioBackend(BackendLib: any): any {
     let s = channels[ch];
     if (s) return s;
     const input = c.createGain();
+    const fxIn = c.createGain();     // insert point: inserts live between input and the fader
     const gain = c.createGain();
     const pan = c.createStereoPanner();
     const eq = makeEq(c);
-    // instrument -> input -> gain -> pan -> EQ -> master (matches AudioEngine's order)
-    chain([input, gain, pan, ...eq]);
+    // instrument -> input -> [inserts] -> gain -> pan -> EQ -> master (AudioEngine's order).
+    // Inserts are PRE-fader (§4.1) so moving the volume slider does not change how hard the
+    // drive is being pushed.
+    chain([input, fxIn, gain, pan, ...eq]);
     eq[2].connect(master!.eq[0]);
-    s = { input, gain, pan, eq, instrument: null, program: 24, percussion: ch === 9 };
+    // Sends are POST-fader (§4.1) so muting a track also mutes its reverb tail. Standard
+    // console behaviour; do not deviate.
+    const sends: Record<string, GainNode> = {};
+    for (const name of ['delay', 'reverb']) {
+      const g = c.createGain(); g.gain.value = 0;
+      eq[2].connect(g);
+      g.connect(sendBus(name).input);
+      sends[name] = g;
+    }
+    s = { input, fxIn, gain, pan, eq, sends, fx: null, instrument: null, program: 24, percussion: ch === 9 };
     channels[ch] = s;
     return s;
   }
@@ -571,6 +771,53 @@ function createWebAudioBackend(BackendLib: any): any {
     }
   }
 
+  // ONE shared bus per send effect (§4.2). ConvolverNode is the expensive node here: sixteen
+  // per-channel reverbs will hurt, one shared reverb with per-channel sends will not. This is
+  // the entire reason sends exist in the design.
+  const buses = new Map<string, { input: GainNode; nodes: AudioNode[] }>();
+  function sendBus(name: string): { input: GainNode; nodes: AudioNode[] } {
+    const c = ensureContext();
+    let b = buses.get(name);
+    if (b) return b;
+    const input = c.createGain();
+    const spec = name === 'reverb'
+      ? { chain: [{ type: 'reverb', params: { mix: 1, ir: 'hall-medium' } }] }
+      : { chain: [{ type: 'delay', params: { mix: 1, timeMs: 375, feedback: 0.35, tone: 3000 } }] };
+    const built = buildFxChain(c, spec);
+    input.connect(built.input);
+    built.output.connect(master!.eq[0]);
+    b = { input, nodes: built.nodes };
+    buses.set(name, b);
+    return b;
+  }
+
+  function applyFx(target: 'track' | 'master', ch: number, chainSpec: any): void {
+    const c = ensureContext();
+    const FX = (window as any).GomidasFx;
+    if (target === 'master') {
+      if (masterFx) { try { masterFx.output.disconnect(); masterFx.input.disconnect(); } catch (e) {} }
+      masterFx = null;
+      try { master!.eq[2].disconnect(); } catch (e) {}
+      if (FX.chainIsEmpty(chainSpec)) { master!.eq[2].connect(master!.gain); return; }
+      const built = buildFxChain(c, chainSpec);
+      master!.eq[2].connect(built.input);
+      built.output.connect(master!.gain);
+      masterFx = built;
+      return;
+    }
+    const st = strip(ch);
+    if (st.fx) { try { st.fx.output.disconnect(); st.fx.input.disconnect(); } catch (e) {} }
+    st.fx = null;
+    try { st.fxIn.disconnect(); } catch (e) {}
+    if (FX.chainIsEmpty(chainSpec)) { st.fxIn.connect(st.gain); return; }
+    const built = buildFxChain(c, chainSpec);
+    st.fxIn.connect(built.input);
+    built.output.connect(st.gain);
+    st.fx = built;
+  }
+
+  let masterFx: { input: AudioNode; output: AudioNode; nodes: AudioNode[] } | null = null;
+
   const backend: any = {
     caps: BackendLib.WEB_CAPS,
     on: bus.on,
@@ -642,6 +889,16 @@ function createWebAudioBackend(BackendLib: any): any {
       if (!keys || !keys.length) { inst.allNotesOff(); return; }
       const when = c.currentTime + 0.005;
       for (const k of keys) { inst.noteOn(k, 0.85, when); inst.noteOff(k, when + 0.6); }
+    },
+
+    setTrackFx(ch: number, chainSpec: any) { applyFx('track', ch, chainSpec); },
+    setMasterFx(chainSpec: any) { applyFx('master', 0, chainSpec); },
+    setTrackSends(ch: number, sends: Record<string, number>) {
+      const st = strip(ch);
+      for (const name of Object.keys(st.sends)) {
+        const v = Number(sends && sends[name]);
+        st.sends[name].gain.value = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
+      }
     },
 
     startRecording() { /* offline bounce — GMD-37 */ },
