@@ -287,56 +287,49 @@ function createWebBackends(): { audio: AudioBackend; host: HostBackend } {
       startRecording: noop, stopRecording: noop
     };
 
-  // Reuses the exact entry points native drives, so the load path is identical in both products:
-  // .gomidas -> window.gomidasLoadProject(json), everything else -> window.gomidasLoadBinary(b64).
-  function pickFile(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.gp,.gp3,.gp4,.gp5,.gpx,.gomidas,.musicxml,.xml,.cap';
-    input.style.display = 'none';
-    input.addEventListener('change', () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const w = window as any;
-        if (/\.gomidas$/i.test(file.name)) {
-          if (w.gomidasLoadProject) w.gomidasLoadProject(String(reader.result));
-        } else {
-          // Same base64 hand-off MainComponent uses, minus the data: URL prefix.
-          const b64 = String(reader.result).replace(/^data:[^;]*;base64,/, '');
-          if (w.gomidasLoadBinary) w.gomidasLoadBinary(b64);
-        }
-      };
-      if (/\.gomidas$/i.test(file.name)) reader.readAsText(file);
-      else reader.readAsDataURL(file);
-      input.remove();
-    });
-    document.body.appendChild(input);
-    input.click();
+  // File handling delegates to core/webfiles.ts (GMD-37): File System Access where it exists,
+  // <input type=file> + Blob download in Safari. caps.fileSystem says which is in play.
+  const Files = typeof window !== 'undefined' ? (window as any).GomidasFiles : null;
+  let currentHandle: any = null;      // the picker handle, so Save overwrites instead of re-asking
+
+  function loadPicked(picked: any): void {
+    if (!picked) return;
+    const w = window as any;
+    currentHandle = picked.handle || null;
+    if (picked.kind === 'project') { if (w.gomidasLoadProject) w.gomidasLoadProject(picked.data); }
+    else if (w.gomidasLoadBinary) w.gomidasLoadBinary(picked.data);
+    if (Files) {
+      Files.idbGet(Files.STORE_STATE, 'recent')
+        .then((list: any) => Files.idbPut(Files.STORE_STATE, 'recent',
+          Files.recentAdd(list, { name: picked.name, at: picked.name })));
+    }
   }
 
-  function download(name: string, data: BlobPart, mime: string): void {
-    const url = URL.createObjectURL(new Blob([data], { type: mime }));
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  function openViaPicker(): void {
+    if (!Files) return;
+    Files.pickAndRead().then(loadPicked).catch(() => { /* cancelled */ });
   }
 
   const host: HostBackend = {
     caps: WEB_CAPS,
-    openFile: pickFile,
-    openProject: pickFile,
-    openRecent: () => { /* no recent-files list without a host; GMD-37 */ },
-    saveProject: (json) => download('score.gomidas', json, 'application/json'),
+    openFile: openViaPicker,
+    openProject: openViaPicker,
+    openRecent: () => {
+      // A recent NAME is not a file handle: without a stored FileSystemFileHandle (and the
+      // permission that goes with it) the browser cannot reopen it, so this deliberately falls
+      // back to the picker rather than pretending to have a recent-files list.
+      openViaPicker();
+    },
+    saveProject: (json) => {
+      if (!Files) return;
+      Files.saveData('score.gomidas', json, 'application/json', currentHandle);
+    },
     saveBinary: (ext, b64) => {
+      if (!Files) return;
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      download('score.' + ext, bytes, 'application/octet-stream');
+      Files.saveData('score.' + ext, bytes, 'application/octet-stream');
     },
     log: (msg) => { try { console.log('[gomidas]', String(msg)); } catch (e) { /* ignore */ } }
     // minimizeWindow / showAbout absent — caps.nativeMenus is false.
