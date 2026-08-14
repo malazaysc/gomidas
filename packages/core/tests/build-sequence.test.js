@@ -144,3 +144,46 @@ describe('buildSequence — metronome', () => {
     expect(clicks[0][5]).toBe(115);                       // GM woodblock program
   });
 });
+
+// The scheduler contract. Both consumers depend on it: the web scheduler walks the list with a
+// running cursor (selectWindow) and seeks into it with a binary search (indexAtOrAfter), and it
+// applies events in ARRAY order. Emission order is per note and per track, so without the sort
+// the list is not ascending — which is how bends went silent on web (GMD-43): the note-off was
+// applied before that note's own bend events, dropping the voice the bend needed to ramp.
+describe('buildSequence — event list is tick-sorted', () => {
+  const ascending = (events) => events.every((e, i) => i === 0 || events[i - 1][0] <= e[0]);
+
+  it('a chord (several notes at one tick) still comes out ascending', () => {
+    const s = score([mbar()], [track([bar(voice([nbeat(4, [note(40), note(45), note(50)])]))])]);
+    expect(ascending(build(s).events)).toBe(true);
+  });
+
+  it('two tracks interleave rather than concatenating track by track', () => {
+    const bars = [bar(voice([nbeat(4, [note(40)]), nbeat(4, [note(41)])]))];
+    const s = score([mbar()], [track(bars, { primaryChannel: 0 }), track(bars, { primaryChannel: 1 })]);
+    const { events } = build(s);
+    expect(ascending(events)).toBe(true);
+    // Both tracks' downbeats land before either track's second beat.
+    expect(events.slice(0, 2).map((e) => e[1]).sort()).toEqual([0, 1]);
+  });
+
+  it('the metronome click track merges in ascending too', () => {
+    const s = score([mbar()], [track([bar(voice([nbeat(4, [note(40)]), nbeat(4, [note(41)])]))])]);
+    expect(ascending(build(s, { metronomeOn: true }).events)).toBe(true);
+  });
+
+  it('a bent note: every bend event sits between its note-on and note-off IN ARRAY ORDER', () => {
+    const bendPoints = [{ offset: 0, value: 0 }, { offset: 60, value: 4 }];
+    const s = score([mbar()], [track([bar(voice([nbeat(4, [note(40, { bendPoints })]), nbeat(4, [note(45)])]))])]);
+    const { events } = build(s);
+    expect(ascending(events)).toBe(true);
+
+    const onIdx = events.findIndex((e) => e[4] === true && e[2] === 40);
+    const offIdx = events.findIndex((e) => e[4] === false && e[2] === 40);
+    const bendIdx = events.map((e, i) => [e, i]).filter(([e]) => e.length >= 9 && e[7] === 1).map(([, i]) => i);
+
+    expect(bendIdx.length).toBeGreaterThan(0);
+    expect(onIdx).toBeLessThan(Math.min(...bendIdx));
+    expect(Math.max(...bendIdx)).toBeLessThan(offIdx);
+  });
+});

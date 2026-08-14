@@ -870,8 +870,12 @@ void MainComponent::handleSetSequence (const juce::var& payload)
         }
     }
 
-    std::sort (seq->events.begin(), seq->events.end(),
-               [] (const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
+    // buildSequence already delivers this stably tick-sorted; re-sorting here is belt-and-braces
+    // (and keeps older/hand-built payloads honest). STABLE, because equal-tick order carries
+    // meaning: a note-on precedes the bend points at the same tick, and a note-off at tick T
+    // precedes the next note-on at T. std::sort would be free to permute those.
+    std::stable_sort (seq->events.begin(), seq->events.end(),
+                      [] (const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
 
     engine.setSequence (Sequence::Ptr (seq));
 }

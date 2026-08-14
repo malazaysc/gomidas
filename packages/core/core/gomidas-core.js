@@ -410,6 +410,22 @@
       }
     }
 
+    // TICK-SORT THE EVENT LIST. Every consumer assumes ascending ticks: the web scheduler
+    // walks it with a running cursor (selectWindow) and seeks into it with a BINARY SEARCH
+    // (indexAtOrAfter), and applyEvent is called in array order.
+    //
+    // Emission order is per note ([on, off], then that note's bend curve) and per track, so
+    // the raw list is NOT ascending — a chord alone breaks it. Until now only the desktop
+    // build sorted (MainComponent::rebuildSequence, C++), which is exactly why bends were
+    // audible there and silent on web: the scheduler applied a note's note-off — which drops
+    // the voice from the instrument's voice map — BEFORE that same note's bend events, so
+    // every pitchBend found no voice to ramp. Unsorted ticks also make the 100ms scheduling
+    // window skip or mistime events it has already run past.
+    //
+    // The sort must be STABLE (Array.prototype.sort is, per ES2019): equal-tick order is
+    // meaningful — a note-off at tick T precedes the next note-on at T, and note-on precedes
+    // the bend point at the same tick.
+    events.sort((a, b) => a[0] - b[0]);
     tickMap.sort((a, b) => a.tick - b.tick);
     return { events, tickMap, lengthTicks };
   }

@@ -326,6 +326,15 @@ taken **after** the only early-return so it can't leak.
   before the note end** so it sorts before the next note-on and never leaves the channel detuned. Bend is
   per-channel (a bent note bends the whole channel in a chord — fine for lead bends). Imported GP bends
   play too. _Still deferred:_ pitch-bend *slides* (legato vs shift nuance) + CC emission.
+- ⚠️ **`buildSequence` must return the event list TICK-SORTED (stable)** — every consumer assumes it:
+  the web scheduler walks it with a running cursor (`selectWindow`) and seeks with a **binary search**
+  (`indexAtOrAfter`), and `applyEvent` runs in array order. Emission order is per note (`[on, off,
+  bend…]`) and per track, so the raw list is not ascending — a chord alone breaks it. Only the desktop
+  build used to sort (`MainComponent::rebuildSequence`), which is exactly why **bends were audible
+  natively and silent on web** (GMD-43): the scheduler applied a note's note-off — which drops the voice
+  from the instrument's voice map — *before* that note's own bend events, so `pitchBend` had no voice to
+  ramp. Fixed by sorting in `buildSequence` itself; native now `stable_sort`s to preserve equal-tick
+  order (note-on before its bend points; note-off at T before the next note-on at T).
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
   `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
   flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.
