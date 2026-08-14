@@ -957,6 +957,12 @@ function createWebAudioBackend(BackendLib: any): any {
         }))
       .then(kit => {
         drumKit = kit;
+        // Say which kit is actually playing. Without this the only way to tell the real kit from
+        // the sonivox fallback is by ear, which is precisely the thing under dispute.
+        try {
+          console.info('[Gomidas] drum kit: ' + kit.presets[0].name + ' (' + kit.samples.length +
+                       ' samples) — FluidR3 pack');
+        } catch (e) { /* logging must never break playback */ }
         for (let ch = 0; ch < channels.length; ch++) {
           const st = channels[ch];
           if (st && st.instrument && st.percussion && !sfzChannels.has(ch)) {
@@ -966,7 +972,11 @@ function createWebAudioBackend(BackendLib: any): any {
         }
         return kit;
       })
-      .catch(() => { drumKitLoading = null; return null; });   // stay on sonivox
+      .catch((e) => {
+        console.warn('[Gomidas] drum pack unavailable, falling back to the sonivox kit:', e);
+        drumKitLoading = null;
+        return null;
+      });
     return drumKitLoading;
   }
 
