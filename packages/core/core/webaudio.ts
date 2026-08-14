@@ -915,8 +915,11 @@ function createWebAudioBackend(BackendLib: any): any {
   function loadDrumKit(): Promise<any> {
     if (drumKit) return Promise.resolve(drumKit);
     if (drumKitLoading) return drumKitLoading;
-    const c = ctx;
-    if (!c) return Promise.resolve(null);
+    // Decoding does NOT need the live context, and must not wait for one: the kit is preloaded
+    // when a score with drums is set, which is typically long before the user gesture that
+    // creates the AudioContext. Buffers carry their own sample rate, so a buffer decoded here
+    // plays correctly in whatever context ends up using it.
+    const c: any = ctx || new (window as any).OfflineAudioContext(1, 1, 44100);
     drumKitLoading = fetch(DRUMKIT_URL + '.json')
       .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
       .then(head => fetch(DRUMKIT_URL + '.bin')
@@ -1312,6 +1315,10 @@ function createWebAudioBackend(BackendLib: any): any {
 
     setSequence(seq: any) {
       sequence = seq && seq.events ? seq : { lengthTicks: 0, events: [] };
+      // Start fetching the 5.4MB drum pack as soon as a score HAS drums, not when the first
+      // drum note is scheduled: waiting for the note means the whole first playthrough comes
+      // out of the sonivox fallback, so the first thing anyone hears is the bad kit.
+      if (!drumKit && sequence.events.some((e: number[]) => e[1] === 9 || e[6])) loadDrumKit();
       // Re-anchoring mid-playback keeps an edit from desynchronising the transport.
       if (playing) { allNotesOff(); anchorAt(currentTick()); pump(); }
     },

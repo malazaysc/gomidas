@@ -926,9 +926,7 @@
   function previewBeat() {
     const b = beat(), t = track();
     if (!b || !t) return;
-    const pb = t.playbackInfo || {};
-    const channel = (pb.primaryChannel != null) ? (pb.primaryChannel & 0x0f) : 0;
-    const percussion = (channel === 9);
+    const { channel, percussion } = GomidasCore.trackChannelInfo(t);
     let keys;
     if (percussion) {
       const arts = t.percussionArticulations || [];

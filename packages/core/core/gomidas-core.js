@@ -190,6 +190,29 @@
     return f;
   }
 
+  // A track's MIDI channel, and whether it is percussion.
+  //
+  // Percussion is decided by the STAFF, not by the channel. Deriving it from "channel === 9" —
+  // which four separate call sites used to do — breaks any file whose drum track is not on MIDI
+  // channel 10: the notes then take the melodic branch, where a percussion note's key becomes
+  // `note.realValue` (which is NOT its drum key — see CLAUDE.md) played on a melodic program.
+  // The result is a drum track that sounds like something soft and wooden being hit at random
+  // pitches, which is exactly what it is.
+  //
+  // Percussion tracks are then forced onto channel 9, because that is what selects bank 128 in
+  // both engines (TSF's drum flag, the web player's findDrumPreset). Everything else keeps its
+  // own channel.
+  function trackChannelInfo(track) {
+    const pb = (track && track.playbackInfo) || {};
+    const staves = (track && track.staves) || [];
+    const percussion = staves.some((s) => s && s.isPercussion)
+      || (((track && track.percussionArticulations) || []).length > 0)
+      || (pb.primaryChannel != null && (pb.primaryChannel & 0x0f) === 9);
+    const channel = percussion ? 9
+      : (pb.primaryChannel != null ? (pb.primaryChannel & 0x0f) : 0);
+    return { channel, percussion };
+  }
+
   // First MIDI channel not used by any track (and not percussion channel 9), e.g. for the
   // metronome's melodic wood-block. Returns -1 if all 16 are taken.
   function freeMelodicChannel(score) {
@@ -301,8 +324,7 @@
     tracks.forEach((track) => {
       const pb = track.playbackInfo || {};
       const program = pb.program | 0;
-      const channel = (pb.primaryChannel != null) ? (pb.primaryChannel & 0x0f) : 0;
-      const percussion = (channel === 9);
+      const { channel, percussion } = trackChannelInfo(track);
       const isPrimary = (track === primaryTrack);
       const lastOff = {};   // "channel:key" -> note-off event, so ties can extend it
 
@@ -488,7 +510,7 @@
     dynamicsToVelocity, ottavaSemitones, swungTickInBar,
     bendValueToSemitones, semitonesToWheel, emitBendEvents,
     laneBeatK,
-    crescendoFactors, freeMelodicChannel, computePlaybackOrder, shapeNote, buildSequence,
+    crescendoFactors, trackChannelInfo, freeMelodicChannel, computePlaybackOrder, shapeNote, buildSequence,
     anyTrackSoloed, computeChannelMix,
     buildEnvelope, parseEnvelope,
   };
