@@ -93,7 +93,9 @@ packages/core/editor.js               tab editor: cursor/nav/entry, mouse select
 packages/core/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
 packages/core/alphaTab.min.js          alphaTab classic bundle (embedded)
 packages/core/Bravura.woff2/.woff      music notation font (embedded)
-assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth)
+assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth) — fallback bank on web too
+assets/drumkits/gm-standard.{json,bin}  web drum pack, extracted from FluidR3 (GMD-50)
+packages/core/tools/extract-drumkit.mjs the tool that generates it (needs FluidR3 + ffmpeg)
 ```
 
 ## Build
@@ -345,12 +347,47 @@ taken **after** the only early-return so it can't leak.
   would do it natively but Firefox lacks it, and one path keeps the offline bounce deterministic.
   ⚠️ There are **three near-identical instrument factories** (SF2 / SFZ / tone placeholder) — GMD-44
   was closed after fixing only one of them, so the default instrument kept the bug. Change all three.
+
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
   `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
   flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.
 - **Audio path verified (non-GUI):** `tests/sfz_smoketest.cpp` (`-DGOMIDAS_BUILD_TESTS=ON`) loads a bundled
   SFZ, plays a note, asserts non-silent output — guitar+bass PASS (FLAC decode + render confirmed). The
   in-app inspector→engine→speakers routing is still GUI-only; ear-check via inspector Preset → play.
+
+### Web drums — the pack, and the two SF2 curves (GMD-50 / GMD-51, 2026-08-14)
+The browser fetched sonivox while the desktop loaded FluidR3, so web drums were the Android EAS
+bank: **kick = 402 frames @ 20 kHz = 20 ms, one velocity layer**; snare 176 ms @ 16 kHz; nothing
+above ~8 kHz. That — not our envelope code — is "dull". FluidR3's kick is 283 ms @ 44.1 kHz
+stereo and its snare has **seven** velocity layers.
+- **The pack:** `packages/core/tools/extract-drumkit.mjs` extracts FluidR3 bank 128 to
+  `assets/drumkits/gm-standard.{json,bin}` (105 samples, 5.4 MB FLAC), **committed** because
+  FluidR3 is gitignored. Each sample is **its own complete audio file** inside the blob — a single
+  re-encoded sprite smears hits together and lossy priming shifts every later offset. Verified in
+  Chrome: 105/105 decode, frame-exact (12462 declared = 12462 decoded), 213 ms to fetch+decode.
+  Fetched lazily on the first percussion note; **sonivox stays the fallback** (verified by
+  blocking the fetch). FLAC over Opus (1.6 MB) on purpose: no priming eating the transient.
+- ⚠️ **initialAttenuation is NOT literal centibels.** Read as spec (`10^(-cB/200)`), FluidR3 plays
+  its kick 10 dB and its closed hat 21 dB below its snare — a snare with faint company, and the
+  "drums are very low" report. fluidsynth divides by **531.509** ("by the standard this should be
+  -200.0") because the EMU hardware banks were authored against did not follow the spec. Same
+  zones then read kick −3.8 dB, hat −7.9 dB, crash −6.0 dB. Match the player, not the document
+  (`SF2.attenuationGain`). Note TSF uses the literal −200, so **desktop under-plays FluidR3 too**.
+- **Velocity is squared, not linear** (`SF2.velocityGain`): SF2's default velocity→attenuation
+  modulator works out to amp = (vel/127)², to within a rounding error of fluidsynth's table. TSF is
+  linear, so this is a deliberate web/desktop divergence.
+- **Percussion rules:** a non-looping percussion zone is a **one-shot** — note-off must not touch
+  it (a crash written on a 16th is not a 16th long); a **looping** drum zone still honours note-off
+  or it rings forever (sonivox's hats are loopMode 1). **Exclusive class (gen 57) is parsed and
+  enforced** — 42/44/46 share a class in both banks, so before this the closed hat never cut the
+  open one. Measured: open-hat tail RMS 0.01405 → 0.00062 after the choke, untouched before it.
+  `allNotesOff` fades over 80 ms rather than the zone release, or Stop leaves a 9 s crash ringing.
+- **Kit selection:** use `bank.findDrumPreset(program)`, never `findPreset(128, program)` — the
+  latter falls back to "same program in bank 0", so sonivox answers program 16 with **Organ 1**.
+- **How to measure any of this** (the tab is always `document.hidden`, so rAF and the meter are
+  dead): stub `GomidasFiles.saveData` to capture instead of download, call
+  `GomidasAudio.startRecording()` — the offline bounce — and analyse the WAV. Deterministic, and
+  it exercises the real instrument path.
 
 ### Real-time-safety caveats (milestone-1; harden before shipping)
 TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ

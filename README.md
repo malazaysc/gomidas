@@ -63,6 +63,26 @@ curl -L -o assets/soundfont/FluidR3_GM.sf2 <url-to-FluidR3_GM.sf2>
 CMake auto-detects it: `assets/soundfont/FluidR3_GM.sf2` present → bundles FluidR3; absent →
 falls back to the embedded sonivox bank (see `CMakeLists.txt`). Reconfigure after adding it.
 
+#### Drums on the web build
+
+144 MB cannot go over the wire, and sonivox's kit is a 20 ms kick sampled at 20 kHz — which is
+exactly what "the drums sound like cardboard" is. So the browser build loads a **drum-only pack**
+extracted from FluidR3 once and committed:
+
+| File | Size | Tracked in git? |
+|------|------|-----------------|
+| `assets/drumkits/gm-standard.json` | ~75 KB | ✅ yes |
+| `assets/drumkits/gm-standard.bin` | ~5.4 MB (FLAC) | ✅ yes |
+
+It is fetched lazily on the first percussion note, so a guitar tab never pays for it, and it falls
+back to sonivox if it is missing. Regenerate it only if the kit selection changes — you need
+FluidR3 in place plus `ffmpeg`:
+
+```bash
+npm --prefix packages/core run build          # the tool reads dist/core/sf2.js
+node packages/core/tools/extract-drumkit.mjs  # --programs 0,8,16  --codec flac|opus|aac
+```
+
 ---
 
 ## Architecture

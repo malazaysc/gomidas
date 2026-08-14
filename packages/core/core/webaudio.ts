@@ -579,13 +579,24 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
                              bufferCache: Map<number, AudioBuffer>): Instrument {
   const SF2 = (window as any).GomidasSf2;
   const output = ctx.createGain();
+  // Drums: the GM program selects the KIT, so resolve it inside bank 128 (see findDrumPreset).
+  // This used to take the first bank-128 preset in file order, which ignored the kit picker
+  // outright — invisible on sonivox, where Standard happens to come first.
   const preset = percussion
-    ? (bank.presets.find((p: any) => p.bank === 128) || bank.findPreset(128, program) || bank.findPreset(0, program))
+    ? (bank.findDrumPreset ? bank.findDrumPreset(program) : bank.presets.find((p: any) => p.bank === 128))
     : bank.findPreset(0, program);
   const voices = new Map<number, any[]>();
   const bend = createBendTimeline();
+  // Every sounding voice, flat, for exclusive-class choking (SF2 gen 57). Kept alongside the
+  // per-key map rather than derived from it: a choke searches by class, not by key.
+  const sounding = new Set<any>();
 
   function bufferFor(index: number): AudioBuffer | null {
+    // A pack (the FluidR3 drum kit, GMD-50) ships already-decoded buffers instead of a raw PCM
+    // block, and holds them itself — so it bypasses this instrument's cache entirely, and its
+    // sample indices can never collide with the GM bank's. Everything downstream — zone
+    // selection, rates, envelopes — is identical.
+    if (bank.makeBuffer) return bank.makeBuffer(index);
     let buf = bufferCache.get(index);
     if (buf) return buf;
     const s = bank.samples[index];
@@ -599,11 +610,44 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
     return buf;
   }
 
+  /** Drop a voice from the bookkeeping. Idempotent — stop() and a natural end both land here. */
+  function forget(v: any): void {
+    sounding.delete(v);
+    const list = voices.get(v.key);
+    if (!list) return;
+    const i = list.indexOf(v);
+    if (i >= 0) list.splice(i, 1);
+    if (!list.length) voices.delete(v.key);
+  }
+
+  /**
+   * SF2 exclusive class (gen 57): starting a voice of class N silences every other sounding voice
+   * of class N — this is what makes a closed hi-hat cut the open one, and a mute triangle cut the
+   * open triangle. Without it the two ring together and a hat pattern turns to mush.
+   *
+   * The cut is a short fade, not an instant stop: killing a sample mid-cycle clicks.
+   */
+  const CHOKE_S = 0.012;
+  function chokeClass(cls: number, at: number): void {
+    for (const v of Array.from(sounding)) {
+      if (v.exclusiveClass !== cls) continue;
+      try {
+        v.gain.gain.cancelScheduledValues(at);
+        v.gain.gain.setValueAtTime(envelopeLevelAt(v.env || [], at), at);
+        v.gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + CHOKE_S);
+        v.src.stop(at + CHOKE_S + 0.005);
+      } catch (e) { /* already stopped */ }
+      forget(v);
+    }
+  }
+
   function noteOn(key: number, velocity: number, when: number): void {
     if (!preset) return;
     const vel = Math.max(1, Math.min(127, Math.round(velocity * 127)));
     const zones = SF2.zonesFor(preset, key, vel);
     if (!zones.length) return;
+    // Choke BEFORE registering this note's own voices, so a hat never chokes itself.
+    for (const z of zones) if (z.exclusiveClass) chokeClass(z.exclusiveClass, when);
     // Layered presets legitimately stack zones (piano + string pad). Cap it: a pathological
     // bank could otherwise spawn dozens of voices per note.
     for (const z of zones.slice(0, 4)) {
@@ -623,8 +667,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
         }
       }
       const gain = ctx.createGain();
-      const atten = Math.pow(10, -(z.attenuationDb || 0) / 20);
-      const peak = Math.max(0.0001, Math.min(1, velocity) * atten);
+      // Both curves are the bank's, not ours: the EMU attenuation factor every SF2 was authored
+      // against, and SF2's default velocity->attenuation modulator. See core/sf2.ts.
+      const peak = Math.max(0.0001, SF2.velocityGain(velocity) * SF2.attenuationGain(z.attenuationDb || 0));
       const sustainAt = Math.max(0.0001, peak * (z.sustain != null ? z.sustain : 1));
       // Approximate the SF2 volume envelope: attack -> hold -> decay to sustain.
       const a = Math.max(0.001, z.attack || 0.001);
@@ -647,22 +692,34 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       }
       src.connect(gain); node.connect(output);
       src.start(when);
+      // A percussion sample that does not loop is a ONE-SHOT: it has no sustain to hold, so a
+      // note-off must not touch it. Gating a crash with the 16th note it was written on is what
+      // makes a kit sound like cardboard. A LOOPED drum zone (sonivox hats are loopMode 1) is the
+      // opposite case — it rings forever unless released, so those still honour note-off.
+      const looping = z.loopMode === 1 || z.loopMode === 3;
+      const v = { key, src, gain, release: Math.max(0.05, z.release || 0.3), env, baseRate,
+                  lastRate: baseRate * Math.pow(2, bend.at(when) / 12),
+                  exclusiveClass: z.exclusiveClass || 0,
+                  oneShot: percussion && !looping };
       const list = voices.get(key) || [];
-      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3), env, baseRate,
-                  lastRate: baseRate * Math.pow(2, bend.at(when) / 12) });
+      list.push(v);
       voices.set(key, list);
+      sounding.add(v);
+      // One-shots are never released, so nothing else would ever drop them from the bookkeeping.
+      src.onended = () => forget(v);
     }
   }
 
   function releaseVoice(v: { src: AudioBufferSourceNode; gain: GainNode; release: number; env?: EnvPoint[] },
-                        at: number): void {
+                        at: number, maxRelease?: number): void {
     try {
+      const rel = maxRelease != null ? Math.min(v.release, maxRelease) : v.release;
       // The level the envelope HAS at `at` — never gain.value, which is 1.0 for a note whose
       // automation has not run yet. See envelopeLevelAt.
       v.gain.gain.cancelScheduledValues(at);
       v.gain.gain.setValueAtTime(envelopeLevelAt(v.env || [], at), at);
-      v.gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + v.release);
-      v.src.stop(at + v.release + 0.02);
+      v.gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + rel);
+      v.src.stop(at + rel + 0.02);
     } catch (e) { /* already stopped */ }
   }
 
@@ -672,9 +729,13 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const list = voices.get(key);
       if (!list || !list.length) return;
       const at = Math.max(when, ctx.currentTime);
-      // A layered note put several voices under one key; release them together.
-      for (const v of list) releaseVoice(v, at);
-      voices.delete(key);
+      // A layered note put several voices under one key; release them together. One-shot drum
+      // voices are skipped — they ring out on their own and are only ever cut by a choke.
+      for (const v of Array.from(list)) {
+        if (v.oneShot) continue;
+        releaseVoice(v, at);
+        forget(v);
+      }
     },
     pitchBend(value: number, when: number) {
       const semis = bend.add(value, when, 12);   // +/-12, matching the native engine
@@ -698,8 +759,11 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
     cc() { /* modulators are deliberately not implemented — see core/sf2.ts */ },
     allNotesOff() {
       const now = ctx.currentTime;
-      for (const list of voices.values()) for (const v of list) releaseVoice(v, now);
+      // Panic / stop / seek / instrument swap: a short fade, NOT the zone's own release. Drum
+      // one-shots have releases up to 9s in FluidR3, and Stop must stop.
+      for (const v of Array.from(sounding)) releaseVoice(v, now, 0.08);
       voices.clear();
+      sounding.clear();
     },
     output
   };
@@ -834,19 +898,91 @@ function createWebAudioBackend(BackendLib: any): any {
     return gmLoading;
   }
 
+  /**
+   * The real drum kit (GMD-50): FluidR3's bank 128, extracted to assets/drumkits/ by
+   * tools/extract-drumkit.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
+   * it is the fallback, not the plan.
+   *
+   * Fetched lazily on the first percussion note — 5.4MB must not land on someone who opened a
+   * guitar tab — and, like the GM bank, it swaps itself in by dropping the instruments built
+   * before it arrived. Until then drums play from sonivox rather than silence.
+   */
+  const DRUMKIT_URL = 'drumkits/gm-standard';
+  let drumKit: any = null;
+  let drumKitLoading: Promise<any> | null = null;
+  const drumKitBuffers = new Map<number, AudioBuffer>();
+
+  function loadDrumKit(): Promise<any> {
+    if (drumKit) return Promise.resolve(drumKit);
+    if (drumKitLoading) return drumKitLoading;
+    const c = ctx;
+    if (!c) return Promise.resolve(null);
+    drumKitLoading = fetch(DRUMKIT_URL + '.json')
+      .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
+      .then(head => fetch(DRUMKIT_URL + '.bin')
+        .then(r => { if (!r.ok) throw new Error('kit bin ' + r.status); return r.arrayBuffer(); })
+        .then(blob => {
+          // A JSON read against a stale blob would decode garbage; refuse instead.
+          if (head.blobBytes != null && blob.byteLength !== head.blobBytes)
+            throw new Error('kit blob is ' + blob.byteLength + ' bytes, header says ' + head.blobBytes);
+          // Each sample is its own complete audio file inside the blob, so each slice decodes
+          // independently — no sprite offsets to drift.
+          return Promise.all(head.samples.map((s: any, i: number) =>
+            c.decodeAudioData(blob.slice(s.offset, s.offset + s.length))
+              .then((buf: AudioBuffer) => { drumKitBuffers.set(i, buf); return buf; })));
+        })
+        .then((buffers: AudioBuffer[]) => {
+          // decodeAudioData resamples to the context rate. Report that rate as the sample's own
+          // so rateFor's sampleRate/outputRate term stays 1 and only the pitch factor remains;
+          // loop points move with it.
+          const samples = head.samples.map((s: any, i: number) => {
+            const buf = buffers[i];
+            const ratio = s.sampleRate > 0 ? buf.sampleRate / s.sampleRate : 1;
+            return { ...s, sampleRate: buf.sampleRate,
+                     start: 0, end: buf.length,
+                     startLoop: Math.round(s.startLoop * ratio), endLoop: Math.round(s.endLoop * ratio) };
+          });
+          const presets = head.kits.map((k: any) => ({ bank: 128, program: k.program, name: k.name, zones: k.zones }));
+          return {
+            presets, samples, pcm: new Int16Array(0),
+            makeBuffer: (i: number) => drumKitBuffers.get(i) || null,
+            findPreset: (_bank: number, program: number) =>
+              presets.find((p: any) => p.program === program) || presets[0] || null,
+            findDrumPreset: (program: number) =>
+              presets.find((p: any) => p.program === program) || presets[0] || null
+          };
+        }))
+      .then(kit => {
+        drumKit = kit;
+        for (let ch = 0; ch < channels.length; ch++) {
+          const st = channels[ch];
+          if (st && st.instrument && st.percussion && !sfzChannels.has(ch)) {
+            st.instrument.allNotesOff();
+            st.instrument = null;
+          }
+        }
+        return kit;
+      })
+      .catch(() => { drumKitLoading = null; return null; });   // stay on sonivox
+    return drumKitLoading;
+  }
+
   function instrumentFor(ch: number, program: number, percussion: boolean): Instrument {
     const s = strip(ch);
     if (sfzChannels.has(ch) && s.instrument) return s.instrument;
-    if (!s.instrument || s.program !== program || s.percussion !== percussion) {
+    const perc = percussion || ch === 9;
+    if (perc && !drumKit) loadDrumKit();
+    if (!s.instrument || s.program !== program || s.percussion !== perc) {
       if (s.instrument) s.instrument.allNotesOff();
-      // Prefer the real GM bank; fall back to the placeholder tone only while it is still
-      // loading or if it failed to load at all.
-      s.instrument = gmBank
-        ? createSf2Instrument(ctx!, gmBank, program | 0, percussion || ch === 9, gmBuffers)
-        : createToneInstrument(ctx!, percussion || ch === 9);
+      // Prefer the drum pack for percussion and the real GM bank for everything else; fall back
+      // to the placeholder tone only while the bank is still loading or if it failed to load.
+      const bank = perc ? (drumKit || gmBank) : gmBank;
+      s.instrument = bank
+        ? createSf2Instrument(ctx!, bank, program | 0, perc, gmBuffers)
+        : createToneInstrument(ctx!, perc);
       s.instrument.output.connect(s.input);
       s.program = program;
-      s.percussion = percussion || ch === 9;
+      s.percussion = perc;
     }
     return s.instrument;
   }
@@ -1136,9 +1272,13 @@ function createWebAudioBackend(BackendLib: any): any {
                                   live ? live.eq[2].gain.value : 0);
       input.connect(pan); pan.connect(eq[0]);
       eq[2].connect(master.eq[0]);
-      const inst = gmBank
-        ? createSf2Instrument(off as any, gmBank, program | 0, percussion || ch === 9, offBuffers)
-        : createToneInstrument(off as any, percussion || ch === 9);
+      const perc = percussion || ch === 9;
+      // Same bank choice as live playback, so the bounce is what you heard. The kit's decoded
+      // AudioBuffers carry their own sample rate, so they play correctly in this context too.
+      const bank = perc ? (drumKit || gmBank) : gmBank;
+      const inst = bank
+        ? createSf2Instrument(off as any, bank, program | 0, perc, offBuffers)
+        : createToneInstrument(off as any, perc);
       inst.output.connect(input);
       st = { input, inst };
       strips.set(ch, st);
