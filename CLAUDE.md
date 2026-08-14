@@ -335,6 +335,16 @@ taken **after** the only early-return so it can't leak.
   from the instrument's voice map — *before* that note's own bend events, so `pitchBend` had no voice to
   ramp. Fixed by sorting in `buildSequence` itself; native now `stable_sort`s to preserve equal-tick
   order (note-on before its bend points; note-off at T before the next note-on at T).
+- ⚠️ **On web, never read `AudioParam.value` for a scheduled note** — the lookahead scheduler runs
+  100ms–2s ahead, so the automation usually has not run and `.value` returns the node default (1.0
+  for a GainNode), not the note's level. This has now caused two shipped bugs: bends (GMD-43) and
+  **palm mutes releasing from FULL GAIN** (GMD-44/GMD-48 — every note ended with a re-attack louder
+  than its own peak; measured 16 amplitude attacks for an 8-note palm-muted riff). The rule: a voice
+  **records the envelope it scheduled** and asks `envelopeLevelAt(points, t)` for the level at the
+  release time (`webaudio.ts`; unit-tested in `tests/envelope-level.test.js`). `cancelAndHoldAtTime`
+  would do it natively but Firefox lacks it, and one path keeps the offline bounce deterministic.
+  ⚠️ There are **three near-identical instrument factories** (SF2 / SFZ / tone placeholder) — GMD-44
+  was closed after fixing only one of them, so the default instrument kept the bug. Change all three.
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
   `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
   flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.

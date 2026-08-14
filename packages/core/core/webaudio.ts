@@ -71,6 +71,71 @@ function createBendTimeline() {
   };
 }
 
+/**
+ * A scheduled gain envelope, and its level at an arbitrary time.
+ *
+ * THE BUG THIS FIXES (GMD-48): releasing a voice must not read `gain.value`. Notes are scheduled
+ * AHEAD, so for most of them the envelope automation has not run when the note-off is scheduled,
+ * and `.value` returns the GainNode default of 1.0 — above the note's own peak. Releasing from
+ * there jumps the voice to FULL GAIN at the instant it should be ending. Measured on a
+ * palm-muted 16th: peak 0.6061, released from 1.0, so the loudest part of the note was its
+ * release — which is what "palm mutes sound weird and cut off" is.
+ *
+ * It bites whenever the note-off is scheduled before the envelope has run: ALWAYS in the offline
+ * bounce (everything is scheduled up front — this is also why the mix hits full scale, GMD-42),
+ * ALWAYS in a hidden tab's 2s window, and in normal playback for any note short enough that its
+ * note-off lands in the same ~100ms scheduling window as its note-on. A palm mute is 45% of an
+ * already short note, so palm mutes are the first thing to break.
+ *
+ * So a voice records the envelope it scheduled and releases from the level that envelope has at
+ * the release time. (`cancelAndHoldAtTime` would do this natively, but Firefox does not implement
+ * it, and one deterministic path keeps the offline bounce identical across browsers.)
+ *
+ * `kind` describes how the value gets FROM the previous point TO this one:
+ *   'set'    — holds the previous value, then jumps to v at t (setValueAtTime)
+ *   'lin'    — linear ramp (linearRampToValueAtTime)
+ *   'exp'    — exponential ramp (exponentialRampToValueAtTime)
+ *   'target' — exponential approach to v with time constant tau, starting at t (setTargetAtTime)
+ */
+interface EnvPoint { t: number; v: number; kind: 'set' | 'lin' | 'exp' | 'target'; tau?: number }
+
+const MIN_GAIN = 0.0001;
+
+function envelopeLevelAt(points: EnvPoint[], t: number): number {
+  if (!points || !points.length) return MIN_GAIN;
+  let prevT = points[0].t;
+  let prevV = points[0].v;
+  if (t <= prevT) return Math.max(MIN_GAIN, prevV);
+
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i];
+    if (p.kind === 'target') {
+      // In force from p.t until the next point (or forever). Before p.t the value simply holds.
+      if (t < p.t) return Math.max(MIN_GAIN, prevV);
+      const tau = Math.max(1e-6, p.tau || 0.01);
+      const next = points[i + 1];
+      const until = next ? next.t : Infinity;
+      const decayed = (u: number) => p.v + (prevV - p.v) * Math.exp(-(u - p.t) / tau);
+      if (t <= until) return Math.max(MIN_GAIN, decayed(t));
+      prevV = decayed(until);
+      prevT = until;
+      continue;
+    }
+    if (t <= p.t) {
+      if (p.kind === 'set') return Math.max(MIN_GAIN, prevV);   // holds until the jump AT p.t
+      const span = p.t - prevT;
+      const f = span > 0 ? (t - prevT) / span : 1;
+      const v = p.kind === 'lin'
+        ? prevV + (p.v - prevV) * f
+        : Math.max(MIN_GAIN, prevV) * Math.pow(Math.max(MIN_GAIN, p.v) / Math.max(MIN_GAIN, prevV), f);
+      return Math.max(MIN_GAIN, v);
+    }
+    prevT = p.t;
+    prevV = p.v;
+  }
+  return Math.max(MIN_GAIN, prevV);
+}
+
 /** §6.1 — the seam SFZ (GMD-34) and TSF-WASM (GMD-36) plug into. */
 interface Instrument {
   noteOn(key: number, velocity: number, when: number): void;
@@ -152,16 +217,21 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
       osc2.frequency.setValueAtTime(freq * ratio, when);
       osc.connect(tone); osc2.connect(tone); tone.connect(gain);
       nodes.push(osc, osc2, tone);
+      const attackTo = Math.max(0.001, vel * 0.35);
+      const decayTo = Math.max(0.0005, vel * 0.22);
       gain.gain.setValueAtTime(0.0001, when);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.001, vel * 0.35), when + 0.008);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0005, vel * 0.22), when + 0.25);
+      gain.gain.exponentialRampToValueAtTime(attackTo, when + 0.008);
+      gain.gain.exponentialRampToValueAtTime(decayTo, when + 0.25);
+      const env: EnvPoint[] = [{ t: when, v: MIN_GAIN, kind: 'set' },
+                               { t: when + 0.008, v: attackTo, kind: 'exp' },
+                               { t: when + 0.25, v: decayTo, kind: 'exp' }];
       osc.start(when); osc2.start(when);
       stopFn = (t: number) => {
         const at = Math.max(t, ctx.currentTime);
         try {
           gain.gain.cancelScheduledValues(at);
-          gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), at);
-          gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+          gain.gain.setValueAtTime(envelopeLevelAt(env, at), at);
+          gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + 0.06);
           osc.stop(at + 0.08); osc2.stop(at + 0.08);
         } catch (e) { /* already stopped */ }
       };
@@ -238,15 +308,18 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
     const gain = ctx.createGain();
     const peak = Math.max(0.0001, Math.min(1, velocity) * Math.pow(10, (region.volume || 0) / 20));
     gain.gain.setValueAtTime(peak, when);
+    const env: EnvPoint[] = [{ t: when, v: peak, kind: 'set' }];
     // ampeg_decay here is the SFZ decay-to-sustain; the bundled sets use it as a gentle fade.
     if (region.ampegDecay > 0) {
-      gain.gain.setTargetAtTime(peak * 0.7, when, Math.max(0.01, region.ampegDecay));
+      const tau = Math.max(0.01, region.ampegDecay);
+      gain.gain.setTargetAtTime(peak * 0.7, when, tau);
+      env.push({ t: when, v: peak * 0.7, kind: 'target', tau });
     }
     src.connect(gain); gain.connect(output);
     src.start(when);
 
     const list = voices.get(key) || [];
-    list.push({ src, gain, release: region.ampegRelease, level: peak, baseRate,
+    list.push({ src, gain, release: region.ampegRelease, env, baseRate,
                 lastRate: baseRate * Math.pow(2, bend.at(when) / 12) });
     voices.set(key, list);
   }
@@ -259,10 +332,10 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
     const at = Math.max(when, ctx.currentTime);
     const rel = Math.max(0.02, v.release || 0.3);
     try {
-      // Expected level, not gain.value — see the SF2 releaseVoice comment.
+      // The level the envelope HAS at `at`, never gain.value — see envelopeLevelAt.
       v.gain.gain.cancelScheduledValues(at);
-      v.gain.gain.setValueAtTime(Math.max(0.0001, v.level != null ? v.level : 0.0001), at);
-      v.gain.gain.exponentialRampToValueAtTime(0.0001, at + rel);
+      v.gain.gain.setValueAtTime(envelopeLevelAt(v.env || [], at), at);
+      v.gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + rel);
       v.src.stop(at + rel + 0.02);
     } catch (e) { /* already stopped */ }
   }
@@ -557,8 +630,14 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const a = Math.max(0.001, z.attack || 0.001);
       gain.gain.setValueAtTime(0.0001, when);
       gain.gain.linearRampToValueAtTime(peak, when + a);
+      // Record what was scheduled so the release can start from the level the note actually has.
+      const env: EnvPoint[] = [{ t: when, v: MIN_GAIN, kind: 'set' },
+                               { t: when + a, v: peak, kind: 'lin' }];
       if (z.decay > 0.001) {
-        gain.gain.setTargetAtTime(sustainAt, when + a + (z.hold || 0), Math.max(0.01, z.decay / 3));
+        const tau = Math.max(0.01, z.decay / 3);
+        const decayAt = when + a + (z.hold || 0);
+        gain.gain.setTargetAtTime(sustainAt, decayAt, tau);
+        env.push({ t: decayAt, v: sustainAt, kind: 'target', tau });
       }
       let node: AudioNode = gain;
       if (z.pan) {
@@ -569,17 +648,20 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       src.connect(gain); node.connect(output);
       src.start(when);
       const list = voices.get(key) || [];
-      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3), level: sustainAt, baseRate,
+      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3), env, baseRate,
                   lastRate: baseRate * Math.pow(2, bend.at(when) / 12) });
       voices.set(key, list);
     }
   }
 
-  function releaseVoice(v: { src: AudioBufferSourceNode; gain: GainNode; release: number }, at: number): void {
+  function releaseVoice(v: { src: AudioBufferSourceNode; gain: GainNode; release: number; env?: EnvPoint[] },
+                        at: number): void {
     try {
+      // The level the envelope HAS at `at` — never gain.value, which is 1.0 for a note whose
+      // automation has not run yet. See envelopeLevelAt.
       v.gain.gain.cancelScheduledValues(at);
-      v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), at);
-      v.gain.gain.exponentialRampToValueAtTime(0.0001, at + v.release);
+      v.gain.gain.setValueAtTime(envelopeLevelAt(v.env || [], at), at);
+      v.gain.gain.exponentialRampToValueAtTime(MIN_GAIN, at + v.release);
       v.src.stop(at + v.release + 0.02);
     } catch (e) { /* already stopped */ }
   }
@@ -1201,7 +1283,8 @@ function createWebAudioBackend(BackendLib: any): any {
   return backend;
 }
 
-  const api = { createWebAudioBackend, createToneInstrument, LOOKAHEAD_S, TICK_INTERVAL_MS };
+  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt,
+                LOOKAHEAD_S, TICK_INTERVAL_MS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasWebAudio = api;
 }());
