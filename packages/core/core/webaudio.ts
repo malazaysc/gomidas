@@ -38,6 +38,39 @@ const SCHEDULE_LEAD_S = 0.05; // small offset so the first note is not already l
  */
 const LOOKAHEAD_HIDDEN_S = 2.0;
 
+/**
+ * Pitch-bend timeline.
+ *
+ * THE BUG THIS FIXES: every instrument used to ignore the `when` argument and apply a bend at
+ * ctx.currentTime. Events are scheduled up to 2s AHEAD, so the entire traced bend curve — every
+ * point plus the reset-to-centre that follows it — was applied instantly at SCHEDULE time and
+ * had all cancelled out before the note was even heard. Net effect: bends sounded like no bend
+ * at all, which is exactly what a bend that is applied and undone before it sounds does.
+ *
+ * A bend is per-CHANNEL, so it must also apply to voices that do not exist yet at schedule time:
+ * bendAt(when) gives the value in force at a note's start.
+ */
+function createBendTimeline() {
+  const points: Array<{ t: number; semis: number }> = [{ t: 0, semis: 0 }];
+  return {
+    /** Record a bend and return the semitone offset it selects. */
+    add(value: number, when: number, rangeSemis: number): number {
+      const semis = ((value - 8192) / 8192) * rangeSemis;
+      points.push({ t: when, semis });
+      // Keep it bounded: anything older than a few seconds can no longer affect a new voice.
+      if (points.length > 512) points.splice(0, points.length - 256);
+      return semis;
+    },
+    /** The bend in force at a given context time. */
+    at(when: number): number {
+      let semis = 0;
+      for (const p of points) { if (p.t <= when + 1e-6) semis = p.semis; else break; }
+      return semis;
+    },
+    reset() { points.length = 0; points.push({ t: 0, semis: 0 }); }
+  };
+}
+
 /** §6.1 — the seam SFZ (GMD-34) and TSF-WASM (GMD-36) plug into. */
 interface Instrument {
   noteOn(key: number, velocity: number, when: number): void;
@@ -77,7 +110,7 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
   // Voices are keyed by MIDI key; a key can legitimately retrigger before its own note-off
   // (repeated notes, overlapping voices), so each key holds a stack.
   const voices = new Map<number, Array<{ stop: (t: number) => void; nodes: AudioNode[] }>>();
-  let bendRatio = 1;
+  const bend = createBendTimeline();
 
   function noteOn(key: number, velocity: number, when: number): void {
     const vel = Math.max(0, Math.min(1, velocity));
@@ -114,8 +147,9 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
       const tone = ctx.createBiquadFilter();
       tone.type = 'lowpass';
       tone.frequency.value = Math.min(ctx.sampleRate / 2 - 1000, freq * 8);
-      osc.frequency.setValueAtTime(freq * bendRatio, when);
-      osc2.frequency.setValueAtTime(freq * bendRatio, when);
+      const ratio = Math.pow(2, bend.at(when) / 12);   // bend in force at THIS note's start
+      osc.frequency.setValueAtTime(freq * ratio, when);
+      osc2.frequency.setValueAtTime(freq * ratio, when);
       osc.connect(tone); osc2.connect(tone); tone.connect(gain);
       nodes.push(osc, osc2, tone);
       gain.gain.setValueAtTime(0.0001, when);
@@ -156,9 +190,11 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
   return {
     noteOn,
     noteOff,
-    pitchBend(value: number) {
-      // ±12 semitones, matching the native bend range (AudioEngine).
-      bendRatio = Math.pow(2, ((value - 8192) / 8192 * 12) / 12);
+    pitchBend(value: number, when: number) {
+      // +/-12 semitones, matching the native bend range (AudioEngine). Recorded on the timeline
+      // so notes scheduled later start at the right pitch; this placeholder does not retune
+      // already-sounding voices (GMD-34 replaced it for anything that matters).
+      bend.add(value, when, 12);
     },
     cc() { /* GMD-35 */ },
     allNotesOff() {
@@ -181,8 +217,8 @@ function createToneInstrument(ctx: AudioContext, percussion: boolean): Instrumen
 function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<string, AudioBuffer>): Instrument {
   const SFZ = (window as any).GomidasSfz;
   const output = ctx.createGain();
-  const voices = new Map<number, Array<{ src: AudioBufferSourceNode; gain: GainNode; release: number }>>();
-  let bendSemis = 0;
+  const voices = new Map<number, any[]>();
+  const bend = createBendTimeline();
 
   function noteOn(key: number, velocity: number, when: number): void {
     const region = SFZ.findRegion(regions, key, Math.round(Math.max(0, Math.min(1, velocity)) * 127));
@@ -194,8 +230,9 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    const rate = SFZ.playbackRateFor(region, key) * Math.pow(2, bendSemis / 12);
-    src.playbackRate.setValueAtTime(rate, when);
+    // Bend in force AT THIS NOTE'S START (see createBendTimeline).
+    const baseRate = SFZ.playbackRateFor(region, key);
+    src.playbackRate.setValueAtTime(baseRate * Math.pow(2, bend.at(when) / 12), when);
     if (region.loopMode && /loop_continuous|loop_sustain/.test(region.loopMode)) src.loop = true;
 
     const gain = ctx.createGain();
@@ -209,7 +246,8 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
     src.start(when);
 
     const list = voices.get(key) || [];
-    list.push({ src, gain, release: region.ampegRelease });
+    list.push({ src, gain, release: region.ampegRelease, level: peak, baseRate,
+                lastRate: baseRate * Math.pow(2, bend.at(when) / 12) });
     voices.set(key, list);
   }
 
@@ -221,8 +259,9 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
     const at = Math.max(when, ctx.currentTime);
     const rel = Math.max(0.02, v.release || 0.3);
     try {
+      // Expected level, not gain.value — see the SF2 releaseVoice comment.
       v.gain.gain.cancelScheduledValues(at);
-      v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), at);
+      v.gain.gain.setValueAtTime(Math.max(0.0001, v.level != null ? v.level : 0.0001), at);
       v.gain.gain.exponentialRampToValueAtTime(0.0001, at + rel);
       v.src.stop(at + rel + 0.02);
     } catch (e) { /* already stopped */ }
@@ -231,19 +270,24 @@ function createSfzInstrument(ctx: AudioContext, regions: any[], buffers: Map<str
   return {
     noteOn,
     noteOff,
-    pitchBend(value: number) {
+    pitchBend(value: number, when: number) {
       // Region bend range in cents (the bundled sets carry +/-1200 = an octave).
       const r = regions[0];
       const span = value >= 8192 ? (r && r.bendUp ? r.bendUp : 200) : Math.abs(r && r.bendDown ? r.bendDown : 200);
-      bendSemis = ((value - 8192) / 8192) * (span / 100);
-      const now = ctx.currentTime;
-      for (const [key, list] of voices) {
-        for (const v of list) {
-          const region = SFZ.findRegion(regions, key, 100);
-          if (!region) continue;
+      const semis = bend.add(value, when, span / 100);
+      const at = Math.max(when, ctx.currentTime);
+      for (const list of voices.values()) {
+        for (const v of list as any[]) {
+          if (!v.baseRate) continue;
           try {
-            v.src.playbackRate.setTargetAtTime(
-              SFZ.playbackRateFor(region, key) * Math.pow(2, bendSemis / 12), now, 0.01);
+            // Anchor from the rate the LAST bend point scheduled, not playbackRate.value:
+            // .value is read now, before any of these ramps have run, so every step would
+            // restart from the base rate and the curve would come out as a sawtooth rather
+            // than a rise. Track it per voice instead.
+            const target = v.baseRate * Math.pow(2, semis / 12);
+            v.src.playbackRate.setValueAtTime(v.lastRate != null ? v.lastRate : v.baseRate, at);
+            v.src.playbackRate.linearRampToValueAtTime(target, at + 0.012);
+            v.lastRate = target;
           } catch (e) { /* voice ended */ }
         }
       }
@@ -465,8 +509,8 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
   const preset = percussion
     ? (bank.presets.find((p: any) => p.bank === 128) || bank.findPreset(128, program) || bank.findPreset(0, program))
     : bank.findPreset(0, program);
-  const voices = new Map<number, Array<{ src: AudioBufferSourceNode; gain: GainNode; release: number }>>();
-  let bendSemis = 0;
+  const voices = new Map<number, any[]>();
+  const bend = createBendTimeline();
 
   function bufferFor(index: number): AudioBuffer | null {
     let buf = bufferCache.get(index);
@@ -495,8 +539,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const s = bank.samples[z.sampleIndex];
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.playbackRate.setValueAtTime(
-        SF2.rateFor(z, s, key, buf.sampleRate) * Math.pow(2, bendSemis / 12), when);
+      // Bend in force AT THIS NOTE'S START, not whatever it happens to be right now.
+      const baseRate = SF2.rateFor(z, s, key, buf.sampleRate);
+      src.playbackRate.setValueAtTime(baseRate * Math.pow(2, bend.at(when) / 12), when);
       if (z.loopMode === 1 || z.loopMode === 3) {
         const loopStart = (s.startLoop - s.start) / buf.sampleRate;
         const loopEnd = (s.endLoop - s.start) / buf.sampleRate;
@@ -507,13 +552,13 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const gain = ctx.createGain();
       const atten = Math.pow(10, -(z.attenuationDb || 0) / 20);
       const peak = Math.max(0.0001, Math.min(1, velocity) * atten);
+      const sustainAt = Math.max(0.0001, peak * (z.sustain != null ? z.sustain : 1));
       // Approximate the SF2 volume envelope: attack -> hold -> decay to sustain.
       const a = Math.max(0.001, z.attack || 0.001);
       gain.gain.setValueAtTime(0.0001, when);
       gain.gain.linearRampToValueAtTime(peak, when + a);
-      const sustainLevel = Math.max(0.0001, peak * (z.sustain != null ? z.sustain : 1));
       if (z.decay > 0.001) {
-        gain.gain.setTargetAtTime(sustainLevel, when + a + (z.hold || 0), Math.max(0.01, z.decay / 3));
+        gain.gain.setTargetAtTime(sustainAt, when + a + (z.hold || 0), Math.max(0.01, z.decay / 3));
       }
       let node: AudioNode = gain;
       if (z.pan) {
@@ -524,7 +569,8 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       src.connect(gain); node.connect(output);
       src.start(when);
       const list = voices.get(key) || [];
-      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3) });
+      list.push({ src, gain, release: Math.max(0.05, z.release || 0.3), level: sustainAt, baseRate,
+                  lastRate: baseRate * Math.pow(2, bend.at(when) / 12) });
       voices.set(key, list);
     }
   }
@@ -548,20 +594,21 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       for (const v of list) releaseVoice(v, at);
       voices.delete(key);
     },
-    pitchBend(value: number) {
-      bendSemis = ((value - 8192) / 8192) * 12;   // +/-12, matching the native engine
-      const now = ctx.currentTime;
-      for (const [key, list] of voices) {
-        const zones = SF2.zonesFor(preset, key, 100);
-        if (!zones.length) continue;
-        for (let i = 0; i < list.length; i++) {
-          const z = zones[Math.min(i, zones.length - 1)];
-          const s = bank.samples[z.sampleIndex];
-          const buf = bufferCache.get(z.sampleIndex);
-          if (!buf) continue;
+    pitchBend(value: number, when: number) {
+      const semis = bend.add(value, when, 12);   // +/-12, matching the native engine
+      const at = Math.max(when, ctx.currentTime);
+      for (const list of voices.values()) {
+        for (const v of list as any[]) {
+          if (!v.baseRate) continue;
           try {
-            list[i].src.playbackRate.setTargetAtTime(
-              SF2.rateFor(z, s, key, buf.sampleRate) * Math.pow(2, bendSemis / 12), now, 0.01);
+            // Anchor from the rate the LAST bend point scheduled, not playbackRate.value:
+            // .value is read now, before any of these ramps have run, so every step would
+            // restart from the base rate and the curve would come out as a sawtooth rather
+            // than a rise. Track it per voice instead.
+            const target = v.baseRate * Math.pow(2, semis / 12);
+            v.src.playbackRate.setValueAtTime(v.lastRate != null ? v.lastRate : v.baseRate, at);
+            v.src.playbackRate.linearRampToValueAtTime(target, at + 0.012);
+            v.lastRate = target;
           } catch (e) { /* voice ended */ }
         }
       }

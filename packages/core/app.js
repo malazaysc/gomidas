@@ -178,8 +178,11 @@ function rebuildSequence() {
   });
   window.gomidasTickMap = tickMap;
   Audio.setSequence({ lengthTicks, events });
+  lastSequenceLength = lengthTicks;
 }
 window.gomidasRebuild = rebuildSequence;
+let lastSequenceLength = 0;
+window.gomidasSequenceLength = () => lastSequenceLength;
 window.gomidasGetRenderedTracks = () => renderedTracks;
 
 // Absolute tick of a cursor position, mirroring rebuildSequence's layout (each bar
@@ -1308,7 +1311,28 @@ onClick('zoom-in', () => window.gomidasZoom(1));
 onClick('zoom-out', () => window.gomidasZoom(-1));
 onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(); focusEditor(); });
 onClick('redo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.redo(); focusEditor(); });
-onClick('rewind-btn', () => { if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview(); Audio.stop(); focusEditor(); });
+// Go to start / go to end. These SEEK — they must not merely stop.
+//
+// The native engine's stop() rewinds its seek position to 0 as a side effect, so on desktop
+// "go to start" appeared to work while actually just stopping; on web, where stop() correctly
+// preserves the position, the same code did nothing at all. "Go to end" had no handler on
+// either product. Both now seek explicitly, which is what the tooltips always claimed.
+function transportGoTo(toEnd) {
+  if (window.gomidasStopGroovePreview) window.gomidasStopGroovePreview();
+  Audio.stop();
+  const E = window.GomidasEditor;
+  // Move the edit cursor too (same as GP's Cmd+Home / Cmd+End), then seek the transport to it
+  // so Play resumes from where the cursor now is.
+  if (E && E.moveToScoreEdge) E.moveToScoreEdge(toEnd);
+  if (toEnd) {
+    Audio.seek((window.gomidasSequenceLength && window.gomidasSequenceLength()) || 0);
+  } else {
+    Audio.seek(0);
+  }
+  focusEditor();
+}
+onClick('rewind-btn', () => transportGoTo(false));
+onClick('forward-btn', () => transportGoTo(true));
 onClick('print-btn', () => window.gomidasMenu('print'));
 {
   const cib = document.getElementById('countin-bars');
