@@ -384,6 +384,19 @@ stereo and its snare has **seven** velocity layers.
   `allNotesOff` fades over 80 ms rather than the zone release, or Stop leaves a 9 s crash ringing.
 - **Kit selection:** use `bank.findDrumPreset(program)`, never `findPreset(128, program)` — the
   latter falls back to "same program in bank 0", so sonivox answers program 16 with **Organ 1**.
+- ⚠️ **Never write `percussion = (channel === 9)`** (GMD-54). Four call sites did, so a file whose
+  drum track sits on any other channel took the melodic branch, where a drum note's key becomes
+  `note.realValue` on a melodic program — soft wooden thuds at arbitrary pitches. Ask
+  **`GomidasCore.trackChannelInfo(track)`**: percussion comes from `staff.isPercussion` (or the
+  articulations, or channel 9) and percussion tracks are forced onto channel 9, which is what
+  selects bank 128 in both engines. Shared core → both products.
+- ⚠️ **An imported GP3–5 drum track has an EMPTY `percussionArticulations`.** `buildSequence`'s
+  `note.realValue` fallback is what carries it, and that is correct for those files: alphaTab's
+  GP5 importer puts real GM numbers in `percussionArticulation`/`realValue` (measured on a Pantera
+  .gp5: 35 ac-kick, 40 e-snare, 46 open hat, 53 ride bell). Don't "fix" the fallback away.
+- The loader logs `[Gomidas] drum kit: Standard (105 samples) — FluidR3 pack`, and warns with the
+  reason on fallback. Check that line before debating whether the good kit is playing — the editor
+  serves compiled `dist/core/*.js`, so a tab left open across a `tsc` build runs the OLD player.
 - **How to measure any of this** (the tab is always `document.hidden`, so rAF and the meter are
   dead): stub `GomidasFiles.saveData` to capture instead of download, call
   `GomidasAudio.startRecording()` — the offline bounce — and analyse the WAV. Deterministic, and
