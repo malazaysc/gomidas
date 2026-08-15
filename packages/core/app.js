@@ -292,8 +292,9 @@ window.gomidasToggleMultiView = function () {
 };
 
 function trackChannel(track) {
-  const pb = track.playbackInfo || {};
-  return (pb.primaryChannel != null) ? (pb.primaryChannel & 0x0f) : 0;
+  // One rule for "which channel is this track on", shared with buildSequence — a drum track is
+  // channel 9 whatever the file says, or the mixer would address a channel nothing plays on.
+  return GomidasCore.trackChannelInfo(track).channel;
 }
 
 // MIDI channel of the currently-edited track (for per-track SFZ/instrument actions).

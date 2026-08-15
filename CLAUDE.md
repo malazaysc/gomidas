@@ -93,16 +93,31 @@ packages/core/editor.js               tab editor: cursor/nav/entry, mouse select
 packages/core/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
 packages/core/alphaTab.min.js          alphaTab classic bundle (embedded)
 packages/core/Bravura.woff2/.woff      music notation font (embedded)
-assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth)
+assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth) — fallback bank on web too
+assets/drumkits/gm-standard.{json,bin}  web drum pack, extracted from FluidR3 (GMD-50)
+assets/instruments-gm/gm-melodic.json + gm-melodic-<prog>.bin  per-program melodic packs (GMD-57)
+packages/core/tools/extract-sf2-pack.mjs the tool that generates both (needs FluidR3 + ffmpeg)
 ```
 
 ## Build
 
+**pnpm, not npm** (GMD-63) — one workspace (`pnpm-workspace.yaml`), one lockfile, one install for
+both packages. CMake shells out to `pnpm exec tsc`, so **`pnpm install` is a prerequisite of
+`cmake --build`**; it hard-fails if pnpm is missing rather than embedding stale JavaScript.
+(`npx tsc` used to *download* a compiler when none was installed — an unpinned tsc silently
+compiling what gets embedded.)
+
 ```bash
+pnpm install                              # workspace root; required before configuring
 cmake -B build -DCMAKE_BUILD_TYPE=Debug   # first run fetches JUCE 8.0.13
 cmake --build build
 open "build/Gomidas_artefacts/Debug/Gomidas.app"
 ```
+
+Root scripts: `pnpm build` / `test` / `typecheck` (packages/core) and `pnpm web:dev` /
+`web:build` / `web:preview` (apps/web). Per-package: `pnpm -C <dir> run <script>` — filter by
+**directory**, since the package names are confusing (packages/core is `gomidas-web`, apps/web is
+`gomidas-app-web`).
 
 ## Cross-thread model (real-time safety)
 - Edits build a new `Sequence` on the message thread; handed to the audio thread via a
@@ -345,12 +360,91 @@ taken **after** the only early-return so it can't leak.
   would do it natively but Firefox lacks it, and one path keeps the offline bounce deterministic.
   ⚠️ There are **three near-identical instrument factories** (SF2 / SFZ / tone placeholder) — GMD-44
   was closed after fixing only one of them, so the default instrument kept the bug. Change all three.
+
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
   `cmake/patch_sfizz.py` (idempotent FetchContent `PATCH_COMMAND`) fixes the arm64 `-mfpu`/`-mfloat-abi`
   flags + an `atomic_queue` template-keyword conformance error. See `docs/REALISTIC_SOUND.md` §7.
 - **Audio path verified (non-GUI):** `tests/sfz_smoketest.cpp` (`-DGOMIDAS_BUILD_TESTS=ON`) loads a bundled
   SFZ, plays a note, asserts non-silent output — guitar+bass PASS (FLAC decode + render confirmed). The
   in-app inspector→engine→speakers routing is still GUI-only; ear-check via inspector Preset → play.
+
+### Web drums — the pack, and the two SF2 curves (GMD-50 / GMD-51, 2026-08-14)
+The browser fetched sonivox while the desktop loaded FluidR3, so web drums were the Android EAS
+bank: **kick = 402 frames @ 20 kHz = 20 ms, one velocity layer**; snare 176 ms @ 16 kHz; nothing
+above ~8 kHz. That — not our envelope code — is "dull". FluidR3's kick is 283 ms @ 44.1 kHz
+stereo and its snare has **seven** velocity layers.
+- **The pack:** `packages/core/tools/extract-sf2-pack.mjs` extracts FluidR3 bank 128 to
+  `assets/drumkits/gm-standard.{json,bin}` (105 samples, 5.4 MB FLAC), **committed** because
+  FluidR3 is gitignored. Each sample is **its own complete audio file** inside the blob — a single
+  re-encoded sprite smears hits together and lossy priming shifts every later offset. Verified in
+  Chrome: 105/105 decode, frame-exact (12462 declared = 12462 decoded), 213 ms to fetch+decode.
+  Fetched lazily on the first percussion note; **sonivox stays the fallback** (verified by
+  blocking the fetch). FLAC over Opus (1.6 MB) on purpose: no priming eating the transient.
+- ⚠️ **initialAttenuation is NOT literal centibels.** Read as spec (`10^(-cB/200)`), FluidR3 plays
+  its kick 10 dB and its closed hat 21 dB below its snare — a snare with faint company, and the
+  "drums are very low" report. fluidsynth divides by **531.509** ("by the standard this should be
+  -200.0") because the EMU hardware banks were authored against did not follow the spec. Same
+  zones then read kick −3.8 dB, hat −7.9 dB, crash −6.0 dB. Match the player, not the document
+  (`SF2.attenuationGain`). Note TSF uses the literal −200, so **desktop under-plays FluidR3 too**.
+- **Velocity is squared, not linear** (`SF2.velocityGain`): SF2's default velocity→attenuation
+  modulator works out to amp = (vel/127)², to within a rounding error of fluidsynth's table. TSF is
+  linear, so this is a deliberate web/desktop divergence.
+- **Percussion rules:** a non-looping percussion zone is a **one-shot** — note-off must not touch
+  it (a crash written on a 16th is not a 16th long); a **looping** drum zone still honours note-off
+  or it rings forever (sonivox's hats are loopMode 1). **Exclusive class (gen 57) is parsed and
+  enforced** — 42/44/46 share a class in both banks, so before this the closed hat never cut the
+  open one. Measured: open-hat tail RMS 0.01405 → 0.00062 after the choke, untouched before it.
+  `allNotesOff` fades over 80 ms rather than the zone release, or Stop leaves a 9 s crash ringing.
+- **Kit selection:** use `bank.findDrumPreset(program)`, never `findPreset(128, program)` — the
+  latter falls back to "same program in bank 0", so sonivox answers program 16 with **Organ 1**.
+- ⚠️ **Never write `percussion = (channel === 9)`** (GMD-54). Four call sites did, so a file whose
+  drum track sits on any other channel took the melodic branch, where a drum note's key becomes
+  `note.realValue` on a melodic program — soft wooden thuds at arbitrary pitches. Ask
+  **`GomidasCore.trackChannelInfo(track)`**: percussion comes from `staff.isPercussion` (or the
+  articulations, or channel 9) and percussion tracks are forced onto channel 9, which is what
+  selects bank 128 in both engines. Shared core → both products.
+- ⚠️ **An imported GP3–5 drum track has an EMPTY `percussionArticulations`.** `buildSequence`'s
+  `note.realValue` fallback is what carries it, and that is correct for those files: alphaTab's
+  GP5 importer puts real GM numbers in `percussionArticulation`/`realValue` (measured on a Pantera
+  .gp5: 35 ac-kick, 40 e-snare, 46 open hat, 53 ride bell). Don't "fix" the fallback away.
+- The loader logs `[Gomidas] drum kit: Standard (105 samples) — FluidR3 pack`, and warns with the
+  reason on fallback. Check that line before debating whether the good kit is playing — the editor
+  serves compiled `dist/core/*.js`, so a tab left open across a `tsc` build runs the OLD player.
+- **How to measure any of this** (the tab is always `document.hidden`, so rAF and the meter are
+  dead): stub `GomidasFiles.saveData` to capture instead of download, call
+  `GomidasAudio.startRecording()` — the offline bounce — and analyse the WAV. Deterministic, and
+  it exercises the real instrument path.
+
+### Web melodic instruments — per-program FluidR3 packs (GMD-57, 2026-08-14)
+GMD-50 fixed percussion and left guitars and basses on sonivox. Same extractor, same pack format,
+new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/gm-melodic.json`
+(every program's zone table) plus **one `.bin` per program**.
+- **Per-program, not per-family, because melodic presets share almost no samples.** Measured on
+  FluidR3: guitars 24–31 are 83 samples summed per-program and **82 unique**; basses 32–39, 65 and
+  65. The split therefore costs nothing in total size and a score using one guitar fetches ~1MB
+  instead of the 5.89MB family. (Drums are the opposite — a kit is one unit — so they stay
+  single-blob.) Guitars+basses total **9.09MB FLAC** from 19.99MB PCM; biggest single program is
+  Overdrive Guitar at 1.81MB, most are under 1MB.
+- **The manifest is 482KB raw but 7.5KB brotli**, so it is one cheap fetch that also says *which*
+  programs are packed — that's how we avoid firing a 404 per note for the ~100 unpacked programs.
+  `melodicPacks` stores **null** for a known-unpacked program; `|| gmBank` is then the intended
+  path, not a fallback.
+- **Don't downsample guitar/bass.** Capping at 22.05kHz saves only 9.06→8.07MB because most of
+  those zones are already ≤22kHz in FluidR3. It *is* worth it for the 32k/44.1k families (piano
+  7.72→6.35, strings 14.58→9.79) if those ever ship.
+- **FLAC, never Opus — and the melodic reason is stronger than the drum one.** These zones *loop*,
+  the runtime derives loop points as `(startLoop - start) / rate` in frames, and Opus adds priming
+  delay and forces 48kHz, so every sustained note would click at each loop boundary.
+- ⚠️ **`bankFor(program, perc)` is THE ONE PLACE a bank is chosen.** `renderOffline` used to carry
+  its own copy of that expression, commented "Same bank choice as live playback", which silently
+  stopped being true the moment packs existed — the bounce measured *byte-identical* with packs
+  present and packs 404ing. Same failure shape as GMD-44's three instrument factories. If you add
+  an instrument source, extend `bankFor`; do not add a branch. (SFZ still diverges here: GMD-62.)
+- Logs `[Gomidas] instrument 27: Clean Guitar (10 samples) — FluidR3 pack` per program, and warns
+  with the reason on fallback. Verified A/B on the sample score: brightness (first-difference
+  energy ratio) **0.0367 sonivox → 0.1604 packs**, RMS 0.128 → 0.178.
+- ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
+  scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
 
 ### Real-time-safety caveats (milestone-1; harden before shipping)
 TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ

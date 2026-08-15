@@ -63,6 +63,32 @@ curl -L -o assets/soundfont/FluidR3_GM.sf2 <url-to-FluidR3_GM.sf2>
 CMake auto-detects it: `assets/soundfont/FluidR3_GM.sf2` present → bundles FluidR3; absent →
 falls back to the embedded sonivox bank (see `CMakeLists.txt`). Reconfigure after adding it.
 
+#### Drums on the web build
+
+144 MB cannot go over the wire, and sonivox's kit is a 20 ms kick sampled at 20 kHz — which is
+exactly what "the drums sound like cardboard" is. So the browser build loads a **drum-only pack**
+extracted from FluidR3 once and committed:
+
+| File | Size | Tracked in git? |
+|------|------|-----------------|
+| `assets/drumkits/gm-standard.json` | ~75 KB | ✅ yes |
+| `assets/drumkits/gm-standard.bin` | ~5.4 MB (FLAC) | ✅ yes |
+
+It is fetched lazily on the first percussion note, so a guitar tab never pays for it, and it falls
+back to sonivox if it is missing. Regenerate it only if the kit selection changes — you need
+FluidR3 in place plus `ffmpeg`:
+
+```bash
+pnpm -C packages/core run build                # the tool reads dist/core/sf2.js
+node packages/core/tools/extract-sf2-pack.mjs  # --programs 0,8,16  --codec flac|opus|aac
+
+# The melodic packs (GMD-57): one blob PER PROGRAM, because melodic presets share almost no
+# samples, so a score using one guitar fetches ~1MB instead of the whole 5.89MB family.
+node packages/core/tools/extract-sf2-pack.mjs --bank 0 --split \
+  --programs 24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39 \
+  --out assets/instruments-gm --name gm-melodic
+```
+
 ---
 
 ## Architecture

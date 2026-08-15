@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import SF from '../core/sf2.ts';
 
-const { parseSf2, zonesFor, rateFor, timecentsToSeconds } = SF;
+const { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain } = SF;
 const bankPath = fileURLToPath(new URL('../../../assets/soundfont/sonivox.sf2', import.meta.url));
 const haveBank = existsSync(bankPath);
 
@@ -21,6 +21,34 @@ describe('units', () => {
     expect(timecentsToSeconds(-12000)).toBeCloseTo(Math.pow(2, -10), 12);
     expect(timecentsToSeconds(-12000)).toBeCloseTo(0.001, 3);
     expect(timecentsToSeconds(1200)).toBeCloseTo(2, 9);
+  });
+
+  // GMD-51 — SF2 §8.4.1 default velocity->attenuation modulator (960 cB, concave).
+  it('maps velocity through the default modulator curve, not linearly', () => {
+    expect(velocityGain(1)).toBeCloseTo(1, 9);          // full velocity is 0 dB, unchanged
+    expect(velocityGain(0)).toBe(0);
+    // The reference point: fluidsynth's concave table gives 11.9 dB of attenuation at MIDI 64,
+    // i.e. gain 0.254. If this ever drifts back to linear it would read 0.504.
+    expect(velocityGain(64 / 127)).toBeCloseTo(Math.pow(10, -11.9 / 20), 2);
+    // Monotonic, and a ghost note is far quieter than an accent (this is the audible point).
+    expect(velocityGain(0.3)).toBeLessThan(velocityGain(0.6));
+    expect(velocityGain(0.9) / velocityGain(0.3)).toBeGreaterThan(8);
+    // Clamped, never negative gain from a bad velocity.
+    expect(velocityGain(-1)).toBe(0);
+    expect(velocityGain(4)).toBe(1);
+  });
+
+  // GMD-50 — the EMU/fluidsynth attenuation factor. Read as literal centibels instead, FluidR3's
+  // kick sits 10 dB under its snare and its hi-hat 21 dB under, which is the "drums are very low"
+  // report. These are the two numbers that separate the readings.
+  it('converts initialAttenuation with the factor banks were authored against', () => {
+    expect(attenuationGain(0)).toBe(1);
+    const dB = (g) => 20 * Math.log10(g);
+    expect(dB(attenuationGain(21))).toBeCloseTo(-7.9, 1);    // closed hat: NOT -21
+    expect(attenuationGain(10)).toBeGreaterThan(Math.pow(10, -10 / 20));
+    // Still monotonic, still bounded — a bigger attenuation is always quieter, never a boost.
+    expect(attenuationGain(20)).toBeLessThan(attenuationGain(10));
+    expect(attenuationGain(-5)).toBe(1);
   });
 });
 
@@ -116,6 +144,33 @@ describe.skipIf(!haveBank)('bundled sonivox GM bank', () => {
     const at44k = rateFor(z, s, 60, 44100);
     const at48k = rateFor(z, s, 60, 48000);
     expect(at44k / at48k).toBeCloseTo(48000 / 44100, 6);
+  });
+
+  // GMD-51 — percussion interpretation. Both defects below are provable against this bank.
+  it('resolves a drum kit inside bank 128, never falling through to a melodic preset', () => {
+    const sf = load();
+    // sonivox ships kits 0/8/32/40 only. findPreset's "same program in bank 0" fallback answers
+    // program 16 with Organ 1 — a drum track playing an organ. findDrumPreset stays in bank 128.
+    expect(sf.findPreset(128, 16).bank).toBe(0);
+    expect(sf.findDrumPreset(16).bank).toBe(128);
+    expect(sf.findDrumPreset(0).name).toMatch(/standard/i);
+    // A kit the bank does have must still resolve to itself, not to the Standard fallback.
+    expect(sf.findDrumPreset(8).program).toBe(8);
+  });
+
+  it('reads the exclusive class that lets a closed hi-hat choke the open one', () => {
+    const sf = load();
+    const kit = sf.findDrumPreset(0);
+    const classOf = (key) => {
+      const z = zonesFor(kit, key, 100)[0];
+      return z && z.exclusiveClass;
+    };
+    // GM 42 closed / 44 pedal / 46 open hat share one class: only one of them may sound.
+    expect(classOf(42)).toBeGreaterThan(0);
+    expect(classOf(44)).toBe(classOf(42));
+    expect(classOf(46)).toBe(classOf(42));
+    // A kick is not in a choke group — it must ring through the hats.
+    expect(classOf(36) || 0).not.toBe(classOf(42));
   });
 
   it('produces envelopes in a plausible range', () => {

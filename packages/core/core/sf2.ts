@@ -31,7 +31,7 @@ const GEN = {
   sustainVolEnv: 37, releaseVolEnv: 38,
   instrument: 41, keyRange: 43, velRange: 44,
   initialAttenuation: 48, coarseTune: 51, fineTune: 52,
-  sampleID: 53, sampleModes: 54, scaleTuning: 56,
+  sampleID: 53, sampleModes: 54, scaleTuning: 56, exclusiveClass: 57,
   overridingRootKey: 58
 };
 
@@ -69,6 +69,8 @@ interface Sf2Zone {
   sampleIndex: number;
   rootKey: number | null;
   tuneCents: number;
+  /** SF2 gen 57: >0 means "cut every sounding voice of this class" (closed hat chokes open hat). */
+  exclusiveClass: number;
   attenuationDb: number;
   pan: number;
   loopMode: number;
@@ -88,6 +90,7 @@ function parseSf2(buffer: ArrayBuffer): {
   samples: Sf2Sample[];
   pcm: Int16Array;
   findPreset(bank: number, program: number): Sf2Preset | null;
+  findDrumPreset(program: number): Sf2Preset | null;
 } {
   const view = new DataView(buffer);
   const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
@@ -194,6 +197,7 @@ function parseSf2(buffer: ArrayBuffer): {
         attenuationDb: num(GEN.initialAttenuation, 0) / 10,   // stored in centibels
         pan: num(GEN.pan, 0) / 1000,                          // -500..500 -> -0.5..0.5
         loopMode: num(GEN.sampleModes, 0),
+        exclusiveClass: num(GEN.exclusiveClass, 0),
         attack: timecentsToSeconds(num(GEN.attackVolEnv, -12000)),
         hold: timecentsToSeconds(num(GEN.holdVolEnv, -12000)),
         decay: timecentsToSeconds(num(GEN.decayVolEnv, -12000)),
@@ -257,8 +261,61 @@ function parseSf2(buffer: ArrayBuffer): {
       return presets.find(p => p.bank === bank && p.program === program)
           || presets.find(p => p.bank === 0 && p.program === program)
           || null;
+    },
+    /**
+     * The drum kit for a GM program (channel 9). Kits live in bank 128 and the program picks the
+     * kit (0 Standard, 8 Room, 16 Power, 24 Electronic, 32 Jazz, 40 Brush...).
+     *
+     * NOT findPreset(128, program): its fallback is "same program in bank 0", so an unbundled kit
+     * — sonivox only ships 0/8/32/40 — would resolve to a MELODIC preset and the drum track would
+     * play an organ. Fall back inside bank 128 instead, and only give up if the bank has no drums.
+     */
+    findDrumPreset(program: number) {
+      return presets.find(p => p.bank === 128 && p.program === program)
+          || presets.find(p => p.bank === 128 && p.program === 0)
+          || presets.find(p => p.bank === 128)
+          || null;
     }
   };
+}
+
+/**
+ * Velocity -> amplitude, per SF2's default velocity->initialAttenuation modulator (spec §8.4.1:
+ * 960 cB, concave, negative unipolar).
+ *
+ * Working the concave curve through gives amp = (vel/127)^2 to within a rounding error — at
+ * vel 64 fluidsynth's table yields 11.9 dB of attenuation, i.e. gain 0.254, and (64/127)^2 is
+ * 0.2539 — so this is the default modulator, not an invented curve. Full velocity is unchanged
+ * (0 dB); it is soft hits that get quieter, which is what makes ghost notes read as ghost notes.
+ *
+ * NOTE — divergence from the desktop engine: TinySoundFont uses velocity LINEARLY
+ * (noteGainDB = globalGainDB - attenuation - gainToDecibels(1/vel)). Web is the spec-correct one.
+ */
+function velocityGain(velocity: number): number {
+  const v = Math.max(0, Math.min(1, velocity));
+  return v * v;
+}
+
+/**
+ * initialAttenuation -> linear gain, using the EMU/fluidsynth power factor rather than the
+ * literal centibel the spec prints.
+ *
+ * MEASURED, and the reason drums sounded "very low" (GMD-50). Read strictly — gain =
+ * 10^(-cB/200) — FluidR3's Standard kit plays its kick 10 dB and its closed hi-hat 21 dB below
+ * its snare. That is not a kit; that is a snare with faint company. fluidsynth divides by 531.509
+ * instead, with the comment "By the standard this should be -200.0", because the EMU 8k/10k
+ * hardware every bank was authored against did not follow the spec here. The same zones then read
+ * kick -3.8 dB, hat -7.9 dB, crash -6.0 dB — a balanced kit.
+ *
+ * Banks are authored against players, not against the document, so match the player. Note this
+ * makes web LOUDER than the desktop engine on attenuated zones: TinySoundFont uses the literal
+ * -200 (tsf_decibelsToGain on attenuation), so FluidR3 is under-played there too.
+ */
+const ATTEN_POWER_FACTOR = 531.509;
+
+function attenuationGain(attenuationDb: number): number {
+  if (!(attenuationDb > 0)) return 1;
+  return Math.pow(10, -(attenuationDb * 10) / ATTEN_POWER_FACTOR);
 }
 
 /** Zones matching a key+velocity, in file order. Empty means the preset cannot play that note. */
@@ -274,7 +331,7 @@ function rateFor(zone: Sf2Zone, sample: Sf2Sample, key: number, outputRate: numb
   return Math.pow(2, cents / 1200) * (sample.sampleRate / outputRate);
 }
 
-  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, GEN };
+  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain, GEN };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasSf2 = api;
 }());

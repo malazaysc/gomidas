@@ -1,0 +1,12 @@
+# Gomidas — pnpm workspace (GMD-63).
+#
+# Two packages, and one builds the other: apps/web's `dev` and `build` both compile
+# packages/core with tsc first, because index.html loads `dist/*.js` directly. A workspace is
+# what that relationship is for — one install, one lockfile, one node_modules store.
+#
+# NOTE the package NAMES are confusing and predate this file: packages/core is `gomidas-web`
+# and apps/web is `gomidas-app-web`. Scripts therefore filter by DIRECTORY (`pnpm -C`) rather
+# than by name, which is unambiguous at a glance and survives a rename.
+packages:
+  - 'packages/*'
+  - 'apps/*'

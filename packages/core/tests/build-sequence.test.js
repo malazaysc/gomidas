@@ -127,6 +127,52 @@ describe('buildSequence — percussion', () => {
     const { events } = build(score([mbar()], [drumTrack]), { drumGains: { 36: 0.5 } });
     expect(events[0][3]).toBeCloseTo(0.425, 10);   // 0.85 * 0.5
   });
+
+  // A drum track whose file put it somewhere other than MIDI channel 10. Deriving percussion
+  // from "channel === 9" sent these notes down the MELODIC branch, where the key becomes
+  // note.realValue — not the drum key — on a melodic program: a drum track that plays soft
+  // wooden thuds at arbitrary pitches. Decide from the staff instead.
+  it('treats a percussion staff as drums even when the file put it on another channel', () => {
+    const drumTrack = {
+      playbackInfo: { program: 0, primaryChannel: 4 },       // NOT 9
+      percussionArticulations: [{ outputMidiNumber: 49 }],
+      staves: [{ isPercussion: true,
+                 bars: [bar(voice([nbeat(4, [note(64, { percussionArticulation: 0 })])]))] }],
+    };
+    const { events } = build(score([mbar()], [drumTrack]));
+    expect(events[0][6]).toBe(true);   // percussion, not melodic
+    expect(events[0][2]).toBe(49);     // the crash, NOT realValue 64
+    expect(events[0][1]).toBe(9);      // forced onto the channel that selects bank 128
+  });
+
+  it('leaves a melodic track on its own channel', () => {
+    const s = score([mbar()], [track([bar(voice([nbeat(4, [note(40)])]))], { primaryChannel: 4 })]);
+    const { events } = build(s);
+    expect(events[0][1]).toBe(4);
+    expect(events[0][6]).toBe(false);
+  });
+});
+
+describe('trackChannelInfo', () => {
+  const info = (t) => C.trackChannelInfo(t);
+
+  it('reads percussion off the staff, the articulations, or channel 9', () => {
+    expect(info({ playbackInfo: { primaryChannel: 3 }, staves: [{ isPercussion: true }] }))
+      .toEqual({ channel: 9, percussion: true });
+    expect(info({ playbackInfo: { primaryChannel: 3 }, staves: [{}],
+                  percussionArticulations: [{ outputMidiNumber: 36 }] }))
+      .toEqual({ channel: 9, percussion: true });
+    expect(info({ playbackInfo: { primaryChannel: 9 }, staves: [{}] }))
+      .toEqual({ channel: 9, percussion: true });
+  });
+
+  it('leaves melodic tracks alone and survives a missing playbackInfo', () => {
+    expect(info({ playbackInfo: { primaryChannel: 5 }, staves: [{}] }))
+      .toEqual({ channel: 5, percussion: false });
+    expect(info({})).toEqual({ channel: 0, percussion: false });
+    // Channels are 4-bit; a bogus wide value must not address a channel that does not exist.
+    expect(info({ playbackInfo: { primaryChannel: 20 }, staves: [{}] }).channel).toBe(4);
+  });
 });
 
 describe('buildSequence — metronome', () => {
