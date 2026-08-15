@@ -590,6 +590,7 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
   // Every sounding voice, flat, for exclusive-class choking (SF2 gen 57). Kept alongside the
   // per-key map rather than derived from it: a choke searches by class, not by key.
   const sounding = new Set<any>();
+  let nextNoteId = 1;
 
   function bufferFor(index: number): AudioBuffer | null {
     // A pack (the FluidR3 drum kit, GMD-50) ships already-decoded buffers instead of a raw PCM
@@ -648,6 +649,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
     if (!zones.length) return;
     // Choke BEFORE registering this note's own voices, so a hat never chokes itself.
     for (const z of zones) if (z.exclusiveClass) chokeClass(z.exclusiveClass, when);
+    // Every voice this note-on spawns shares one id, so a layered note releases as a unit while a
+    // retrigger of the same key stays independent of it (GMD-49).
+    const noteId = nextNoteId++;
     // Layered presets legitimately stack zones (piano + string pad). Cap it: a pathological
     // bank could otherwise spawn dozens of voices per note.
     for (const z of zones.slice(0, 4)) {
@@ -700,6 +704,7 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const v = { key, src, gain, release: Math.max(0.05, z.release || 0.3), env, baseRate,
                   lastRate: baseRate * Math.pow(2, bend.at(when) / 12),
                   exclusiveClass: z.exclusiveClass || 0,
+                  noteId,
                   oneShot: percussion && !looping };
       const list = voices.get(key) || [];
       list.push(v);
@@ -729,10 +734,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const list = voices.get(key);
       if (!list || !list.length) return;
       const at = Math.max(when, ctx.currentTime);
-      // A layered note put several voices under one key; release them together. One-shot drum
-      // voices are skipped — they ring out on their own and are only ever cut by a choke.
-      for (const v of Array.from(list)) {
-        if (v.oneShot) continue;
+      // Only the OLDEST note instance under this key — see voicesToRelease. Releasing the whole
+      // list cut short any note that retriggered the key while an earlier one rang (GMD-49).
+      for (const v of voicesToRelease(list)) {
         releaseVoice(v, at);
         forget(v);
       }
@@ -819,6 +823,35 @@ const CEILING_MAX = 0.998;
  * `curve[i]` is the output for an input of `(i/(n-1) * 2 - 1) * CEILING_RANGE`.
  * Pure and exported so the shape is unit-tested rather than eyeballed.
  */
+/**
+ * Which of the voices stored under one key a note-off should release (GMD-49).
+ *
+ * The per-key list conflates two different things, and releasing all of it is wrong for one of
+ * them:
+ *   1. LAYERED ZONES — one note-on legitimately spawns several voices (a piano + string-pad
+ *      preset stacks up to four). Those must release together, as one note.
+ *   2. A RETRIGGER — the same key struck again while an earlier instance is still ringing (ties,
+ *      let ring, a fast repeated note on one string). Releasing all of them means the first
+ *      note's note-off kills the second note, which has only just started.
+ *
+ * So: FIFO by note INSTANCE, not by key. Voices from one note-on share a noteId; the oldest
+ * surviving noteId is the note being released. One-shots are excluded entirely — a drum sample
+ * that does not loop has no sustain to end, and is only ever cut by an exclusive-class choke.
+ *
+ * Pure, so the selection is unit-tested rather than inferred from a waveform.
+ */
+function voicesToRelease<T extends { noteId?: number; oneShot?: boolean }>(list: T[]): T[] {
+  if (!list || !list.length) return [];
+  let oldest = Infinity;
+  for (const v of list) {
+    if (v.oneShot) continue;
+    const id = v.noteId != null ? v.noteId : 0;
+    if (id < oldest) oldest = id;
+  }
+  if (oldest === Infinity) return [];
+  return list.filter((v) => !v.oneShot && (v.noteId != null ? v.noteId : 0) === oldest);
+}
+
 function ceilingCurve(n = 8192, knee = CEILING_KNEE, range = CEILING_RANGE): Float32Array<ArrayBuffer> {
   const curve = new Float32Array(new ArrayBuffer(n * 4));
   for (let i = 0; i < n; i++) {
@@ -1782,7 +1815,7 @@ function createWebAudioBackend(BackendLib: any): any {
   return backend;
 }
 
-  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt,
+  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt, voicesToRelease,
                 ceilingCurve, HEADROOM_GAIN, HEADROOM_DB, CEILING_KNEE, CEILING_RANGE,
                 LOOKAHEAD_S, TICK_INTERVAL_MS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
