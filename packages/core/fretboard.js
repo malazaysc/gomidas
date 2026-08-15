@@ -774,7 +774,13 @@
           const sfzName = (ch != null && window.gomidasTrackSfz) ? window.gomidasTrackSfz[ch] : null;
           // Instrument dropdown: GM SoundFont (clear) | built-in presets | a loaded
           // custom file (shown as its own option) | Load file… (native chooser).
-          const presets = window.gomidasSfzPresets || [];
+          // Only presets that suit THIS track. The bundled sample instruments are all melodic
+          // (classical guitar, electric bass), and offering them on a drum track meant the
+          // inspector showed the guitar controls for drums — pick one and every drum key maps
+          // onto a guitar sample. No CC0 kit is bundled yet (they run 1.6-2.3GB, so they will be
+          // download-on-first-run), hence a drum track legitimately has none.
+          const presets = (window.gomidasSfzPresets || [])
+            .filter(p => (p.kind === 'drums') === !!s.isPercussion);
           const match = presets.find(p => p.name === sfzName);
           const isRse = !!sfzName;
           // Preset dropdown: grouped so RSE sample instruments aren't mistaken for GM
@@ -811,10 +817,15 @@
             '<input type="range" class="insp-slider" id="ins-pan" min="0" max="100" value="' + Math.round((s.trackPan != null ? s.trackPan : 0.5) * 100) + '"></div>' +
           '<div class="insp-row"><span class="v" id="ins-pan-lbl" style="font-size:11px">' + panLabel(s.trackPan != null ? s.trackPan : 0.5) + '</span></div>' +
         '</div>' +
+        // Still placeholders (hence "soon"), but they must at least be the RIGHT placeholders:
+        // palm mute, let ring, auto brush and "Stringed" are properties of a fretted instrument,
+        // and showing them on a drum track is what made the panel look like the guitar one.
         '<div class="insp-sec"><div class="insp-h">Interpretation<span class="gd-soon-tag">soon</span></div>' +
           '<div class="gd-soon">' +
-          valRow('Playing style', 'Pick') + sliderRow('Palm mute') + sliderRow('Accentuation') +
-          toggleRow('Auto let ring', false) + toggleRow('Auto brush', true) + toggleRow('Stringed', true) +
+          (s.isPercussion
+            ? valRow('Playing style', 'Sticks') + sliderRow('Accentuation')
+            : valRow('Playing style', 'Pick') + sliderRow('Palm mute') + sliderRow('Accentuation') +
+              toggleRow('Auto let ring', false) + toggleRow('Auto brush', true) + toggleRow('Stringed', true)) +
           '</div>' +
         '</div>' +
         (s.isPercussion ? drumInspectorExtra(s) : '');
