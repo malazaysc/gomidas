@@ -306,6 +306,38 @@
     { id: 'tie',    label: 'Tie',    kind: 'act', key: 'T' }
   ];
   const VEL_NAMES = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+  /**
+   * Every GM percussion key a kit piece owns — what the MIXER fader scales (GMD-72).
+   *
+   * NOT the same list as a piece's `artics`, which is the set of named articulations you can
+   * PLACE and is deliberately short. A fader is a channel: pulling "Hi-Hat" down must take the
+   * open and pedal hats with it, not just the closed one.
+   *
+   * It matters most for IMPORTED files. CLAUDE.md's own GMD-54 measurement of a Pantera .gp5
+   * found it using keys 35, 40, 46 and 53 — of which 35 and 40 appear nowhere in KIT_PIECES and
+   * 46/53 appear only as non-first articulations. Keyed off artics[0] alone, every fader on that
+   * song moved nothing at all, which is exactly the "drum mix does not change anything" report.
+   *
+   * Straight from the GM percussion map, so this is the standard kit's own grouping, not ours.
+   */
+  const PIECE_KEYS = {
+    kick:  [35, 36],
+    snare: [37, 38, 40],
+    hihat: [42, 44, 46],
+    tom1:  [48, 50],
+    tom2:  [45, 47],
+    floor: [41, 43],
+    crash: [49, 55, 57],
+    ride:  [51, 53, 59],
+    china: [52]
+  };
+  /** The keys one fader controls: the GM group, falling back to the piece's own articulations. */
+  function pieceMixKeys(p) {
+    const fromMap = PIECE_KEYS[p.id];
+    const fromArtics = p.artics.map(a => a[1]);
+    return fromMap ? [...new Set([...fromMap, ...fromArtics])] : fromArtics;
+  }
+
   function pieceById(id) { return KIT_PIECES.find(p => p.id === id); }
   function pieceMidi(p) { const ai = Math.min(pieceArtic[p.id] || 0, p.artics.length - 1); return p.artics[ai][1]; }
   function pieceIsHit(p, s) { return p.artics.some(a => (s.drums || []).some(d => d.midi === a[1] && d.active)); }
@@ -402,9 +434,11 @@
     const km = el('div', 'kit-mixer'); km.dataset.role = 'mixer';
     km.addEventListener('input', (e) => {
       const r = e.target.closest('input[type=range]'); if (!r) return;
-      const midi = parseInt(r.dataset.midi, 10);
       const g = (parseInt(r.value, 10) || 0) / 100;
-      (window.gomidasDrumGains || (window.gomidasDrumGains = {}))[midi] = g;
+      const gains = window.gomidasDrumGains || (window.gomidasDrumGains = {});
+      // data-midi carries EVERY key this fader owns, so one hi-hat fader moves closed, open and
+      // pedal together (GMD-72).
+      for (const k of String(r.dataset.midi).split(',')) gains[parseInt(k, 10)] = g;
       const v = r.parentElement.querySelector('.kmv'); if (v) v.textContent = r.value + '%';
     });
     km.addEventListener('change', () => { if (window.gomidasRebuild) window.gomidasRebuild(); });
@@ -596,10 +630,12 @@
     const gains = window.gomidasDrumGains || (window.gomidasDrumGains = {});
     let html = '';
     KIT_PIECES.forEach(p => {
-      const midi = p.artics[0][1];
-      const pct = Math.round(((gains[midi] != null ? gains[midi] : 1)) * 100);
+      // One fader per PIECE, scaling every GM key that piece owns — see pieceMixKeys.
+      const keys = pieceMixKeys(p);
+      const cur = gains[keys[0]];
+      const pct = Math.round((cur != null ? cur : 1) * 100);
       html += '<div class="km-row"><span class="km-name">' + p.label + '</span>' +
-              '<input type="range" min="0" max="150" value="' + pct + '" data-midi="' + midi + '">' +
+              '<input type="range" min="0" max="150" value="' + pct + '" data-midi="' + keys.join(',') + '">' +
               '<span class="kmv">' + pct + '%</span></div>';
     });
     km.innerHTML = html;
