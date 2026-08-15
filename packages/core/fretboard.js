@@ -360,6 +360,19 @@
     // Relative, not '/drumkit.webp': an absolute path breaks the base:'./' subpath promise in
     // apps/web/vite.config.js. Every script tag already resolves this way on both products.
     const img = document.createElement('img'); img.src = 'drumkit.webp'; img.alt = 'Drum kit';
+    // Say WHY the kit is missing instead of leaving a broken-image icon. The usual cause is a
+    // stale page: GMD-59 replaced drumkit.png with .webp, so a tab left open across that build
+    // asks for a file that no longer exists — the same trap CLAUDE.md records for dist/*.js.
+    // The hotspots still work without the photo, so this is a label, not a failure state.
+    img.onerror = () => {
+      console.warn('[Gomidas] drum kit image failed to load: ' + img.src +
+                   ' — if this is a 404 for drumkit.png, the page is stale; hard-reload.');
+      img.remove();
+      if (!frame.querySelector('.kit-noimg')) {
+        const msg = el('div', 'kit-noimg', 'Kit image unavailable — hotspots still work. Hard-reload if this persists.');
+        frame.insertBefore(msg, frame.firstChild);
+      }
+    };
     frame.appendChild(img);
     KIT_PIECES.forEach(p => {
       const h = el('div', 'kit-hot'); h.dataset.piece = p.id;
