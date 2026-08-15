@@ -95,7 +95,8 @@ packages/core/alphaTab.min.js          alphaTab classic bundle (embedded)
 packages/core/Bravura.woff2/.woff      music notation font (embedded)
 assets/soundfont/sonivox.sf2 GM SoundFont (embedded; native synth) — fallback bank on web too
 assets/drumkits/gm-standard.{json,bin}  web drum pack, extracted from FluidR3 (GMD-50)
-packages/core/tools/extract-drumkit.mjs the tool that generates it (needs FluidR3 + ffmpeg)
+assets/instruments-gm/gm-melodic.json + gm-melodic-<prog>.bin  per-program melodic packs (GMD-57)
+packages/core/tools/extract-sf2-pack.mjs the tool that generates both (needs FluidR3 + ffmpeg)
 ```
 
 ## Build
@@ -360,7 +361,7 @@ The browser fetched sonivox while the desktop loaded FluidR3, so web drums were 
 bank: **kick = 402 frames @ 20 kHz = 20 ms, one velocity layer**; snare 176 ms @ 16 kHz; nothing
 above ~8 kHz. That — not our envelope code — is "dull". FluidR3's kick is 283 ms @ 44.1 kHz
 stereo and its snare has **seven** velocity layers.
-- **The pack:** `packages/core/tools/extract-drumkit.mjs` extracts FluidR3 bank 128 to
+- **The pack:** `packages/core/tools/extract-sf2-pack.mjs` extracts FluidR3 bank 128 to
   `assets/drumkits/gm-standard.{json,bin}` (105 samples, 5.4 MB FLAC), **committed** because
   FluidR3 is gitignored. Each sample is **its own complete audio file** inside the blob — a single
   re-encoded sprite smears hits together and lossy priming shifts every later offset. Verified in
@@ -401,6 +402,37 @@ stereo and its snare has **seven** velocity layers.
   dead): stub `GomidasFiles.saveData` to capture instead of download, call
   `GomidasAudio.startRecording()` — the offline bounce — and analyse the WAV. Deterministic, and
   it exercises the real instrument path.
+
+### Web melodic instruments — per-program FluidR3 packs (GMD-57, 2026-08-14)
+GMD-50 fixed percussion and left guitars and basses on sonivox. Same extractor, same pack format,
+new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/gm-melodic.json`
+(every program's zone table) plus **one `.bin` per program**.
+- **Per-program, not per-family, because melodic presets share almost no samples.** Measured on
+  FluidR3: guitars 24–31 are 83 samples summed per-program and **82 unique**; basses 32–39, 65 and
+  65. The split therefore costs nothing in total size and a score using one guitar fetches ~1MB
+  instead of the 5.89MB family. (Drums are the opposite — a kit is one unit — so they stay
+  single-blob.) Guitars+basses total **9.09MB FLAC** from 19.99MB PCM; biggest single program is
+  Overdrive Guitar at 1.81MB, most are under 1MB.
+- **The manifest is 482KB raw but 7.5KB brotli**, so it is one cheap fetch that also says *which*
+  programs are packed — that's how we avoid firing a 404 per note for the ~100 unpacked programs.
+  `melodicPacks` stores **null** for a known-unpacked program; `|| gmBank` is then the intended
+  path, not a fallback.
+- **Don't downsample guitar/bass.** Capping at 22.05kHz saves only 9.06→8.07MB because most of
+  those zones are already ≤22kHz in FluidR3. It *is* worth it for the 32k/44.1k families (piano
+  7.72→6.35, strings 14.58→9.79) if those ever ship.
+- **FLAC, never Opus — and the melodic reason is stronger than the drum one.** These zones *loop*,
+  the runtime derives loop points as `(startLoop - start) / rate` in frames, and Opus adds priming
+  delay and forces 48kHz, so every sustained note would click at each loop boundary.
+- ⚠️ **`bankFor(program, perc)` is THE ONE PLACE a bank is chosen.** `renderOffline` used to carry
+  its own copy of that expression, commented "Same bank choice as live playback", which silently
+  stopped being true the moment packs existed — the bounce measured *byte-identical* with packs
+  present and packs 404ing. Same failure shape as GMD-44's three instrument factories. If you add
+  an instrument source, extend `bankFor`; do not add a branch. (SFZ still diverges here: GMD-62.)
+- Logs `[Gomidas] instrument 27: Clean Guitar (10 samples) — FluidR3 pack` per program, and warns
+  with the reason on fallback. Verified A/B on the sample score: brightness (first-difference
+  energy ratio) **0.0367 sonivox → 0.1604 packs**, RMS 0.128 → 0.178.
+- ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
+  scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
 
 ### Real-time-safety caveats (milestone-1; harden before shipping)
 TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ

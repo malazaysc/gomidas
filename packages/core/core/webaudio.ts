@@ -899,8 +899,48 @@ function createWebAudioBackend(BackendLib: any): any {
   }
 
   /**
+   * A pack is a bank. Both the drum kit (GMD-50) and the melodic packs (GMD-57) ship the SAME
+   * zone shape core/sf2.ts produces, so everything downstream — zone selection, rates, envelopes,
+   * exclusive-class choking — is the shared code path and never learns a pack exists.
+   *
+   * Decoding does NOT need the live context, and must not wait for one: packs are preloaded when
+   * a score is set, typically long before the user gesture that creates the AudioContext. Buffers
+   * carry their own sample rate, so a buffer decoded here plays correctly in whatever context
+   * ends up using it.
+   */
+  function packContext(): any {
+    return ctx || new (window as any).OfflineAudioContext(1, 1, 44100);
+  }
+
+  /**
+   * Decode one pack blob into `into`, and return the sample table rebased onto the decoded
+   * buffers. Each sample is its own complete audio file inside the blob, so each slice decodes
+   * independently — no sprite offsets to drift.
+   */
+  function decodePackBlob(c: any, head: any, blob: ArrayBuffer, into: Map<number, AudioBuffer>,
+                          base: number, what: string): Promise<any[]> {
+    // A JSON read against a stale blob would decode garbage; refuse instead.
+    if (head.blobBytes != null && blob.byteLength !== head.blobBytes)
+      throw new Error(what + ' blob is ' + blob.byteLength + ' bytes, header says ' + head.blobBytes);
+    return Promise.all(head.samples.map((s: any, i: number) =>
+      c.decodeAudioData(blob.slice(s.offset, s.offset + s.length))
+        .then((buf: AudioBuffer) => { into.set(base + i, buf); return buf; })))
+      .then((buffers: AudioBuffer[]) =>
+        // decodeAudioData resamples to the context rate. Report that rate as the sample's own so
+        // rateFor's sampleRate/outputRate term stays 1 and only the pitch factor remains; loop
+        // points move with it.
+        head.samples.map((s: any, i: number) => {
+          const buf = buffers[i];
+          const ratio = s.sampleRate > 0 ? buf.sampleRate / s.sampleRate : 1;
+          return { ...s, sampleRate: buf.sampleRate,
+                   start: 0, end: buf.length,
+                   startLoop: Math.round(s.startLoop * ratio), endLoop: Math.round(s.endLoop * ratio) };
+        }));
+  }
+
+  /**
    * The real drum kit (GMD-50): FluidR3's bank 128, extracted to assets/drumkits/ by
-   * tools/extract-drumkit.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
+   * tools/extract-sf2-pack.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
    * it is the fallback, not the plan.
    *
    * Fetched lazily on the first percussion note — 5.4MB must not land on someone who opened a
@@ -915,36 +955,13 @@ function createWebAudioBackend(BackendLib: any): any {
   function loadDrumKit(): Promise<any> {
     if (drumKit) return Promise.resolve(drumKit);
     if (drumKitLoading) return drumKitLoading;
-    // Decoding does NOT need the live context, and must not wait for one: the kit is preloaded
-    // when a score with drums is set, which is typically long before the user gesture that
-    // creates the AudioContext. Buffers carry their own sample rate, so a buffer decoded here
-    // plays correctly in whatever context ends up using it.
-    const c: any = ctx || new (window as any).OfflineAudioContext(1, 1, 44100);
+    const c: any = packContext();
     drumKitLoading = fetch(DRUMKIT_URL + '.json')
       .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
       .then(head => fetch(DRUMKIT_URL + '.bin')
         .then(r => { if (!r.ok) throw new Error('kit bin ' + r.status); return r.arrayBuffer(); })
-        .then(blob => {
-          // A JSON read against a stale blob would decode garbage; refuse instead.
-          if (head.blobBytes != null && blob.byteLength !== head.blobBytes)
-            throw new Error('kit blob is ' + blob.byteLength + ' bytes, header says ' + head.blobBytes);
-          // Each sample is its own complete audio file inside the blob, so each slice decodes
-          // independently — no sprite offsets to drift.
-          return Promise.all(head.samples.map((s: any, i: number) =>
-            c.decodeAudioData(blob.slice(s.offset, s.offset + s.length))
-              .then((buf: AudioBuffer) => { drumKitBuffers.set(i, buf); return buf; })));
-        })
-        .then((buffers: AudioBuffer[]) => {
-          // decodeAudioData resamples to the context rate. Report that rate as the sample's own
-          // so rateFor's sampleRate/outputRate term stays 1 and only the pitch factor remains;
-          // loop points move with it.
-          const samples = head.samples.map((s: any, i: number) => {
-            const buf = buffers[i];
-            const ratio = s.sampleRate > 0 ? buf.sampleRate / s.sampleRate : 1;
-            return { ...s, sampleRate: buf.sampleRate,
-                     start: 0, end: buf.length,
-                     startLoop: Math.round(s.startLoop * ratio), endLoop: Math.round(s.endLoop * ratio) };
-          });
+        .then(blob => decodePackBlob(c, head, blob, drumKitBuffers, 0, 'kit'))
+        .then((samples: any[]) => {
           const presets = head.kits.map((k: any) => ({ bank: 128, program: k.program, name: k.name, zones: k.zones }));
           return {
             presets, samples, pcm: new Int16Array(0),
@@ -980,16 +997,116 @@ function createWebAudioBackend(BackendLib: any): any {
     return drumKitLoading;
   }
 
+  /**
+   * Melodic instruments (GMD-57). GMD-50 fixed percussion and left guitars and basses on the
+   * sonivox bank — the same Android EAS bank whose 20ms kick we rejected. These are FluidR3's
+   * bank 0, extracted per program by tools/extract-sf2-pack.mjs.
+   *
+   * ONE BLOB PER PROGRAM, not per family, because melodic presets share almost no samples
+   * (measured on FluidR3: guitars 24-31 are 83 samples summed per-program and 82 unique). So the
+   * split costs nothing in total size and a score using one guitar fetches ~1MB instead of the
+   * 5.89MB family. The manifest carries every program's zone table — 482KB raw but 7.5KB brotli,
+   * so it is one cheap fetch that also tells us WHICH programs are packed, and therefore when to
+   * stay on sonivox instead of firing a 404.
+   */
+  const MELODIC_DIR = 'instruments-gm/';
+  const MELODIC_URL = MELODIC_DIR + 'gm-melodic';
+  let melodicManifest: any = null;
+  let melodicManifestLoading: Promise<any> | null = null;
+  const melodicPacks = new Map<number, any>();
+  const melodicLoading = new Map<number, Promise<any>>();
+
+  function loadMelodicManifest(): Promise<any> {
+    if (melodicManifest) return Promise.resolve(melodicManifest);
+    if (melodicManifestLoading) return melodicManifestLoading;
+    melodicManifestLoading = fetch(MELODIC_URL + '.json')
+      .then(r => { if (!r.ok) throw new Error('manifest ' + r.status); return r.json(); })
+      .then(m => { melodicManifest = m; return m; })
+      .catch((e) => {
+        console.warn('[Gomidas] melodic pack manifest unavailable, staying on the sonivox bank:', e);
+        melodicManifestLoading = null;
+        return null;
+      });
+    return melodicManifestLoading;
+  }
+
+  function loadMelodicPack(program: number): Promise<any> {
+    const have = melodicPacks.get(program);
+    if (have) return Promise.resolve(have);
+    const inflight = melodicLoading.get(program);
+    if (inflight) return inflight;
+
+    const c: any = packContext();
+    const job = loadMelodicManifest().then((m: any) => {
+      if (!m || !m.programs) return null;
+      const entry = m.programs.find((x: any) => x.program === program);
+      // Not packed is NOT an error: only guitars and basses ship today, and sonivox covers the
+      // other ~100 GM programs. Recording the miss keeps us from re-fetching the manifest per note.
+      if (!entry) { melodicPacks.set(program, null); return null; }
+      const buffers = new Map<number, AudioBuffer>();
+      return fetch(MELODIC_DIR + entry.blob)
+        .then(r => { if (!r.ok) throw new Error('pack ' + r.status); return r.arrayBuffer(); })
+        .then(blob => decodePackBlob(c, entry, blob, buffers, 0, 'program ' + program))
+        .then((samples: any[]) => {
+          const preset = { bank: 0, program, name: entry.name, zones: entry.zones };
+          const pack = {
+            presets: [preset], samples, pcm: new Int16Array(0),
+            makeBuffer: (i: number) => buffers.get(i) || null,
+            // The pack IS this one program, so the lookup cannot miss.
+            findPreset: () => preset
+          };
+          melodicPacks.set(program, pack);
+          try {
+            console.info('[Gomidas] instrument ' + program + ': ' + entry.name + ' (' +
+                         samples.length + ' samples) — FluidR3 pack');
+          } catch (e) { /* logging must never break playback */ }
+          // Swap it in by dropping instruments built from sonivox before it arrived, exactly as
+          // the drum kit does — otherwise the first playthrough is permanently the bad bank.
+          for (let ch = 0; ch < channels.length; ch++) {
+            const st = channels[ch];
+            if (st && st.instrument && !st.percussion && st.program === program && !sfzChannels.has(ch)) {
+              st.instrument.allNotesOff();
+              st.instrument = null;
+            }
+          }
+          return pack;
+        });
+    }).catch((e) => {
+      console.warn('[Gomidas] melodic pack for program ' + program + ' unavailable, ' +
+                   'falling back to the sonivox bank:', e);
+      melodicLoading.delete(program);
+      return null;
+    });
+
+    melodicLoading.set(program, job);
+    return job;
+  }
+
+  /**
+   * THE ONE PLACE a channel's bank is chosen. Live playback and the offline bounce must agree, or
+   * the bounce is not what you heard — and they silently disagreed until GMD-57: renderOffline
+   * had its own copy of this expression, commented "Same bank choice as live playback", which
+   * stopped being true the moment melodic packs existed. Same failure shape as GMD-44's three
+   * instrument factories. Keep it single-sourced.
+   *
+   * Prefer a FluidR3 pack — the drum kit for percussion, the per-program melodic pack otherwise —
+   * then the sonivox GM bank. melodicPacks holds null for a program we know is not packed, so
+   * `|| gmBank` is the intended path for those, not a fallback.
+   */
+  function bankFor(program: number, perc: boolean): any {
+    return perc ? (drumKit || gmBank) : (melodicPacks.get(program) || gmBank);
+  }
+
   function instrumentFor(ch: number, program: number, percussion: boolean): Instrument {
     const s = strip(ch);
     if (sfzChannels.has(ch) && s.instrument) return s.instrument;
     const perc = percussion || ch === 9;
     if (perc && !drumKit) loadDrumKit();
+    if (!perc && !melodicPacks.has(program)) loadMelodicPack(program);
     if (!s.instrument || s.program !== program || s.percussion !== perc) {
       if (s.instrument) s.instrument.allNotesOff();
-      // Prefer the drum pack for percussion and the real GM bank for everything else; fall back
-      // to the placeholder tone only while the bank is still loading or if it failed to load.
-      const bank = perc ? (drumKit || gmBank) : gmBank;
+      // Falls back to the placeholder tone only while a bank is still loading, or if it failed.
+      const bank = bankFor(program, perc);
       s.instrument = bank
         ? createSf2Instrument(ctx!, bank, program | 0, perc, gmBuffers)
         : createToneInstrument(ctx!, perc);
@@ -1286,9 +1403,10 @@ function createWebAudioBackend(BackendLib: any): any {
       input.connect(pan); pan.connect(eq[0]);
       eq[2].connect(master.eq[0]);
       const perc = percussion || ch === 9;
-      // Same bank choice as live playback, so the bounce is what you heard. The kit's decoded
-      // AudioBuffers carry their own sample rate, so they play correctly in this context too.
-      const bank = perc ? (drumKit || gmBank) : gmBank;
+      // Same bank choice as live playback, so the bounce is what you heard — via bankFor, NOT a
+      // second copy of the expression. A pack's decoded AudioBuffers carry their own sample rate,
+      // so they play correctly in this context too.
+      const bank = bankFor(program | 0, perc);
       const inst = bank
         ? createSf2Instrument(off as any, bank, program | 0, perc, offBuffers)
         : createToneInstrument(off as any, perc);
@@ -1325,10 +1443,14 @@ function createWebAudioBackend(BackendLib: any): any {
 
     setSequence(seq: any) {
       sequence = seq && seq.events ? seq : { lengthTicks: 0, events: [] };
-      // Start fetching the 5.4MB drum pack as soon as a score HAS drums, not when the first
-      // drum note is scheduled: waiting for the note means the whole first playthrough comes
-      // out of the sonivox fallback, so the first thing anyone hears is the bad kit.
+      // Start fetching packs as soon as a score NEEDS them, not when the first note is
+      // scheduled: waiting for the note means the whole first playthrough comes out of the
+      // sonivox fallback, so the first thing anyone hears is the bad bank.
+      // Event tuple: [tick, channel, key, velocity, on, program, percussion, ...].
       if (!drumKit && sequence.events.some((e: number[]) => e[1] === 9 || e[6])) loadDrumKit();
+      const wanted = new Set<number>();
+      for (const e of sequence.events as number[][]) if (!(e[1] === 9 || e[6])) wanted.add(e[5] | 0);
+      for (const program of wanted) if (!melodicPacks.has(program)) loadMelodicPack(program);
       // Re-anchoring mid-playback keeps an edit from desynchronising the transport.
       if (playing) { allNotesOff(); anchorAt(currentTick()); pump(); }
     },

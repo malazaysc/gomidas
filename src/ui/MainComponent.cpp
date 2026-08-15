@@ -52,7 +52,7 @@ const Asset kAssets[] = {
     { "/alphaTab.min.js","alphaTab_min_js", "text/javascript" },
     { "/Bravura.woff2",  "Bravura_woff2",   "font/woff2" },
     { "/Bravura.woff",   "Bravura_woff",    "font/woff" },
-    { "/drumkit.png",    "drumkit_png",     "image/png" },
+    { "/drumkit.webp",   "drumkit_webp",    "image/webp" },
 };
 } // namespace
 

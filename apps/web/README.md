@@ -7,20 +7,34 @@ compiled JavaScript. There is nothing to keep in sync because there is only one 
 ```bash
 npm install
 npm run dev      # compiles ../../packages/core with tsc, then serves it at http://localhost:5173
+npm run build    # tsc, then apps/web/build.mjs -> apps/web/dist (~19MB)
+npm run preview  # serve the production output
 ```
 
-`npm run dev` and `npm run build` both run the TypeScript build first (`npm --prefix ../../packages/core
-run build`), because `index.html` loads `dist/*.js` — the same paths the JUCE WebView resolves
-through `MainComponent`'s `kAssets` table. **Adding a script tag means adding a row there too.**
+Both scripts run the TypeScript build first (`npm --prefix ../../packages/core run build`),
+because `index.html` loads `dist/*.js` — the same paths the JUCE WebView resolves through
+`MainComponent`'s `kAssets` table.
 
-## What works today (GMD-32)
+⚠️ **Adding a script tag means adding a row in `kAssets` AND a row in `build.mjs`'s copy list.**
+The build now fails loudly if you forget the second one, rather than shipping a dead reference.
 
-The whole editor UI renders and is interactive: notation + tab, beat grid, fretboard, track
-list, inspector, palette. Scores open through a file picker.
+## The production build is `build.mjs`, not `vite build`
 
-**There is no audio.** `createWebBackends()` supplies a real `HostBackend` and a *silent*
-`AudioBackend`; GMD-33 replaces it with the Web Audio scheduler and channel strip. Everything
-above the seam is already written against the interface, so that is a swap, not a rewrite.
+`vite build` cannot build this app, and used to fail *silently*: `index.html` loads classic
+(non-module) scripts, which Vite refuses to process **and does not copy**, so the output was an
+`index.html` pointing at fourteen files that were not there — plus 151MB of FluidR3 that nothing
+fetches, because `publicDir` was the whole `assets/` tree. It exited 0. That was GMD-56/GMD-52.
+
+`build.mjs` copies an explicit **allowlist**, content-hashes the JavaScript (so a CDN can cache
+it forever), and then **verifies** the result: every reference in the emitted HTML, plus every
+path the running code fetches without one, must resolve to a file that exists. Vite stays for
+`dev`, where its file serving genuinely earns its place.
+
+## What works today
+
+The whole editor renders and is interactive — notation + tab, beat grid, fretboard, track list,
+inspector, palette — and **plays audio** through the Web Audio scheduler and channel strip
+(GMD-33). Authoritative feature status is `docs/FEATURES.md`.
 
 `caps.liveInput` and `caps.pluginHost` are `false` and always will be — VST/AU hosting and
 low-latency live input are why the desktop app exists. The desktop-only methods are *absent*

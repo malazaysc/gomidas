@@ -1,4 +1,4 @@
-// GMD-50 — the committed drum pack (assets/drumkits/), produced by tools/extract-drumkit.mjs.
+// GMD-50 — the committed drum pack (assets/drumkits/), produced by tools/extract-sf2-pack.mjs.
 //
 // The pack is generated once on a machine that has the 151MB FluidR3 bank and then committed, so
 // nothing in CI can regenerate it. That makes the FILE the contract: if an offset, a zone or the

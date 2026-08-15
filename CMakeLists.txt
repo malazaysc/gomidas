@@ -131,7 +131,7 @@ juce_add_binary_data(GomidasAssets
     packages/core/alphaTab.min.js
     packages/core/Bravura.woff2
     packages/core/Bravura.woff
-    packages/core/drumkit.png
+    packages/core/drumkit.webp
     assets/soundfont/sonivox.sf2)
 
 # The embedded blob is generated from tsc output, so it must wait for tsc.

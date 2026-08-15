@@ -356,7 +356,9 @@
 
     const stage = el('div', 'kit-stage');
     const frame = el('div', 'kit-frame');
-    const img = document.createElement('img'); img.src = '/drumkit.png'; img.alt = 'Drum kit';
+    // Relative, not '/drumkit.webp': an absolute path breaks the base:'./' subpath promise in
+    // apps/web/vite.config.js. Every script tag already resolves this way on both products.
+    const img = document.createElement('img'); img.src = 'drumkit.webp'; img.alt = 'Drum kit';
     frame.appendChild(img);
     KIT_PIECES.forEach(p => {
       const h = el('div', 'kit-hot'); h.dataset.piece = p.id;

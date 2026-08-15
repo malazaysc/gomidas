@@ -79,8 +79,14 @@ back to sonivox if it is missing. Regenerate it only if the kit selection change
 FluidR3 in place plus `ffmpeg`:
 
 ```bash
-npm --prefix packages/core run build          # the tool reads dist/core/sf2.js
-node packages/core/tools/extract-drumkit.mjs  # --programs 0,8,16  --codec flac|opus|aac
+npm --prefix packages/core run build           # the tool reads dist/core/sf2.js
+node packages/core/tools/extract-sf2-pack.mjs  # --programs 0,8,16  --codec flac|opus|aac
+
+# The melodic packs (GMD-57): one blob PER PROGRAM, because melodic presets share almost no
+# samples, so a score using one guitar fetches ~1MB instead of the whole 5.89MB family.
+node packages/core/tools/extract-sf2-pack.mjs --bank 0 --split \
+  --programs 24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39 \
+  --out assets/instruments-gm --name gm-melodic
 ```
 
 ---
