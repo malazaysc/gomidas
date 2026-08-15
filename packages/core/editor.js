@@ -927,6 +927,10 @@
     const b = beat(), t = track();
     if (!b || !t) return;
     const { channel, percussion } = GomidasCore.trackChannelInfo(t);
+    // The GM program is still the track's own — trackChannelInfo answers "which channel, and is
+    // it drums", not "which sound". GMD-54 dropped the `pb` this used to come from and left the
+    // reference behind, so every audition threw and clicking a fret went silent (GMD-67).
+    const program = (t.playbackInfo && t.playbackInfo.program) | 0;
     let keys;
     if (percussion) {
       const arts = t.percussionArticulations || [];
@@ -936,7 +940,7 @@
     }
     keys = keys.filter(k => k != null && k >= 0 && k <= 127);
     if (!keys.length) return;
-    if (A()) A().preview(channel, pb.program | 0, percussion, keys);
+    if (A()) A().preview(channel, program, percussion, keys);
   }
 
   // ---- drums -----------------------------------------------------------------
