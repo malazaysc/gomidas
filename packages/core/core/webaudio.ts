@@ -878,12 +878,27 @@ function createWebAudioBackend(BackendLib: any): any {
   let gmLoading: Promise<any> | null = null;
   const gmBuffers = new Map<number, AudioBuffer>();
 
+  /**
+   * Cache-first fetch for every lazily-loaded audio payload (GMD-58). `expectedBytes` is the
+   * `blobBytes` from the pack head when there is one, which is what invalidates a cached blob
+   * after a re-extract. Falls back to a plain fetch if the cache module is absent, so the
+   * loaders below have exactly one code path either way.
+   */
+  function packFetch(url: string, expectedBytes?: number | null): Promise<ArrayBuffer> {
+    const pc = (window as any).GomidasPackCache;
+    if (pc) return pc.fetchBuffer(url, expectedBytes);
+    return fetch(url).then(r => {
+      if (!r.ok) throw new Error(url + ' ' + r.status);
+      return r.arrayBuffer();
+    });
+  }
+
   function loadGmBank(): Promise<any> {
     if (gmBank) return Promise.resolve(gmBank);
     if (gmLoading) return gmLoading;
     // 1.35MB. FluidR3 (144MB) is emphatically not going over the wire (§8).
-    gmLoading = fetch('soundfont/sonivox.sf2')
-      .then(r => { if (!r.ok) throw new Error('sf2 ' + r.status); return r.arrayBuffer(); })
+    // No head to size-check against, so this one is keyed by CACHE_VERSION alone (GMD-58).
+    gmLoading = packFetch('soundfont/sonivox.sf2')
       .then(buf => {
         gmBank = (window as any).GomidasSf2.parseSf2(buf);
         // Re-create instruments built from the placeholder tone before the bank arrived, so the
@@ -958,8 +973,7 @@ function createWebAudioBackend(BackendLib: any): any {
     const c: any = packContext();
     drumKitLoading = fetch(DRUMKIT_URL + '.json')
       .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
-      .then(head => fetch(DRUMKIT_URL + '.bin')
-        .then(r => { if (!r.ok) throw new Error('kit bin ' + r.status); return r.arrayBuffer(); })
+      .then(head => packFetch(DRUMKIT_URL + '.bin', head.blobBytes)
         .then(blob => decodePackBlob(c, head, blob, drumKitBuffers, 0, 'kit'))
         .then((samples: any[]) => {
           const presets = head.kits.map((k: any) => ({ bank: 128, program: k.program, name: k.name, zones: k.zones }));
@@ -1044,8 +1058,7 @@ function createWebAudioBackend(BackendLib: any): any {
       // other ~100 GM programs. Recording the miss keeps us from re-fetching the manifest per note.
       if (!entry) { melodicPacks.set(program, null); return null; }
       const buffers = new Map<number, AudioBuffer>();
-      return fetch(MELODIC_DIR + entry.blob)
-        .then(r => { if (!r.ok) throw new Error('pack ' + r.status); return r.arrayBuffer(); })
+      return packFetch(MELODIC_DIR + entry.blob, entry.blobBytes)
         .then(blob => decodePackBlob(c, entry, blob, buffers, 0, 'program ' + program))
         .then((samples: any[]) => {
           const preset = { bank: 0, program, name: entry.name, zones: entry.zones };
@@ -1293,9 +1306,11 @@ function createWebAudioBackend(BackendLib: any): any {
       let entry = presetCache.get(id);
       if (!entry) {
         const url = 'instruments/' + preset.file;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('sfz ' + res.status);
-        const regions = (window as any).GomidasSfz.parseSfz(await res.text());
+        // Bundled presets are immutable per deploy and there is no head declaring their size, so
+        // these ride on CACHE_VERSION (GMD-58). A guitar is ~40 files and 5.2MB — easily the
+        // longest wait in the app, and the one most worth not repeating.
+        const sfzText = await packFetch(url).then(b => new TextDecoder().decode(new Uint8Array(b)));
+        const regions = (window as any).GomidasSfz.parseSfz(sfzText);
         const base = url.slice(0, url.lastIndexOf('/') + 1);
         const names = (window as any).GomidasSfz.sampleList(regions);
         const buffers = new Map<string, AudioBuffer>();
@@ -1303,9 +1318,7 @@ function createWebAudioBackend(BackendLib: any): any {
         // just queues them in the browser anyway, while making failures harder to attribute.
         for (const name of names) {
           try {
-            const r = await fetch(base + name);
-            if (!r.ok) continue;
-            buffers.set(name, await c.decodeAudioData(await r.arrayBuffer()));
+            buffers.set(name, await c.decodeAudioData(await packFetch(base + name)));
           } catch (e) { /* skip this sample; findRegion will simply produce no voice */ }
         }
         if (!buffers.size) throw new Error('no samples decoded');

@@ -40,6 +40,7 @@ const Asset kAssets[] = {
     { "/dist/core/sfz.js",      "sfz_js",       "text/javascript" },
     { "/dist/core/fx.js",       "fx_js",        "text/javascript" },
     { "/dist/core/sf2.js",      "sf2_js",       "text/javascript" },
+    { "/dist/core/packcache.js", "packcache_js", "text/javascript" },
     { "/dist/core/webfiles.js", "webfiles_js",  "text/javascript" },
     { "/dist/core/menus.js",    "menus_js",     "text/javascript" },
     { "/dist/core/webshell.js", "webshell_js",  "text/javascript" },

@@ -452,7 +452,21 @@ function createNewFromConfig(cfg) {
 // ---- panel collapse / full-view (session view state) ------------------------
 // alphaTab doesn't always reflow on container resize; force a re-render shortly
 // after a layout change so the score uses the new width.
-function reflowScore() { setTimeout(() => { try { if (api) api.render(); } catch (e) {} }, 40); }
+//
+// DEBOUNCED, and it matters (GMD-41). initDrawers() applies five panels in a loop, so startup
+// used to schedule five separate full re-layouts 4ms apart. alphaTab appends each render's
+// partials from a requestAnimationFrame and trims the surface to its own result counter at
+// end-of-render, so five overlapping renders interleave their appends and the counter no longer
+// describes the DOM — the score title ended up drawn six times, overprinted. Coalescing to one
+// pending render fixes it at the source and saves four full score layouts at startup.
+let reflowTimer = null;
+function reflowScore() {
+  if (reflowTimer !== null) clearTimeout(reflowTimer);
+  reflowTimer = setTimeout(() => {
+    reflowTimer = null;
+    try { if (api) api.render(); } catch (e) {}
+  }, 40);
+}
 const PANEL_CLASS = { palette: 'hide-palette', inspector: 'hide-inspector', tracks: 'hide-tracks', fretboard: 'hide-fretboard' };
 function togglePanel(which) {
   const cls = PANEL_CLASS[which]; if (!cls) return;
@@ -1449,6 +1463,18 @@ window.addEventListener('load', () => {
   if (window.GomidasEditor) window.GomidasEditor.init(() => api);
   initDrawers();
   setStatus('ready');
-  loadSample();
-  focusEditor();
+  // One frame before the first score load, on purpose (GMD-41). The AlphaTabApi constructor
+  // defers its own bootstrap — initialRender() — behind a requestAnimationFrame, and that
+  // bootstrap is what registers the handler resetting alphaTab's render-result counter on every
+  // preRender. Loading synchronously here always beat it, so the first renders appended their
+  // partials to the surface with no counter to trim against and the title came out overprinted.
+  // rAF callbacks run in registration order and initAlphaTab() above registered first, so one
+  // frame is a guarantee that the bootstrap has run, not a hope about timing.
+  //
+  // The timeout is insurance, not a second path: a browser never runs rAF for a hidden tab, and
+  // a blank score is a far worse failure than an overprinted title. Whichever fires first wins.
+  let booted = false;
+  const bootScore = () => { if (booted) return; booted = true; loadSample(); focusEditor(); };
+  requestAnimationFrame(bootScore);
+  setTimeout(bootScore, 2000);
 });

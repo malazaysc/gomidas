@@ -69,6 +69,7 @@ const HASHED_SCRIPTS = [
   'dist/core/sfz.js',
   'dist/core/fx.js',
   'dist/core/sf2.js',
+  'dist/core/packcache.js',
   'dist/core/webfiles.js',
   'dist/core/menus.js',
   'dist/core/webaudio.js',

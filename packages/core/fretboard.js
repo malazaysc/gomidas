@@ -343,6 +343,7 @@
     // KIT pane: quick tools | stage | articulation
     const kit = el('div', 'dp-pane' + (drumTab === 'kit' ? ' active' : ''));
     kit.dataset.pane = 'kit';
+    const center = el('div', 'kit-center'); // stage with the pattern library stacked under it
     const tools = el('div', 'kit-tools');
     tools.appendChild(el('div', 'kit-h', 'Quick Tools'));
     QUICK_TOOLS.forEach(q => {
@@ -367,10 +368,11 @@
       frame.appendChild(h);
     });
     frame.addEventListener('click', (e) => { const h = e.target.closest('.kit-hot'); if (h) onKitHit(h.dataset.piece); });
-    stage.appendChild(frame); kit.appendChild(stage);
+    stage.appendChild(frame); center.appendChild(stage);
+    center.appendChild(buildPatternLib()); // pattern library lives in the KIT pane only
+    kit.appendChild(center);
 
     kit.appendChild(el('div', 'kit-artic')); // filled by renderArticPanel
-    kit.appendChild(buildPatternLib()); // pattern library lives in the KIT pane only
     body.appendChild(kit);
 
     const groove = el('div', 'dp-pane' + (drumTab === 'groove' ? ' active' : '')); groove.dataset.pane = 'groove';

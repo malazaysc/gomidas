@@ -122,6 +122,7 @@ juce_add_binary_data(GomidasAssets
     packages/core/dist/core/sfz.js
     packages/core/dist/core/fx.js
     packages/core/dist/core/sf2.js
+    packages/core/dist/core/packcache.js
     packages/core/dist/core/webfiles.js
     packages/core/dist/core/menus.js
     packages/core/dist/core/webshell.js
