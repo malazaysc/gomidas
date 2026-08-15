@@ -245,6 +245,14 @@ Key facts learned (don't relearn):
   `.gomidas` save/load and undo snapshots). `Gp7Exporter` exists → real `.gp` export is possible.
 - Keyboard goes to the WebView; it must hold focus (native `grabKeyboardFocus` on load +
   focus-on-click). Real-key delivery unverified in the sandbox (synthetic keys blocked).
+- ⚠️ **The `AlphaTabApi` constructor defers its own bootstrap behind a `requestAnimationFrame`**
+  (`beginInvoke` *is* rAF), and that bootstrap — `initialRender()` — is what registers the handler
+  resetting alphaTab's render-result counter on each `preRender`. **Any render that happens before
+  it appends partials to `.at-surface` with no counter to trim against**, so the surface grows by 4
+  nodes per render forever and the score title comes out overprinted (GMD-41). Never drive
+  `tex`/`render`/`renderTracks` in the same task that constructs the API — `app.js` boot waits one
+  frame. Corollary: **`reflowScore()` is debounced**; five overlapping renders (one per panel in
+  `initDrawers`) interleave their rAF-deferred appends and defeat the counter even after bootstrap.
 
 ## Performance (measured — don't re-investigate from scratch)
 Instrumented the real edit→renderFinished→paint timeline (drove `setFret` programmatically, ran the
@@ -445,6 +453,28 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   energy ratio) **0.0367 sonivox → 0.1604 packs**, RMS 0.128 → 0.178.
 - ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
   scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
+
+### Web pack cache — IndexedDB, so a repeat visit is shell-only (GMD-58, 2026-08-15)
+`core/packcache.ts` (`GomidasPackCache`) caches every lazily-fetched **binary** payload — sonivox,
+the drum `.bin`, the per-program melodic `.bin`s, SFZ definitions + samples. One helper,
+`packFetch(url, expectedBytes)` in `webaudio.ts`, is the only fetch path for all of them.
+Measured: cold visit 3 misses / 2.2MB; **warm visit 3 hits / 0 bytes**, with only the manifest on
+the wire. The 5.4MB drum blob round-trips exactly, 8ms warm.
+- **The JSON heads are deliberately NOT cached.** The manifest is 482KB raw but 7.5KB brotli, and
+  it is what declares each blob's `blobBytes` — so reading every blob back against a
+  freshly-fetched head gives invalidation for free. A re-extract invalidates automatically; there
+  is no version to forget to bump. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
+- ⚠️ **`indexedDB.open()` can hang with NO event** — not success, not error, not blocked — when a
+  `deleteDatabase` from another tab is pending. It froze the renderer because every `fetchBuffer`
+  awaited forever. Hence the 3s open / 4s read timeouts. **Nothing on this path may stall a pack
+  load**: every failure falls through to the network, and the network to sonivox.
+- ⚠️ **A host with an SPA fallback answers a missing pack with 200 `index.html`** — cached, that
+  would keep "succeeding" with HTML forever for the payloads with no `blobBytes` to check. Rejected
+  on content-type. Remember this when configuring the host in GMD-60.
+- Stores a **copy** of the buffer: callers hand these to `decodeAudioData`, which *detaches* its
+  input, and the spec does not pin down whether IndexedDB has finished serialising by then.
+- Tested without `fake-indexeddb`: the store is an injectable seam, so policy is unit-tested
+  (`tests/packcache.test.js`) and the IDB plumbing is verified in Chrome.
 
 ### Real-time-safety caveats (milestone-1; harden before shipping)
 TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ
