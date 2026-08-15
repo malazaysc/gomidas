@@ -79,7 +79,7 @@ back to sonivox if it is missing. Regenerate it only if the kit selection change
 FluidR3 in place plus `ffmpeg`:
 
 ```bash
-npm --prefix packages/core run build           # the tool reads dist/core/sf2.js
+pnpm -C packages/core run build                # the tool reads dist/core/sf2.js
 node packages/core/tools/extract-sf2-pack.mjs  # --programs 0,8,16  --codec flac|opus|aac
 
 # The melodic packs (GMD-57): one blob PER PROGRAM, because melodic presets share almost no

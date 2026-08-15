@@ -7,7 +7,7 @@ and [`SFZ_TEST_CHECKLIST.md`](./SFZ_TEST_CHECKLIST.md) (manual SFZ pass)._
 
 ```bash
 # Web layer — pure logic (fast, no native build). 62 tests.
-cd packages/core && npm ci && npm test          # or: npm run test:watch
+pnpm install && pnpm -C packages/core run test  # or: pnpm -C packages/core run test:watch
 
 # Native audio-path smoke tests (sfizz SFZ load + render) via ctest.
 cmake -B build -DGOMIDAS_BUILD_TESTS=ON
@@ -95,7 +95,7 @@ _Original plan (for reference):_
   `applyMixer` gain/pan computation (vol × mute/solo → per-channel gain).
 
 **Harness:** [Vitest](https://vitest.dev) — runs ESM directly, no bundler/build step. Add a
-minimal `packages/core/package.json` (`"type": "module"`, `vitest` devDep) + `npm test`.
+minimal `packages/core/package.json` (`"type": "module"`, `vitest` devDep) + `pnpm test`.
 
 **What to assert:** exact tick boundaries, that a full bar overflows correctly, bend centre-reset
 sorts *before* the next note-on, envelope round-trips (save→load identity), mixer solo overrides

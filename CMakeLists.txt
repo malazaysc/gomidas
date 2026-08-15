@@ -74,18 +74,21 @@ juce_generate_juce_header(Gomidas)
 # It also means `cmake --build` now depends on Node. That is the documented cost of the
 # TypeScript decision (docs/WEB_PORT.md §1.1) and it fails loudly rather than embedding stale
 # JavaScript — a silently out-of-date bundle is far worse than a clear error.
-find_program(NPX_EXECUTABLE npx)
-if (NOT NPX_EXECUTABLE)
+# pnpm, not npx (GMD-63): `npx tsc` silently DOWNLOADS a compiler from the registry when one is
+# not installed locally, so a missing install would embed JavaScript built by an unpinned tsc
+# instead of failing. `pnpm exec` only ever runs what the lockfile pinned.
+find_program(PNPM_EXECUTABLE pnpm)
+if (NOT PNPM_EXECUTABLE)
   message(FATAL_ERROR
-    "npx not found, but the web front-end is TypeScript and must be compiled before it can be "
-    "embedded. Install Node 20+, then run: cd packages/core && npm install")
+    "pnpm not found, but the web front-end is TypeScript and must be compiled before it can be "
+    "embedded. Install Node 20+ and pnpm (npm i -g pnpm), then run: pnpm install")
 endif()
 
 set(GOMIDAS_WEB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/packages/core")
 set(GOMIDAS_WEB_DIST "${GOMIDAS_WEB_SRC}/dist")
 
 execute_process(
-  COMMAND "${NPX_EXECUTABLE}" tsc -p tsconfig.json
+  COMMAND "${PNPM_EXECUTABLE}" exec tsc -p tsconfig.json
   WORKING_DIRECTORY "${GOMIDAS_WEB_SRC}"
   RESULT_VARIABLE GOMIDAS_TSC_RESULT
   OUTPUT_VARIABLE GOMIDAS_TSC_OUTPUT
@@ -96,7 +99,7 @@ endif()
 
 # Re-emit on every build so an edited .ts cannot leave a stale .js embedded.
 add_custom_target(GomidasWeb ALL
-  COMMAND "${NPX_EXECUTABLE}" tsc -p tsconfig.json
+  COMMAND "${PNPM_EXECUTABLE}" exec tsc -p tsconfig.json
   WORKING_DIRECTORY "${GOMIDAS_WEB_SRC}"
   COMMENT "Compiling web front-end (tsc -> web/dist)"
   VERBATIM)

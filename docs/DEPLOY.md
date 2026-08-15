@@ -12,7 +12,7 @@ SharedArrayBuffer, no AudioWorklet, no service worker — so there are no COOP/C
 requirements and nothing to run server-side.
 
 ```bash
-npm --prefix apps/web run build     # -> apps/web/dist, ~27MB, 106 files
+pnpm -C apps/web run build          # -> apps/web/dist, ~27MB, 106 files
 ```
 
 The build fails loudly if anything referenced is missing, so a green build is a deployable one
@@ -49,7 +49,7 @@ Any **one** of these:
 
 | Option | How | Notes |
 |---|---|---|
-| **Interactive login** (simplest) | type `! npx wrangler login` in this session | opens a browser, authorises this machine |
+| **Interactive login** (simplest) | type `! pnpm dlx wrangler login` in this session | opens a browser, authorises this machine |
 | **API token** | create at *Cloudflare → My Profile → API Tokens*, template **Edit Cloudflare Workers**, then set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` | best for CI |
 | **You run it** | I hand you the exact command, you paste the output back | nothing shared |
 
@@ -67,8 +67,8 @@ Plus two decisions:
 ## 2. Deploy
 
 ```bash
-npm --prefix apps/web run build
-npx wrangler pages deploy apps/web/dist --project-name gomidas
+pnpm -C apps/web run build
+pnpm dlx wrangler pages deploy apps/web/dist --project-name gomidas
 ```
 
 First run creates the project and prints the `*.pages.dev` URL. Every later run publishes a new

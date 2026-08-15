@@ -7,8 +7,13 @@ compile_commands.json
 *.gomidas.bak
 
 # Node / Vitest (web layer unit tests — see docs/TESTING.md)
-packages/core/node_modules/
-apps/packages/core/node_modules/
+#
+# Unanchored, so it matches at ANY depth. It used to name two specific paths, one of which
+# (apps/packages/core/…) does not exist — with the result that apps/web/node_modules was tracked,
+# 220 files of it. pnpm's store makes that worse, not better: symlinks into .pnpm are meaningless
+# to anyone else's checkout.
+node_modules/
+.pnpm-store/
 apps/packages/core/dist/
 packages/core/coverage/
 

@@ -101,11 +101,23 @@ packages/core/tools/extract-sf2-pack.mjs the tool that generates both (needs Flu
 
 ## Build
 
+**pnpm, not npm** (GMD-63) — one workspace (`pnpm-workspace.yaml`), one lockfile, one install for
+both packages. CMake shells out to `pnpm exec tsc`, so **`pnpm install` is a prerequisite of
+`cmake --build`**; it hard-fails if pnpm is missing rather than embedding stale JavaScript.
+(`npx tsc` used to *download* a compiler when none was installed — an unpinned tsc silently
+compiling what gets embedded.)
+
 ```bash
+pnpm install                              # workspace root; required before configuring
 cmake -B build -DCMAKE_BUILD_TYPE=Debug   # first run fetches JUCE 8.0.13
 cmake --build build
 open "build/Gomidas_artefacts/Debug/Gomidas.app"
 ```
+
+Root scripts: `pnpm build` / `test` / `typecheck` (packages/core) and `pnpm web:dev` /
+`web:build` / `web:preview` (apps/web). Per-package: `pnpm -C <dir> run <script>` — filter by
+**directory**, since the package names are confusing (packages/core is `gomidas-web`, apps/web is
+`gomidas-app-web`).
 
 ## Cross-thread model (real-time safety)
 - Edits build a new `Sequence` on the message thread; handed to the audio thread via a

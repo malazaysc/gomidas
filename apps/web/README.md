@@ -5,15 +5,17 @@ directory the desktop app embeds, so both products serve one `index.html` and on
 compiled JavaScript. There is nothing to keep in sync because there is only one of everything.
 
 ```bash
-npm install
-npm run dev      # compiles ../../packages/core with tsc, then serves it at http://localhost:5173
-npm run build    # tsc, then apps/web/build.mjs -> apps/web/dist (~19MB)
-npm run preview  # serve the production output
+pnpm install      # from the repo root — one install covers the whole workspace
+pnpm dev          # compiles ../../packages/core with tsc, then serves at http://localhost:5173
+pnpm build        # tsc, then apps/web/build.mjs -> apps/web/dist (~27MB)
+pnpm preview      # serve the production output
 ```
 
-Both scripts run the TypeScript build first (`npm --prefix ../../packages/core run build`),
-because `index.html` loads `dist/*.js` — the same paths the JUCE WebView resolves through
+Both scripts run the TypeScript build first (`pnpm -C ../../packages/core run build`), because
+`index.html` loads `dist/*.js` — the same paths the JUCE WebView resolves through
 `MainComponent`'s `kAssets` table.
+
+From the repo root the same things are `pnpm web:dev` / `pnpm web:build` / `pnpm web:preview`.
 
 ⚠️ **Adding a script tag means adding a row in `kAssets` AND a row in `build.mjs`'s copy list.**
 The build now fails loudly if you forget the second one, rather than shipping a dead reference.
