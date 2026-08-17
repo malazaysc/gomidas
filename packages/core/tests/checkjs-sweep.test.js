@@ -1,16 +1,19 @@
-// GMD-68 — the sweep's classifier is what the gate actually IS.
+// GMD-68 — the sweep's classifier and its coverage assertions ARE the gate.
 //
-// The failure mode this pins down is specific: a diagnostic that should fail but isn't matched
-// prints "[sweep] clean" and exits 0, which is indistinguishable from a healthy run. The first
-// version of this script shipped exactly that — it keyed off `error TS2304` alone, so a stale
-// entry in the sweep config (TS6053) or a syntax error (TS1xxx) reported clean while checking
-// less than it claimed.
+// The failure mode being pinned down is specific: anything that lets the script print
+// "[sweep] clean" and exit 0 without having checked the files. That is indistinguishable from a
+// healthy run, and two review rounds found four separate routes to it — a stale `files` entry, an
+// empty `files` list, a syntax error, and a killed tsc. Each has a test here.
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-import { classifySweepOutput, missingSweepFiles } from '../tools/checkjs-sweep.mjs'
+import { dirname, join, resolve } from 'node:path'
+import {
+  classifySweepOutput,
+  parseResolvedConfig,
+  missingFiles,
+  unprocessedFiles,
+} from '../tools/checkjs-sweep.mjs'
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -42,7 +45,7 @@ describe('classifySweepOutput', () => {
   })
 
   it('ignores the inference noise that made checkJs unusable in the main build', () => {
-    // These are the high-count codes measured on this codebase: 510 + 472 + 221 + 88 + 72 + 24.
+    // The high-count codes measured on this codebase: 510 + 472 + 221 + 88 + 72 + 24.
     const noise = [
       "app.js(1,1): error TS7006: Parameter 'e' implicitly has an 'any' type.",
       "app.js(2,1): error TS2339: Property 'gomidasFoo' does not exist on type 'Window'.",
@@ -74,24 +77,55 @@ describe('classifySweepOutput', () => {
   })
 })
 
-describe('missingSweepFiles', () => {
-  it('accepts the real sweep config — every file it names exists', () => {
-    const cfg = readFileSync(join(pkgRoot, 'tsconfig.sweep.json'), 'utf8')
-    expect(missingSweepFiles(cfg, pkgRoot)).toEqual([])
+describe('parseResolvedConfig', () => {
+  it('reads the files list out of tsc --showConfig output', () => {
+    const shown = '{ "compilerOptions": { "checkJs": true }, "files": ["./app.js", "./x.js"] }'
+    expect(parseResolvedConfig(shown)).toEqual(['./app.js', './x.js'])
   })
 
+  it('rejects an empty files list rather than sweeping nothing', () => {
+    // tsc answers `"files": []` with TS18002 — a 5-digit code no FATAL pattern matches — so
+    // without this guard the sweep checked zero files and reported clean.
+    expect(() => parseResolvedConfig('{ "files": [] }')).toThrow(/missing or empty/)
+  })
+
+  it('rejects a config with no files key at all', () => {
+    expect(() => parseResolvedConfig('{ "include": ["**/*"] }')).toThrow(/missing or empty/)
+  })
+
+  it('rejects non-JSON — i.e. tsc reported an error instead of a config', () => {
+    expect(() => parseResolvedConfig("error TS5083: Cannot read file 'nope.json'.")).toThrow(
+      /did not return JSON/,
+    )
+  })
+})
+
+describe('missingFiles', () => {
   it('catches a stale entry left behind by a .js -> .ts migration', () => {
-    const cfg = '{\n // leading comment\n "files": ["app.js", "fretboard-renamed-away.js"] }'
-    expect(missingSweepFiles(cfg, pkgRoot)).toEqual(['fretboard-renamed-away.js'])
+    expect(missingFiles(['app.js', 'fretboard-renamed-away.js'], pkgRoot)).toEqual([
+      'fretboard-renamed-away.js',
+    ])
+  })
+})
+
+describe('unprocessedFiles', () => {
+  const listed = [resolve(pkgRoot, 'app.js'), resolve(pkgRoot, 'editor.js')].join('\n')
+
+  it('is satisfied when tsc listed every file it was given', () => {
+    expect(unprocessedFiles(['app.js', 'editor.js'], listed, pkgRoot)).toEqual([])
   })
 
-  it('tolerates a TRAILING comment — tsconfig allows them, JSON.parse does not', () => {
-    const cfg = '{ // trailing on an open brace\n "files": ["app.js"] // and here\n }'
-    expect(missingSweepFiles(cfg, pkgRoot)).toEqual([])
+  it('catches a file tsc never processed — the sweep did not cover what it claims', () => {
+    expect(unprocessedFiles(['app.js', 'grooves.js'], listed, pkgRoot)).toEqual(['grooves.js'])
   })
 
-  it('does not treat a // inside a string value as a comment', () => {
-    const cfg = '{ "files": ["nested//path.js"] }'
-    expect(missingSweepFiles(cfg, pkgRoot)).toEqual(['nested//path.js'])
+  it('does not count a diagnostic line as a processed file', () => {
+    const withError = `${listed}\napp.js(1,1): error TS2304: Cannot find name 'x'.`
+    expect(unprocessedFiles(['app.js', 'editor.js'], withError, pkgRoot)).toEqual([])
+    expect(unprocessedFiles(['grooves.js'], withError, pkgRoot)).toEqual(['grooves.js'])
+  })
+
+  it('treats truncated output (a killed tsc) as coverage loss, not success', () => {
+    expect(unprocessedFiles(['app.js', 'editor.js'], '', pkgRoot)).toEqual(['app.js', 'editor.js'])
   })
 })

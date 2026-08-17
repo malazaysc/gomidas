@@ -314,6 +314,14 @@ Key facts learned (don't relearn):
   inference noise and must not gate. The classifier is unit-tested (`tests/checkjs-sweep.test.js`)
   precisely because a misclassification is indistinguishable from "clean". A legitimate new global
   goes in `types/globals.d.ts`; **never** delete the check.
+- ⚠️ **A gate must never infer success from the absence of a bad diagnostic** — two review rounds
+  found four ways `pnpm sweep` printed "clean" while checking *nothing* (stale `files` entry,
+  **empty** `files` list → TS18002, a 5-digit code no pattern matched, syntax error, SIGKILLed
+  tsc). So it now asserts the **positive**: `--listFiles` makes tsc name every file it processed,
+  and every entry must appear or it exits 2 — hence "clean — 6 files checked". `--showConfig`
+  supplies the file list, because the config is JSONC (block comments, trailing commas) and
+  **TypeScript 7's package exposes no compiler API to parse it** — only `version`, so
+  `ts.readConfigFile` does not exist. A hand-rolled stripper was tried and broke twice.
 - ⚠️ **A green sweep ≠ every reference resolves.** It sees **bare identifiers** only; cross-file
   calls go through `window.<name>`, and a missing `window` property is TS2339 — noise, ungateable.
   Renaming a `window.gomidas*` entry point passes a green sweep. GMD-67 was found by it because

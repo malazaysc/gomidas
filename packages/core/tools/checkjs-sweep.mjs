@@ -12,8 +12,15 @@
 // app looked fine while every note audition threw. Clicking a fret was silent on BOTH products
 // for a day.
 //
-// tsc finds it — but its exit code cannot be the gate on its own, because the inference noise
-// makes it non-zero always. So this script classifies the diagnostics itself.
+// ── THE FAILURE MODE THIS FILE MUST NOT HAVE ────────────────────────────────────────────────
+// A gate that reports "clean" because it checked NOTHING is worse than no gate: CI is green and
+// the coverage is gone. Two review rounds found four separate ways to reach that state (a stale
+// `files` entry, an empty `files` list, a syntax error, a killed tsc), all of which printed
+// "clean" and exited 0. So this script never infers success from the absence of a bad diagnostic.
+// It asserts the positive: tsc must report having PROCESSED every file the config names.
+// `--listFiles` is what makes that checkable. Keep it that way.
+//
+// tsc's own exit code still cannot be the verdict: the inference noise makes it non-zero always.
 //
 // ⚠️ WHAT THIS GATE DOES *NOT* CATCH. It sees **bare identifiers** only. Cross-file calls in
 // these files mostly go through `window.<name>`, and a missing property on `window` is TS2339 —
@@ -24,7 +31,7 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SWEEP_CONFIG = 'tsconfig.sweep.json'
@@ -58,85 +65,128 @@ export function classifySweepOutput(output) {
 }
 
 /**
- * Strip `//` line comments from a tsconfig, ignoring ones inside string literals.
+ * Pull the `files` list out of `tsc --showConfig` output.
  *
- * tsconfig allows comments and JSON.parse does not. Quote-aware rather than a regex because the
- * naive line-anchored version silently mishandles a TRAILING comment — and the failure lands in
- * the one helper whose entire job is noticing that the sweep is checking less than it claims.
- * (Writing that regex out here is what broke this file once: it contains a comment terminator.)
+ * The config is JSONC — block comments and trailing commas are legal and `JSON.parse` rejects
+ * both — so asking tsc to resolve it is better than parsing it here. It also removes the gap
+ * between "what this script validated" and "what tsc will actually compile": the list checked
+ * below is tsc's own. (A hand-rolled stripper was tried first. It mishandled trailing comments,
+ * and the regex documenting it contained a comment terminator, which broke the whole file.
+ * TypeScript 7's package exposes no compiler API to fall back on — only `version`.)
  */
-function stripJsonComments(text) {
-  let out = ''
-  let inString = false
-  let escaped = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
-    if (inString) {
-      out += c
-      if (escaped) escaped = false
-      else if (c === '\\') escaped = true
-      else if (c === '"') inString = false
-      continue
-    }
-    if (c === '"') {
-      inString = true
-      out += c
-      continue
-    }
-    if (c === '/' && text[i + 1] === '/') {
-      while (i < text.length && text[i] !== '\n') i++
-      out += '\n'
-      continue
-    }
-    out += c
+export function parseResolvedConfig(showConfigOutput) {
+  let config
+  try {
+    config = JSON.parse(showConfigOutput)
+  } catch {
+    throw new Error(`tsc --showConfig did not return JSON:\n${String(showConfigOutput).trim()}`)
   }
-  return out
+  const files = config?.files
+  // An empty or absent list is not "nothing to check" — it is a broken gate. tsc answers an empty
+  // list with TS18002, a 5-digit code that matches none of the FATAL patterns, so before this
+  // guard `"files": []` swept zero files and reported clean.
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error('"files" is missing or empty — the sweep would check nothing')
+  }
+  return files
 }
 
-/** The `files` entries of the sweep config that are missing from disk. */
-export function missingSweepFiles(configText, root) {
-  const files = JSON.parse(stripJsonComments(String(configText))).files ?? []
+/** The `files` entries that are missing from disk. */
+export function missingFiles(files, root) {
   return files.filter((f) => !existsSync(resolve(root, f)))
 }
 
-function main() {
-  // A file renamed .js -> .ts (the migration ratchet tsconfig.json describes) leaves a stale
-  // entry here. tsc reports TS6053 and checks the REST of the list happily — so without this,
-  // the sweep would go on reporting "clean" while quietly covering one file fewer.
-  let missing
-  try {
-    missing = missingSweepFiles(readFileSync(join(pkgRoot, SWEEP_CONFIG), 'utf8'), pkgRoot)
-  } catch (err) {
-    // Never fall through to "clean" here: if the config cannot be read, nothing was checked.
-    console.error(`[sweep] could not read ${SWEEP_CONFIG}: ${err.message}`)
-    process.exit(2)
-  }
-  if (missing.length) {
-    console.error(`[sweep] ${SWEEP_CONFIG} names ${missing.length} file(s) that do not exist:\n`)
-    for (const f of missing) console.error(`  ${f}`)
-    console.error(`
-[sweep] The sweep cannot check a file that is not there. If it was renamed (.js -> .ts, say),
-        update the "files" list — a .ts file is already covered by the main build's typecheck.
-        If it was deleted, drop the entry. Do not leave it: a stale name is silent coverage loss.`)
-    process.exit(2)
-  }
+/**
+ * The `files` entries tsc did NOT report processing.
+ *
+ * This is the positive assertion the header describes: `--listFiles` makes tsc name every file it
+ * actually pulled in, so "did the sweep check what it claims" stops being an inference from which
+ * error codes happened to appear.
+ */
+export function unprocessedFiles(files, listOutput, root) {
+  const listed = new Set(
+    String(listOutput)
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.includes('error TS'))
+      .map((l) => resolve(l)),
+  )
+  return files.filter((f) => !listed.has(resolve(root, f)))
+}
 
+function die(message, detail) {
+  console.error(`[sweep] ${message}`)
+  if (detail) console.error(detail)
+  process.exit(2)
+}
+
+function main() {
   // The local tsc — the same compiler the build uses. Never `npx tsc`, which downloads an
   // unpinned compiler when none is installed (GMD-63).
   const tsc = join(pkgRoot, 'node_modules', '.bin', 'tsc')
-  const run = spawnSync(tsc, ['-p', SWEEP_CONFIG], { cwd: pkgRoot, encoding: 'utf8' })
+  const spawnTsc = (args) => spawnSync(tsc, args, { cwd: pkgRoot, encoding: 'utf8' })
 
-  if (run.error) {
-    console.error(`[sweep] could not run tsc at ${tsc}: ${run.error.message}`)
-    console.error('[sweep] run `pnpm install` at the workspace root first.')
-    process.exit(2)
+  const shown = spawnTsc(['-p', SWEEP_CONFIG, '--showConfig'])
+  if (shown.error) {
+    die(
+      `could not run tsc at ${tsc}: ${shown.error.message}`,
+      '        run `pnpm install` at the workspace root first.',
+    )
+  }
+  let files
+  try {
+    files = parseResolvedConfig(shown.stdout ?? '')
+  } catch (err) {
+    die(`could not resolve ${SWEEP_CONFIG}: ${err.message}`)
   }
 
-  // tsc reports diagnostics on stdout; keep stderr in view in case it dies for another reason.
-  const fatal = classifySweepOutput(`${run.stdout ?? ''}${run.stderr ?? ''}`)
+  // A file renamed .js -> .ts (the migration ratchet tsconfig.json describes) leaves a stale
+  // entry here. Caught before tsc runs so the message names the actual problem.
+  const missing = missingFiles(files, pkgRoot)
+  if (missing.length) {
+    die(
+      `${SWEEP_CONFIG} names ${missing.length} file(s) that do not exist:\n\n` +
+        missing.map((f) => `  ${f}`).join('\n'),
+      `
+        The sweep cannot check a file that is not there. If it was renamed (.js -> .ts, say),
+        update the "files" list — a .ts file is already covered by the main build's typecheck.
+        If it was deleted, drop the entry. Do not leave it: a stale name is silent coverage loss.`,
+    )
+  }
+
+  // --listFiles: what makes the coverage assertion below possible.
+  // --pretty false: this parses tsc's text, so ANSI colour codes and the boxed layout must stay
+  //   off. It is off by default when stdout is a pipe, but not if someone sets "pretty": true.
+  const run = spawnTsc(['-p', SWEEP_CONFIG, '--listFiles', '--pretty', 'false'])
+
+  if (run.error) {
+    die(`could not run tsc at ${tsc}: ${run.error.message}`)
+  }
+  // A SIGKILLed child (an OOM on a CI runner, say) returns error undefined, status null and
+  // truncated output — which sailed straight past the guard above into the "clean" branch.
+  if (run.signal) {
+    die(`tsc was killed by ${run.signal} — nothing was verified.`)
+  }
+
+  // Joined with a newline, not concatenated: if stdout does not end in one, its last line and
+  // stderr's first would fuse and the pair would be classified as a single diagnostic.
+  const output = [run.stdout ?? '', run.stderr ?? ''].join('\n')
+
+  const unswept = unprocessedFiles(files, output, pkgRoot)
+  if (unswept.length) {
+    die(
+      `tsc did not process ${unswept.length} of the ${files.length} file(s) it was given:\n\n` +
+        unswept.map((f) => `  ${f}`).join('\n'),
+      `
+        The sweep only means something if it read every file. Something is wrong with
+        ${SWEEP_CONFIG} or with the tsc invocation — do not treat this as a pass.`,
+    )
+  }
+
+  const fatal = classifySweepOutput(output)
 
   if (fatal.length === 0) {
-    console.log('[sweep] clean — no undefined references in the plain-JS editor files.')
+    console.log(`[sweep] clean — ${files.length} files checked, no undefined references.`)
     process.exit(0)
   }
 
@@ -153,7 +203,16 @@ function main() {
   process.exit(1)
 }
 
-// Run only when invoked directly, so the classifier above can be imported by the tests.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  main()
-}
+// Run only when invoked directly, so the helpers above can be imported by the tests. realpath on
+// both sides: resolve() does not follow symlinks, so via a bin link the comparison would fail,
+// main() would never run, and node would exit 0 — a silently green gate.
+const invokedDirectly = (() => {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+})()
+
+if (invokedDirectly) main()
