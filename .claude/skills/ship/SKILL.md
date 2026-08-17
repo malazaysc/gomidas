@@ -103,8 +103,12 @@ The desktop app itself must also still build — `cmake --build build`. The stan
 is invisible until that line runs (this is what shipped GMD-67's silent note audition for a day):
 
 ```bash
-pnpm sweep        # exit 0 = clean; exit 1 = you referenced something that doesn't exist
+pnpm sweep   # 0 = clean · 1 = you referenced something that doesn't exist · 2 = it checked NOTHING
 ```
+
+**Exit 2 is not a pass.** It means the sweep couldn't do its job — a stale or empty `files` list, a
+plain-JS file the build compiles that nobody added to it, tsc killed, tsc missing. Treat 2 as
+harder than 1: on a 1 you have one bug; on a 2 you have no coverage.
 
 No counting by eye any more (GMD-68): the two real globals are declared in
 `packages/core/types/globals.d.ts`, so **any** surviving `TS2304`/`TS2552` is a real bug and the

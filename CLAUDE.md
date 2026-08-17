@@ -73,8 +73,9 @@ touching `src/`, `packages/` or `apps/` takes the full loop.
 
 **The four verification gates, all before the PR exists:**
 - **A — automated:** `pnpm typecheck` · `pnpm test` · `cmake --build build` · `ctest`.
-- **B — the checkJs sweep:** `pnpm sweep`. Exit 1 means **you referenced something that doesn't
-  exist**. Also runs in CI, first in `web-tests` (GMD-68).
+- **B — the checkJs sweep:** `pnpm sweep`. **0** clean · **1** you referenced something that
+  doesn't exist · **2** it checked *nothing* (and 2 is the worse one — no coverage, not one bug).
+  Also runs in CI, first in `web-tests` (GMD-68).
 - **C — runtime verification.** Build green ≠ works. Exercise it; measure anything measurable;
   evidence goes in the PR body. If it truly can't be verified here, **say so in the PR** — this
   is exactly how the live-input/plugin/recording stack got to "builds but UNVERIFIED".

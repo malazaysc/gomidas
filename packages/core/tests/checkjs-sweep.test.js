@@ -13,6 +13,8 @@ import {
   parseResolvedConfig,
   missingFiles,
   unprocessedFiles,
+  unsweptBuildFiles,
+  footerFor,
 } from '../tools/checkjs-sweep.mjs'
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -127,5 +129,53 @@ describe('unprocessedFiles', () => {
 
   it('treats truncated output (a killed tsc) as coverage loss, not success', () => {
     expect(unprocessedFiles(['app.js', 'editor.js'], '', pkgRoot)).toEqual(['app.js', 'editor.js'])
+  })
+})
+
+describe('unsweptBuildFiles', () => {
+  const sweep = ['./app.js', './editor.js']
+
+  it('accepts a sweep list that covers every .js the build compiles', () => {
+    expect(unsweptBuildFiles(['./app.js', './editor.js', './core/x.ts'], sweep, pkgRoot)).toEqual([])
+  })
+
+  it('catches a new plain-JS file nobody added to the sweep', () => {
+    // The drift that matters: a mixer.js wired into tsconfig.json, index.html and CMakeLists but
+    // forgotten here would sweep "clean" while having no typecheck at all — GMD-67's precondition.
+    expect(unsweptBuildFiles(['./app.js', './mixer.js'], sweep, pkgRoot)).toEqual(['./mixer.js'])
+  })
+
+  it('ignores .ts files — the main build already typechecks those', () => {
+    expect(unsweptBuildFiles(['./core/packcache.ts', './types/x.d.ts'], sweep, pkgRoot)).toEqual([])
+  })
+
+  it('compares resolved paths, so ./app.js and app.js are the same file', () => {
+    expect(unsweptBuildFiles(['app.js'], ['./app.js'], pkgRoot)).toEqual([])
+  })
+})
+
+describe('footerFor', () => {
+  // A syntax error used to print the full GMD-67 essay about undefined references, ending with
+  // advice to declare the name in globals.d.ts — wrong, and it sends the reader hunting a global.
+  it('explains an undefined reference in terms of GMD-67 and globals.d.ts', () => {
+    const text = footerFor([{ kind: 'reference' }])
+    expect(text).toMatch(/GMD-67/)
+    expect(text).toMatch(/globals\.d\.ts/)
+  })
+
+  it('does not give globals.d.ts advice for a syntax error', () => {
+    const text = footerFor([{ kind: 'syntax' }])
+    expect(text).toMatch(/does not parse/)
+    expect(text).not.toMatch(/globals\.d\.ts/)
+  })
+
+  it('says a config error means the run is not coverage', () => {
+    expect(footerFor([{ kind: 'config' }])).toMatch(/did not check what it claims/)
+  })
+
+  it('covers every kind present when a run has more than one', () => {
+    const text = footerFor([{ kind: 'reference' }, { kind: 'syntax' }])
+    expect(text).toMatch(/GMD-67/)
+    expect(text).toMatch(/does not parse/)
   })
 })
