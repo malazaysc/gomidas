@@ -30,11 +30,19 @@ just works. Everything you file/move is attributed to the agent on the board.
 3. **When you discover work that isn't tracked** (a bug, a follow-up), file it — don't leave it
    only in your head or in chat:
    ```bash
-   samu ticket create --project GMD --type bug --priority high \
+   samu ticket create --project GMD --type bug --priority high --severity s2 \
+     --repro-steps "1. … 2. … Expected: … Actual: …" \
      "Kit hotspots misaligned when stage is narrow" \
-     --body "Repro: … Expected: … Actual: … (file:line)"
+     --body "Why / Mechanism / Where (file:line) / How to verify / Traps"
    # types: feature | bug | task | chore   priorities: none | low | medium | high | urgent
    ```
+   **Use the structured fields — they're easy to forget.** `--severity` (s1|s2|s3|s4),
+   `--repro-steps` and `--found-in-version` are **bugs only**; `--estimate` (integer points)
+   works on any type. A bug filed with the repro in the body instead of `--repro-steps` loses
+   it to free text.
+
+   For anything bigger than a one-line finding, don't hand-roll the ticket — use the
+   **`spec` skill**, which researches the code first and writes bodies an agent can act on cold.
    Small note on an existing ticket instead? `samu ticket comment GMD-8 -m "…"`.
 4. **When you finish a chunk, change plan, or hit a blocker**, update the ticket and log status:
    ```bash

@@ -42,10 +42,21 @@ claim a ticket (`samu ticket move <KEY> "In Progress"`); file anything you disco
 mark a ticket Done until the change is actually built and exercised. Reference the ticket key
 in commits (e.g. `GMD-8: …`). The board is at http://127.0.0.1:8080 (workspace `gomidas`).
 
-## How work lands — the `ship` workflow (2026-08-17)
+## How work lands — the `spec` → `ship` pipeline (2026-08-17)
 
-**Every ticket goes through `.claude/skills/ship/SKILL.md`** (`/ship GMD-<n>`). One ticket, one
-branch, one PR — no more batched local merges straight into `main`.
+**Idea/bug in → `spec` → Samu ticket → `ship` → merged.** Two project skills, both in
+`.claude/skills/`, both tracked in git.
+
+**`/spec <idea or bug>`** is the front door: research the code **before** asking anything
+(CLAUDE.md, the board for duplicates, parallel `Explore` agents for anything non-trivial),
+discuss until no open question would change the implementation, then file Samu tickets **sized
+to one `/ship` run each**. A ticket is done when an agent can pick it up cold without
+re-deriving what was already decided — title states the *mechanism* not the symptom, body
+carries Why / Mechanism / Where (`file:line`) / Acceptance / How to verify / **Traps** (every
+parallel code path that must change together — the reason GMD-44 and GMD-62 got reopened).
+
+**`/ship GMD-<n>`** is the exit. One ticket, one branch, one PR — no more batched local merges
+straight into `main`.
 
 ```
 CLAIM → PLAN → BRANCH → IMPLEMENT → VERIFY → PR → REVIEW → MERGE → CLOSE
