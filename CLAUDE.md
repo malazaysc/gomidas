@@ -305,11 +305,18 @@ Key facts learned (don't relearn):
   the build in ~1400 inference diagnostics from 5,700 un-migrated lines), so a dangling reference is
   invisible until that line happens to run. **`pnpm sweep` is the gate** (GMD-68): the
   already-installed compiler, no new dependency, ~0.3s, and it **runs in CI** first in `web-tests`.
-  `tools/checkjs-sweep.mjs` keeps only `TS2304` and sets its own exit code — tsc's is useless
-  because the inference noise makes it non-zero always. The two real globals are declared in
-  `types/globals.d.ts`, so **any** surviving TS2304 is a name that exists nowhere. A legitimate new
-  global goes in `globals.d.ts`; **never** delete the check. TS2552 doesn't occur in this codebase
-  (measured: zero), so TS2304 is the only clean signal there is. That is how GMD-67 was found:
+  `tools/checkjs-sweep.mjs` classifies the diagnostics and sets its own exit code — tsc's is
+  useless because the inference noise makes it non-zero always. Fatal: **TS2304 + TS2552** (2552 is
+  what tsc emits *instead of* 2304 when a similar name is in scope — i.e. the typo case, the
+  likeliest dangling reference of all), plus syntax (TS1xxx) and config/host (TS5xxx/TS6xxx) errors,
+  because those mean **the sweep didn't check what it claims** — a stale `files` entry after a
+  `.js`→`.ts` rename is silent coverage loss. Everything else (TS7006 ×510, TS2339 ×472 …) is
+  inference noise and must not gate. The classifier is unit-tested (`tests/checkjs-sweep.test.js`)
+  precisely because a misclassification is indistinguishable from "clean". A legitimate new global
+  goes in `types/globals.d.ts`; **never** delete the check.
+- ⚠️ **A green sweep ≠ every reference resolves.** It sees **bare identifiers** only; cross-file
+  calls go through `window.<name>`, and a missing `window` property is TS2339 — noise, ungateable.
+  Renaming a `window.gomidas*` entry point passes a green sweep. GMD-67 was found by it because
   GMD-54 removed a `const pb = t.playbackInfo` and left `pb.program` two lines below, so **every
   note audition threw and clicking a fret was silent on both products for a day** — invisible
   because `previewBeat()` runs LAST in `setFret`, so the edit still committed and the app looked

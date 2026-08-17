@@ -107,10 +107,15 @@ pnpm sweep        # exit 0 = clean; exit 1 = you referenced something that doesn
 ```
 
 No counting by eye any more (GMD-68): the two real globals are declared in
-`packages/core/types/globals.d.ts`, so **any** surviving `TS2304` is a real bug and the script
-fails on it. Runs in ~0.3s and **also runs in CI**, first in the `web-tests` job. If it names a
-legitimate new global from another `<script>` tag, declare it in `globals.d.ts` — never delete
-the check.
+`packages/core/types/globals.d.ts`, so **any** surviving `TS2304`/`TS2552` is a real bug and the
+script fails on it. Runs in ~0.3s and **also runs in CI**, first in the `web-tests` job. If it
+names a legitimate new global from another `<script>` tag, declare it in `globals.d.ts` — never
+delete the check.
+
+⚠️ **A green sweep is not "every reference resolves."** It sees **bare identifiers** only.
+Cross-file calls in these files mostly go via `window.<name>`, and a missing property on `window`
+is TS2339 — 472 of those exist as noise, so they can't gate. Renaming a `window.gomidas*` entry
+point passes a green sweep. GMD-67 was a bare identifier, which is why this catches it.
 
 **Gate C — runtime verification.** Build green ≠ works. Actually exercise the change and keep
 the evidence for the PR body. Pick by what you touched:
