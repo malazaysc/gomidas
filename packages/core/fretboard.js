@@ -306,6 +306,38 @@
     { id: 'tie',    label: 'Tie',    kind: 'act', key: 'T' }
   ];
   const VEL_NAMES = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+  /**
+   * Every GM percussion key a kit piece owns — what the MIXER fader scales (GMD-72).
+   *
+   * NOT the same list as a piece's `artics`, which is the set of named articulations you can
+   * PLACE and is deliberately short. A fader is a channel: pulling "Hi-Hat" down must take the
+   * open and pedal hats with it, not just the closed one.
+   *
+   * It matters most for IMPORTED files. CLAUDE.md's own GMD-54 measurement of a Pantera .gp5
+   * found it using keys 35, 40, 46 and 53 — of which 35 and 40 appear nowhere in KIT_PIECES and
+   * 46/53 appear only as non-first articulations. Keyed off artics[0] alone, every fader on that
+   * song moved nothing at all, which is exactly the "drum mix does not change anything" report.
+   *
+   * Straight from the GM percussion map, so this is the standard kit's own grouping, not ours.
+   */
+  const PIECE_KEYS = {
+    kick:  [35, 36],
+    snare: [37, 38, 40],
+    hihat: [42, 44, 46],
+    tom1:  [48, 50],
+    tom2:  [45, 47],
+    floor: [41, 43],
+    crash: [49, 55, 57],
+    ride:  [51, 53, 59],
+    china: [52]
+  };
+  /** The keys one fader controls: the GM group, falling back to the piece's own articulations. */
+  function pieceMixKeys(p) {
+    const fromMap = PIECE_KEYS[p.id];
+    const fromArtics = p.artics.map(a => a[1]);
+    return fromMap ? [...new Set([...fromMap, ...fromArtics])] : fromArtics;
+  }
+
   function pieceById(id) { return KIT_PIECES.find(p => p.id === id); }
   function pieceMidi(p) { const ai = Math.min(pieceArtic[p.id] || 0, p.artics.length - 1); return p.artics[ai][1]; }
   function pieceIsHit(p, s) { return p.artics.some(a => (s.drums || []).some(d => d.midi === a[1] && d.active)); }
@@ -360,6 +392,19 @@
     // Relative, not '/drumkit.webp': an absolute path breaks the base:'./' subpath promise in
     // apps/web/vite.config.js. Every script tag already resolves this way on both products.
     const img = document.createElement('img'); img.src = 'drumkit.webp'; img.alt = 'Drum kit';
+    // Say WHY the kit is missing instead of leaving a broken-image icon. The usual cause is a
+    // stale page: GMD-59 replaced drumkit.png with .webp, so a tab left open across that build
+    // asks for a file that no longer exists — the same trap CLAUDE.md records for dist/*.js.
+    // The hotspots still work without the photo, so this is a label, not a failure state.
+    img.onerror = () => {
+      console.warn('[Gomidas] drum kit image failed to load: ' + img.src +
+                   ' — if this is a 404 for drumkit.png, the page is stale; hard-reload.');
+      img.remove();
+      if (!frame.querySelector('.kit-noimg')) {
+        const msg = el('div', 'kit-noimg', 'Kit image unavailable — hotspots still work. Hard-reload if this persists.');
+        frame.insertBefore(msg, frame.firstChild);
+      }
+    };
     frame.appendChild(img);
     KIT_PIECES.forEach(p => {
       const h = el('div', 'kit-hot'); h.dataset.piece = p.id;
@@ -389,9 +434,11 @@
     const km = el('div', 'kit-mixer'); km.dataset.role = 'mixer';
     km.addEventListener('input', (e) => {
       const r = e.target.closest('input[type=range]'); if (!r) return;
-      const midi = parseInt(r.dataset.midi, 10);
       const g = (parseInt(r.value, 10) || 0) / 100;
-      (window.gomidasDrumGains || (window.gomidasDrumGains = {}))[midi] = g;
+      const gains = window.gomidasDrumGains || (window.gomidasDrumGains = {});
+      // data-midi carries EVERY key this fader owns, so one hi-hat fader moves closed, open and
+      // pedal together (GMD-72).
+      for (const k of String(r.dataset.midi).split(',')) gains[parseInt(k, 10)] = g;
       const v = r.parentElement.querySelector('.kmv'); if (v) v.textContent = r.value + '%';
     });
     km.addEventListener('change', () => { if (window.gomidasRebuild) window.gomidasRebuild(); });
@@ -583,10 +630,12 @@
     const gains = window.gomidasDrumGains || (window.gomidasDrumGains = {});
     let html = '';
     KIT_PIECES.forEach(p => {
-      const midi = p.artics[0][1];
-      const pct = Math.round(((gains[midi] != null ? gains[midi] : 1)) * 100);
+      // One fader per PIECE, scaling every GM key that piece owns — see pieceMixKeys.
+      const keys = pieceMixKeys(p);
+      const cur = gains[keys[0]];
+      const pct = Math.round((cur != null ? cur : 1) * 100);
       html += '<div class="km-row"><span class="km-name">' + p.label + '</span>' +
-              '<input type="range" min="0" max="150" value="' + pct + '" data-midi="' + midi + '">' +
+              '<input type="range" min="0" max="150" value="' + pct + '" data-midi="' + keys.join(',') + '">' +
               '<span class="kmv">' + pct + '%</span></div>';
     });
     km.innerHTML = html;
@@ -774,7 +823,13 @@
           const sfzName = (ch != null && window.gomidasTrackSfz) ? window.gomidasTrackSfz[ch] : null;
           // Instrument dropdown: GM SoundFont (clear) | built-in presets | a loaded
           // custom file (shown as its own option) | Load file… (native chooser).
-          const presets = window.gomidasSfzPresets || [];
+          // Only presets that suit THIS track. The bundled sample instruments are all melodic
+          // (classical guitar, electric bass), and offering them on a drum track meant the
+          // inspector showed the guitar controls for drums — pick one and every drum key maps
+          // onto a guitar sample. No CC0 kit is bundled yet (they run 1.6-2.3GB, so they will be
+          // download-on-first-run), hence a drum track legitimately has none.
+          const presets = (window.gomidasSfzPresets || [])
+            .filter(p => (p.kind === 'drums') === !!s.isPercussion);
           const match = presets.find(p => p.name === sfzName);
           const isRse = !!sfzName;
           // Preset dropdown: grouped so RSE sample instruments aren't mistaken for GM
@@ -811,10 +866,15 @@
             '<input type="range" class="insp-slider" id="ins-pan" min="0" max="100" value="' + Math.round((s.trackPan != null ? s.trackPan : 0.5) * 100) + '"></div>' +
           '<div class="insp-row"><span class="v" id="ins-pan-lbl" style="font-size:11px">' + panLabel(s.trackPan != null ? s.trackPan : 0.5) + '</span></div>' +
         '</div>' +
+        // Still placeholders (hence "soon"), but they must at least be the RIGHT placeholders:
+        // palm mute, let ring, auto brush and "Stringed" are properties of a fretted instrument,
+        // and showing them on a drum track is what made the panel look like the guitar one.
         '<div class="insp-sec"><div class="insp-h">Interpretation<span class="gd-soon-tag">soon</span></div>' +
           '<div class="gd-soon">' +
-          valRow('Playing style', 'Pick') + sliderRow('Palm mute') + sliderRow('Accentuation') +
-          toggleRow('Auto let ring', false) + toggleRow('Auto brush', true) + toggleRow('Stringed', true) +
+          (s.isPercussion
+            ? valRow('Playing style', 'Sticks') + sliderRow('Accentuation')
+            : valRow('Playing style', 'Pick') + sliderRow('Palm mute') + sliderRow('Accentuation') +
+              toggleRow('Auto let ring', false) + toggleRow('Auto brush', true) + toggleRow('Stringed', true)) +
           '</div>' +
         '</div>' +
         (s.isPercussion ? drumInspectorExtra(s) : '');

@@ -198,7 +198,9 @@ current beat; inlay dots; note badges show the current beat. **Click any beat in
 (incl. empty bars) to move the cursor — uses `boundsLookup.getBeatAtPos`.
 **Drums — KIT VIEW** (reference redesign 2026-06-28; `fretboard.js renderDrumPalette` builds it,
 shown when `staff.isPercussion`): a 3-tab panel **KIT VIEW / GROOVE EDITOR / MIXER** in `#fretboard`
-(`.kit` class makes it taller). KIT VIEW = `packages/core/drumkit.png` (bundled; served `/drumkit.png`) with
+(`.kit` class makes it taller). KIT VIEW = `packages/core/drumkit.webp` (bundled; served
+`/drumkit.webp` — was a 2.1MB `.png` until GMD-59; a tab left open across that build 404s and now says
+so, GMD-71) with
 percent-positioned **hotspots** (`KIT_PIECES`) → click toggles `toggleDrum(midi)` on the current beat
 per the **Quick Tools** mode (draw/erase/paint/select) + Accent/Ghost/Repeat/Tie actions; an
 **Articulation** panel picks each piece's GM key + a velocity→dynamic slider. A **Pattern Library**
@@ -253,6 +255,29 @@ Key facts learned (don't relearn):
   `tex`/`render`/`renderTracks` in the same task that constructs the API — `app.js` boot waits one
   frame. Corollary: **`reflowScore()` is debounced**; five overlapping renders (one per panel in
   `initDrawers`) interleave their rAF-deferred appends and defeat the counter even after bootstrap.
+  Still reachable from a **second** trigger: `addTrack` followed by `selectTrack` with no wait
+  overlaps two renders and the title doubles again (GMD-70, open).
+- ⚠️ **`editor.js`/`app.js`/`fretboard.js` are plain `<script>` globals with NO typecheck**, so a
+  dangling reference is invisible until that line happens to run. Sweep them with the already-installed
+  compiler — no new dependency:
+  `pnpm exec tsc --ignoreConfig --allowJs --checkJs --noEmit --target es2020 --skipLibCheck app.js
+  editor.js fretboard.js` — which reports exactly **three** undefined names: `alphaTab` (105) and
+  `GomidasCore` (22), both real globals from other script tags, plus anything actually broken. That is
+  how GMD-67 was found: GMD-54 removed a `const pb = t.playbackInfo` and left `pb.program` two lines
+  below, so **every note audition threw and clicking a fret was silent on both products for a day** —
+  invisible because `previewBeat()` runs LAST in `setFret`, so the edit still committed and the app
+  looked fine. GMD-68 tracks making it a CI gate (needs the two globals declared; the exit code is
+  unusable on its own because `--checkJs` also emits ~1400 unrelated inference diagnostics).
+- **Everything the inspector renders must branch on `s.isPercussion`** (GMD-69). A tuning row, palm
+  mute, auto let ring, auto brush, "Stringed" and the bundled melodic CC0 SFZ presets are all
+  properties of a *fretted* instrument, and showing them on a drum track is what makes the panel read
+  as "the guitar controls". `gomidasSfzPresets[].kind` exists for exactly that filtering — it was
+  defined with a "for future per-track-kind filtering" comment and left unwired.
+- **A drum MIXER fader owns a GM key GROUP (`PIECE_KEYS`), never `artics[0]`** (GMD-72). `artics` is
+  the deliberately-short list of articulations you can *place*; a fader is a *channel*, so Hi-Hat has
+  to move closed + open + pedal together. Keyed off `artics[0]` a fader moved exactly one key, and on
+  a real imported `.gp` — GMD-54's Pantera `.gp5`, playing 35, 40, 46, 53 — **every fader moved
+  nothing at all**, which is what "drum mix does not change anything" looks like from the outside.
 
 ## Performance (measured — don't re-investigate from scratch)
 Instrumented the real edit→renderFinished→paint timeline (drove `setFret` programmatically, ran the
@@ -475,6 +500,49 @@ the wire. The 5.4MB drum blob round-trips exactly, 8ms warm.
   input, and the spec does not pin down whether IndexedDB has finished serialising by then.
 - Tested without `fake-indexeddb`: the store is an injectable seam, so policy is unit-tested
   (`tests/packcache.test.js`) and the IDB plumbing is verified in Chrome.
+
+### Web mix gain staging — headroom + a soft ceiling (GMD-42, 2026-08-15)
+Measured through the offline bounce: **one full-velocity note peaks at +2.88 dBFS**, a three-note
+chord +7.52, six-note +9.38, the two-track sample score +5.77 with **410 hard-clipped samples**. A
+SINGLE note already exceeds full scale, so this was never a mixing-discipline or too-many-tracks
+problem — a voice's peak gain is velocity² × zone attenuation, both capping at 1.0, over a sample
+normalised near full scale. Nothing in the chain budgeted for a second voice.
+- The master output stage is **−6 dB headroom → 1/`CEILING_RANGE` pre-scale → WaveShaper ceiling**,
+  built by `makeOutputStage` and used by **both** the live graph and the bounce. Sample score now
+  −1.07 dBFS, 0 clipped. **Don't "restore the levels" by deleting the trim** — that is the bug.
+- Deliberately a WaveShaper and **not** a `DynamicsCompressorNode`: zero latency, no attack/release
+  to pump or smear a transient, and bit-identical live vs offline. Below the knee the curve is
+  exactly `y = x` so ordinary material is untouched, and `oversample = 'none'` keeps that literally
+  true (any oversampling runs it through resampling filters first).
+- ⚠️ Two traps the unit tests caught and an ear would not. tanh saturates fast enough that
+  `knee + (1-knee)*tanh(…)` **rounds to exactly 1.0 in float32** well inside the curve's range,
+  which the int16 encode turns straight back into the clipped sample the stage exists to prevent —
+  hence `CEILING_MAX = 0.998`. And a WaveShaper **clamps out-of-range input to its end entries**, so
+  feeding it a +9 dB peak *without* the pre-scale is hard clipping wearing a different hat. Curve
+  shape is pure and unit-tested (`tests/ceiling.test.js`).
+
+### The offline bounce is built from ONE description of the mixer (GMD-62 / GMD-66, 2026-08-15)
+`renderOffline` used to hand-rebuild the graph, and kept falling behind — the **third** time this
+file shipped that same failure (GMD-57 `bankFor` was the first, GMD-44's three instrument factories
+the second). It mirrored each channel's gain/pan/EQ and silently dropped the **entire master
+section**: bouncing with the master fader at 0.25 produced a **byte-identical file** to 1.0. Master
+pan, master EQ, master inserts, track inserts and sends were all dropped too — and there was no SFZ
+branch at all, so a track with an SFZ preset **recorded as GM**.
+- **`snapshotMix()` is the single enumeration of what the mixer consists of**, and
+  **`makeInstrument(ctx, ch, program, perc, buffers)` the single instrument choice** — the same role
+  `bankFor` plays for banks. Add a mixer control → add it to `snapshotMix`. Add an instrument source
+  → extend `makeInstrument`. **Never add a branch inside `renderOffline`.**
+- `sfzChannels` maps channel → the **parsed preset**, not just membership, because the bounce builds
+  its own sampler in its own context: AudioNodes cannot cross contexts, regions and decoded buffers
+  can.
+- The snapshot's field list is pinned by `tests/mixsnapshot.test.js`, so a new control cannot
+  quietly skip the recording.
+- ⚠️ **SF2 note-off is FIFO by note INSTANCE, not by key** (GMD-49). One note-on spawns several
+  voices for a layered preset and those must release together, but a key retriggered while an
+  earlier instance still rings (ties, let ring, repeated notes on one string) must **not** be killed
+  by the older note's note-off. Voices from one note-on share a `noteId`; `voicesToRelease` picks the
+  oldest surviving instance and skips one-shots. The SFZ and tone instruments already did this — only
+  the default instrument for every track had it wrong.
 
 ### Real-time-safety caveats (milestone-1; harden before shipping)
 TSF voice alloc + the `Sequence` swap, **the input-plugin swap/free + `processBlock`**, **the EQ

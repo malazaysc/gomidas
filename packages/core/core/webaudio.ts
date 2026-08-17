@@ -590,6 +590,7 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
   // Every sounding voice, flat, for exclusive-class choking (SF2 gen 57). Kept alongside the
   // per-key map rather than derived from it: a choke searches by class, not by key.
   const sounding = new Set<any>();
+  let nextNoteId = 1;
 
   function bufferFor(index: number): AudioBuffer | null {
     // A pack (the FluidR3 drum kit, GMD-50) ships already-decoded buffers instead of a raw PCM
@@ -648,6 +649,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
     if (!zones.length) return;
     // Choke BEFORE registering this note's own voices, so a hat never chokes itself.
     for (const z of zones) if (z.exclusiveClass) chokeClass(z.exclusiveClass, when);
+    // Every voice this note-on spawns shares one id, so a layered note releases as a unit while a
+    // retrigger of the same key stays independent of it (GMD-49).
+    const noteId = nextNoteId++;
     // Layered presets legitimately stack zones (piano + string pad). Cap it: a pathological
     // bank could otherwise spawn dozens of voices per note.
     for (const z of zones.slice(0, 4)) {
@@ -700,6 +704,7 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const v = { key, src, gain, release: Math.max(0.05, z.release || 0.3), env, baseRate,
                   lastRate: baseRate * Math.pow(2, bend.at(when) / 12),
                   exclusiveClass: z.exclusiveClass || 0,
+                  noteId,
                   oneShot: percussion && !looping };
       const list = voices.get(key) || [];
       list.push(v);
@@ -729,10 +734,9 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const list = voices.get(key);
       if (!list || !list.length) return;
       const at = Math.max(when, ctx.currentTime);
-      // A layered note put several voices under one key; release them together. One-shot drum
-      // voices are skipped — they ring out on their own and are only ever cut by a choke.
-      for (const v of Array.from(list)) {
-        if (v.oneShot) continue;
+      // Only the OLDEST note instance under this key — see voicesToRelease. Releasing the whole
+      // list cut short any note that retriggered the key while an earlier one rang (GMD-49).
+      for (const v of voicesToRelease(list)) {
         releaseVoice(v, at);
         forget(v);
       }
@@ -769,11 +773,105 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
   };
 }
 
+/**
+ * MASTER GAIN STAGING (GMD-42) — headroom, then a soft ceiling.
+ *
+ * MEASURED on the sample score, via the offline bounce (the deterministic path; the automation
+ * tab is always document.hidden, so the meter and rAF are dead — see CLAUDE.md):
+ *
+ *   one note, full velocity ......  +2.88 dBFS
+ *   three-note chord ............   +7.52 dBFS
+ *   six-note chord ..............   +9.38 dBFS
+ *   the two-track sample score ...  +5.77 dBFS   (410 hard-clipped samples, 52 runs)
+ *
+ * A SINGLE note already exceeds full scale, so this was never a "too many tracks" problem and no
+ * amount of mixing discipline fixes it: a voice's peak gain is velocity² × the zone attenuation,
+ * both of which top out at 1.0, and the sample itself is normalised near full scale. Nothing in
+ * the chain ever budgeted for a second voice.
+ *
+ * Two parts, because one alone is wrong:
+ *  - HEADROOM, a fixed trim, so ordinary material never reaches the ceiling at all. -6 dB puts a
+ *    single note at -3.1 dBFS, just under the knee.
+ *  - a CEILING, so dense chords saturate smoothly instead of hard-clipping. A fixed trim sized
+ *    for the +9.4 dB worst case would make single notes inaudibly quiet; a ceiling costs nothing
+ *    until it is needed.
+ *
+ * Deliberately a WaveShaper and not a DynamicsCompressorNode: zero latency, no attack/release to
+ * pump or to smear a transient, and bit-identical between live playback and the offline bounce —
+ * which is the property this file keeps getting wrong (GMD-57, GMD-62, GMD-66).
+ */
+const HEADROOM_DB = -6;
+const HEADROOM_GAIN = Math.pow(10, HEADROOM_DB / 20);
+/** Below this the curve is exactly y = x, so normal material passes through untouched. */
+const CEILING_KNEE = 0.708;          // -3 dBFS
+/** Input range the curve covers, in linear gain. WaveShaper indexes its curve over ±1, so the
+ *  signal is scaled by 1/CEILING_RANGE going in — without this, anything above unity would land
+ *  on the last curve entry and be HARD-clipped there, which is the bug we are removing. */
+const CEILING_RANGE = 4;             // +12 dBFS
+/**
+ * The asymptote, and deliberately NOT 1.0. tanh saturates to 1 fast enough that in float32
+ * `knee + (1 - knee) * tanh(x)` rounds to exactly 1.0 well inside the curve's range — which the
+ * int16 encode then turns back into the clipped sample this whole stage exists to prevent.
+ * Caught by tests/ceiling.test.js. -0.02 dB, i.e. inaudible, but strictly below full scale.
+ */
+const CEILING_MAX = 0.998;
+
+/**
+ * y = x below the knee; above it, a tanh shoulder asymptotic to 1.0. Continuous in value AND in
+ * slope at the knee (tanh'(0) = 1), so there is no audible corner where the ceiling engages.
+ *
+ * `curve[i]` is the output for an input of `(i/(n-1) * 2 - 1) * CEILING_RANGE`.
+ * Pure and exported so the shape is unit-tested rather than eyeballed.
+ */
+/**
+ * Which of the voices stored under one key a note-off should release (GMD-49).
+ *
+ * The per-key list conflates two different things, and releasing all of it is wrong for one of
+ * them:
+ *   1. LAYERED ZONES — one note-on legitimately spawns several voices (a piano + string-pad
+ *      preset stacks up to four). Those must release together, as one note.
+ *   2. A RETRIGGER — the same key struck again while an earlier instance is still ringing (ties,
+ *      let ring, a fast repeated note on one string). Releasing all of them means the first
+ *      note's note-off kills the second note, which has only just started.
+ *
+ * So: FIFO by note INSTANCE, not by key. Voices from one note-on share a noteId; the oldest
+ * surviving noteId is the note being released. One-shots are excluded entirely — a drum sample
+ * that does not loop has no sustain to end, and is only ever cut by an exclusive-class choke.
+ *
+ * Pure, so the selection is unit-tested rather than inferred from a waveform.
+ */
+function voicesToRelease<T extends { noteId?: number; oneShot?: boolean }>(list: T[]): T[] {
+  if (!list || !list.length) return [];
+  let oldest = Infinity;
+  for (const v of list) {
+    if (v.oneShot) continue;
+    const id = v.noteId != null ? v.noteId : 0;
+    if (id < oldest) oldest = id;
+  }
+  if (oldest === Infinity) return [];
+  return list.filter((v) => !v.oneShot && (v.noteId != null ? v.noteId : 0) === oldest);
+}
+
+function ceilingCurve(n = 8192, knee = CEILING_KNEE, range = CEILING_RANGE): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  for (let i = 0; i < n; i++) {
+    const x = ((i / (n - 1)) * 2 - 1) * range;
+    const a = Math.abs(x);
+    const span = CEILING_MAX - knee;
+    const y = a <= knee ? a : knee + span * Math.tanh((a - knee) / span);
+    curve[i] = x < 0 ? -y : y;
+  }
+  return curve;
+}
+
 interface ChannelStrip {
   input: GainNode;
   fxIn: GainNode;
   sends: Record<string, GainNode>;
   fx: { input: AudioNode; output: AudioNode; nodes: AudioNode[] } | null;
+  // The spec the insert chain was built from. Kept because the offline bounce has to REBUILD the
+  // chain in its own context and cannot clone live nodes (GMD-66).
+  fxSpec: any;
   gain: GainNode;
   pan: StereoPannerNode;
   eq: BiquadFilterNode[];
@@ -787,7 +885,9 @@ function createWebAudioBackend(BackendLib: any): any {
   const bus = BackendLib.createEventBus();
 
   let ctx: AudioContext | null = null;
-  let master: { eq: BiquadFilterNode[]; gain: GainNode; pan: StereoPannerNode; analyser: AnalyserNode } | null = null;
+  let master: { eq: BiquadFilterNode[]; gain: GainNode; pan: StereoPannerNode;
+                headroom: GainNode; preScale: GainNode; ceiling: WaveShaperNode;
+                analyser: AnalyserNode } | null = null;
   const channels: (ChannelStrip | null)[] = new Array(16).fill(null);
 
   let sequence: { lengthTicks: number; events: number[][] } = { lengthTicks: 0, events: [] };
@@ -817,10 +917,13 @@ function createWebAudioBackend(BackendLib: any): any {
     const pan = ctx.createStereoPanner();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
+    const { headroom, preScale, ceiling } = makeOutputStage(ctx);
     // eq[2] -> gain is spliced by applyFx('master', ...) when a master chain is set.
-    chain([...eq, gain, pan, analyser]);
+    // The meter sits AFTER the ceiling so it shows what actually left the app, not what would
+    // have left it if nothing were clipping.
+    chain([...eq, gain, pan, headroom, preScale, ceiling, analyser]);
     analyser.connect(ctx.destination);
-    master = { eq, gain, pan, analyser };
+    master = { eq, gain, pan, headroom, preScale, ceiling, analyser };
     meterData = new Uint8Array(analyser.fftSize);
     loadGmBank();
     return ctx;
@@ -838,6 +941,30 @@ function createWebAudioBackend(BackendLib: any): any {
 
   function chain(nodes: AudioNode[]): void {
     for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+  }
+
+  /**
+   * The master output stage (GMD-42): headroom trim -> 1/range pre-scale -> soft ceiling.
+   *
+   * The pre-scale is not cosmetic. A WaveShaperNode indexes its curve over an input of ±1 and
+   * CLAMPS anything outside that to the end entries — so feeding it a +9 dB peak directly would
+   * flatten every sample above unity onto one value, which is hard clipping wearing a different
+   * hat. Scaling by 1/CEILING_RANGE first puts a +12 dB peak at the last curve entry instead.
+   *
+   * Built here, in ONE place, so the live graph and the offline bounce cannot drift apart —
+   * the exact failure this file has now shipped three times (GMD-57, GMD-62, GMD-66).
+   */
+  function makeOutputStage(c: BaseAudioContext): { headroom: GainNode; preScale: GainNode; ceiling: WaveShaperNode } {
+    const headroom = c.createGain();
+    headroom.gain.value = HEADROOM_GAIN;
+    const preScale = c.createGain();
+    preScale.gain.value = 1 / CEILING_RANGE;
+    const ceiling = c.createWaveShaper();
+    ceiling.curve = ceilingCurve();
+    // 'none' on purpose: the curve is exactly y = x below the knee, so ordinary material must be
+    // passed through untouched. Any oversampling would run it through resampling filters first.
+    ceiling.oversample = 'none';
+    return { headroom, preScale, ceiling };
   }
 
   function strip(ch: number): ChannelStrip {
@@ -863,14 +990,20 @@ function createWebAudioBackend(BackendLib: any): any {
       g.connect(sendBus(name).input);
       sends[name] = g;
     }
-    s = { input, fxIn, gain, pan, eq, sends, fx: null, instrument: null, program: 24, percussion: ch === 9 };
+    s = { input, fxIn, gain, pan, eq, sends, fx: null, fxSpec: null,
+          instrument: null, program: 24, percussion: ch === 9 };
     channels[ch] = s;
     return s;
   }
 
   // Channels holding a loaded SFZ. Without this, the first note-on after a preset load would
   // see a program mismatch and swap the sampler back out for the placeholder tone.
-  const sfzChannels = new Set<number>();
+  //
+  // It maps to the parsed preset (NOT just the channel number) because the offline bounce has to
+  // build its OWN sampler in its own context — an AudioNode cannot cross contexts, but the
+  // regions and the decoded AudioBuffers can. Before this, the bounce had no SFZ branch at all
+  // and silently recorded those tracks as GM (GMD-62).
+  const sfzChannels = new Map<number, { regions: any[]; buffers: Map<string, AudioBuffer> }>();
 
   // The bundled GM bank (GMD-36). Loaded once, lazily, and shared by every channel; the sample
   // buffer cache is shared too, since a piano and a string pad often reference the same sample.
@@ -1110,6 +1243,25 @@ function createWebAudioBackend(BackendLib: any): any {
     return perc ? (drumKit || gmBank) : (melodicPacks.get(program) || gmBank);
   }
 
+  /**
+   * THE ONE PLACE an instrument is built, for the same reason bankFor is the one place a bank is
+   * chosen. Live playback and the offline bounce both call this, so a track that plays through an
+   * SFZ sampler also RECORDS through one — it did not, and bounced as GM instead (GMD-62).
+   *
+   * `c` and `buffers` are parameters precisely so the offline context can build its own copy:
+   * AudioNodes are bound to their context, the regions and decoded buffers behind them are not.
+   */
+  function makeInstrument(c: BaseAudioContext, ch: number, program: number,
+                          perc: boolean, buffers: Map<number, AudioBuffer>): Instrument {
+    const sfz = sfzChannels.get(ch);
+    if (sfz) return createSfzInstrument(c as AudioContext, sfz.regions, sfz.buffers);
+    // Falls back to the placeholder tone only while a bank is still loading, or if it failed.
+    const bank = bankFor(program, perc);
+    return bank
+      ? createSf2Instrument(c as AudioContext, bank, program | 0, perc, buffers)
+      : createToneInstrument(c as AudioContext, perc);
+  }
+
   function instrumentFor(ch: number, program: number, percussion: boolean): Instrument {
     const s = strip(ch);
     if (sfzChannels.has(ch) && s.instrument) return s.instrument;
@@ -1118,11 +1270,7 @@ function createWebAudioBackend(BackendLib: any): any {
     if (!perc && !melodicPacks.has(program)) loadMelodicPack(program);
     if (!s.instrument || s.program !== program || s.percussion !== perc) {
       if (s.instrument) s.instrument.allNotesOff();
-      // Falls back to the placeholder tone only while a bank is still loading, or if it failed.
-      const bank = bankFor(program, perc);
-      s.instrument = bank
-        ? createSf2Instrument(ctx!, bank, program | 0, perc, gmBuffers)
-        : createToneInstrument(ctx!, perc);
+      s.instrument = makeInstrument(ctx!, ch, program, perc, gmBuffers);
       s.instrument.output.connect(s.input);
       s.program = program;
       s.percussion = perc;
@@ -1329,7 +1477,7 @@ function createWebAudioBackend(BackendLib: any): any {
       if (st.instrument) st.instrument.allNotesOff();
       st.instrument = createSfzInstrument(c, entry.regions, entry.buffers);
       st.instrument.output.connect(st.input);
-      sfzChannels.add(ch);
+      sfzChannels.set(ch, entry);
       bus.emit('instrumentLoaded', { channel: ch, ok: true, name: preset.name || id });
     } catch (e) {
       bus.emit('instrumentLoaded', { channel: ch, ok: false, name: preset.name || String(id) });
@@ -1340,18 +1488,28 @@ function createWebAudioBackend(BackendLib: any): any {
   // per-channel reverbs will hurt, one shared reverb with per-channel sends will not. This is
   // the entire reason sends exist in the design.
   const buses = new Map<string, { input: GainNode; nodes: AudioNode[] }>();
+
+  // The send buses' own definitions, named once so the offline bounce rebuilds the SAME delay and
+  // the SAME reverb rather than a second opinion about what "reverb" means (GMD-66).
+  const SEND_SPECS: Record<string, any> = {
+    reverb: { chain: [{ type: 'reverb', params: { mix: 1, ir: 'hall-medium' } }] },
+    delay: { chain: [{ type: 'delay', params: { mix: 1, timeMs: 375, feedback: 0.35, tone: 3000 } }] }
+  };
+
+  /** Build one send bus into `c`, returning to `dest`. Context-parameterised so both graphs use it. */
+  function makeSendBus(c: AudioContext, name: string, dest: AudioNode): { input: GainNode; nodes: AudioNode[] } {
+    const input = c.createGain();
+    const built = buildFxChain(c, SEND_SPECS[name] || SEND_SPECS.delay);
+    input.connect(built.input);
+    built.output.connect(dest);
+    return { input, nodes: built.nodes };
+  }
+
   function sendBus(name: string): { input: GainNode; nodes: AudioNode[] } {
     const c = ensureContext();
     let b = buses.get(name);
     if (b) return b;
-    const input = c.createGain();
-    const spec = name === 'reverb'
-      ? { chain: [{ type: 'reverb', params: { mix: 1, ir: 'hall-medium' } }] }
-      : { chain: [{ type: 'delay', params: { mix: 1, timeMs: 375, feedback: 0.35, tone: 3000 } }] };
-    const built = buildFxChain(c, spec);
-    input.connect(built.input);
-    built.output.connect(master!.eq[0]);
-    b = { input, nodes: built.nodes };
+    b = makeSendBus(c, name, master!.eq[0]);
     buses.set(name, b);
     return b;
   }
@@ -1362,6 +1520,7 @@ function createWebAudioBackend(BackendLib: any): any {
     if (target === 'master') {
       if (masterFx) { try { masterFx.output.disconnect(); masterFx.input.disconnect(); } catch (e) {} }
       masterFx = null;
+      masterFxSpec = FX.chainIsEmpty(chainSpec) ? null : chainSpec;
       try { master!.eq[2].disconnect(); } catch (e) {}
       if (FX.chainIsEmpty(chainSpec)) { master!.eq[2].connect(master!.gain); return; }
       const built = buildFxChain(c, chainSpec);
@@ -1373,6 +1532,7 @@ function createWebAudioBackend(BackendLib: any): any {
     const st = strip(ch);
     if (st.fx) { try { st.fx.output.disconnect(); st.fx.input.disconnect(); } catch (e) {} }
     st.fx = null;
+    st.fxSpec = FX.chainIsEmpty(chainSpec) ? null : chainSpec;
     try { st.fxIn.disconnect(); } catch (e) {}
     if (FX.chainIsEmpty(chainSpec)) { st.fxIn.connect(st.gain); return; }
     const built = buildFxChain(c, chainSpec);
@@ -1382,8 +1542,46 @@ function createWebAudioBackend(BackendLib: any): any {
   }
 
   let masterFx: { input: AudioNode; output: AudioNode; nodes: AudioNode[] } | null = null;
+  let masterFxSpec: any = null;
 
   let rendering = false;
+
+  /**
+   * EVERYTHING the mixer consists of, as plain values — the single enumeration the offline bounce
+   * builds from.
+   *
+   * This exists because "mirror the live mixer" kept being written out by hand in renderOffline,
+   * one field at a time, and kept falling behind: the per-channel strip was mirrored but the
+   * master gain, master pan, master EQ, master inserts, track inserts and sends were all silently
+   * dropped, so the master fader did nothing to the recorded file (GMD-66). Add a mixer control,
+   * add it here, and the bounce gets it for free. `tests/mixsnapshot.test.js` pins the field list
+   * so a new control cannot quietly skip this.
+   */
+  function snapshotMix(): any {
+    const chans: any[] = [];
+    for (let ch = 0; ch < channels.length; ch++) {
+      const s = channels[ch];
+      if (!s) continue;
+      const sends: Record<string, number> = {};
+      for (const name of Object.keys(s.sends)) sends[name] = s.sends[name].gain.value;
+      chans.push({
+        ch,
+        gain: s.gain.gain.value,
+        pan: s.pan.pan.value,
+        eq: [s.eq[0].gain.value, s.eq[1].gain.value, s.eq[2].gain.value],
+        fx: s.fxSpec,
+        sends
+      });
+    }
+    return {
+      master: master
+        ? { gain: master.gain.gain.value, pan: master.pan.pan.value,
+            eq: [master.eq[0].gain.value, master.eq[1].gain.value, master.eq[2].gain.value],
+            fx: masterFxSpec }
+        : { gain: 1, pan: 0, eq: [0, 0, 0], fx: null },
+      channels: chans
+    };
+  }
 
   /** Render the current sequence offline and return WAV bytes. */
   async function renderOffline(): Promise<ArrayBuffer | null> {
@@ -1393,36 +1591,77 @@ function createWebAudioBackend(BackendLib: any): any {
     const seconds = TB.tickToSeconds(sequence.lengthTicks || 0, bpm, rate) + 2;  // +tail
     const off = new (window as any).OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
 
-    // Rebuild a minimal graph in the offline context. The instrument factories take a context
-    // precisely so they can be reused here rather than duplicated.
-    const master = { eq: makeEqNodes(off, 0, 0, 0), gain: off.createGain() };
-    master.eq[2].connect(master.gain);
-    master.gain.connect(off.destination);
+    // Rebuild the graph in the offline context from ONE description of the mixer (snapshotMix),
+    // rather than re-deriving it field by field here — that hand-copying is what silently dropped
+    // the whole master section from every recording (GMD-66). The instrument and output-stage
+    // factories take a context precisely so they can be reused here rather than duplicated.
+    const snap = snapshotMix();
+    const mEq = makeEqNodes(off, snap.master.eq[0], snap.master.eq[1], snap.master.eq[2]);
+    const mGain = off.createGain();
+    mGain.gain.value = snap.master.gain;
+    const mPan = off.createStereoPanner();
+    mPan.pan.value = snap.master.pan;
+    const outStage = makeOutputStage(off);
+    // master EQ -> [master inserts] -> gain -> pan -> headroom -> ceiling -> out, the live order.
+    if (snap.master.fx) {
+      const built = buildFxChain(off as any, snap.master.fx);
+      mEq[2].connect(built.input);
+      built.output.connect(mGain);
+    } else {
+      mEq[2].connect(mGain);
+    }
+    mGain.connect(mPan);
+    mPan.connect(outStage.headroom);
+    outStage.headroom.connect(outStage.preScale);
+    outStage.preScale.connect(outStage.ceiling);
+    outStage.ceiling.connect(off.destination);
+
+    const offBuses = new Map<string, { input: GainNode; nodes: AudioNode[] }>();
+    const offSendBus = (name: string) => {
+      let b = offBuses.get(name);
+      if (!b) { b = makeSendBus(off as any, name, mEq[0]); offBuses.set(name, b); }
+      return b;
+    };
 
     const strips = new Map<number, { input: GainNode; inst: Instrument }>();
     const offBuffers = new Map<number, AudioBuffer>();
+    const mixOf = (ch: number) => snap.channels.find((c: any) => c.ch === ch);
     const instFor = (ch: number, program: number, percussion: boolean) => {
       let st = strips.get(ch);
       if (st) return st.inst;
+      const mix = mixOf(ch);
       const input = off.createGain();
-      const live = channels[ch];
-      // Mirror the live mixer so the bounce matches what you were hearing.
-      input.gain.value = live ? live.gain.gain.value : 1;
+      const fxIn = off.createGain();
+      const gain = off.createGain();
+      gain.gain.value = mix ? mix.gain : 1;
       const pan = off.createStereoPanner();
-      pan.pan.value = live ? live.pan.pan.value : 0;
-      const eq = makeEqNodes(off, live ? live.eq[0].gain.value : 0,
-                                  live ? live.eq[1].gain.value : 0,
-                                  live ? live.eq[2].gain.value : 0);
-      input.connect(pan); pan.connect(eq[0]);
-      eq[2].connect(master.eq[0]);
+      pan.pan.value = mix ? mix.pan : 0;
+      const eq = makeEqNodes(off, mix ? mix.eq[0] : 0, mix ? mix.eq[1] : 0, mix ? mix.eq[2] : 0);
+      // instrument -> input -> [inserts] -> gain -> pan -> EQ -> master, the live order (§4.1):
+      // inserts PRE-fader, sends POST-fader.
+      input.connect(fxIn);
+      if (mix && mix.fx) {
+        const built = buildFxChain(off as any, mix.fx);
+        fxIn.connect(built.input);
+        built.output.connect(gain);
+      } else {
+        fxIn.connect(gain);
+      }
+      gain.connect(pan); pan.connect(eq[0]);
+      eq[2].connect(mEq[0]);
+      for (const name of Object.keys(mix ? mix.sends : {})) {
+        const level = mix.sends[name];
+        if (!(level > 0)) continue;
+        const g = off.createGain();
+        g.gain.value = level;
+        eq[2].connect(g);
+        g.connect(offSendBus(name).input);
+      }
       const perc = percussion || ch === 9;
-      // Same bank choice as live playback, so the bounce is what you heard — via bankFor, NOT a
-      // second copy of the expression. A pack's decoded AudioBuffers carry their own sample rate,
-      // so they play correctly in this context too.
-      const bank = bankFor(program | 0, perc);
-      const inst = bank
-        ? createSf2Instrument(off as any, bank, program | 0, perc, offBuffers)
-        : createToneInstrument(off as any, perc);
+      // Same instrument choice as live playback — via makeInstrument, NOT a second copy of the
+      // expression. A pack's decoded AudioBuffers carry their own sample rate, so they play
+      // correctly in this context too.
+      const inst = makeInstrument(off as any, ch, program | 0, perc, offBuffers);
       inst.output.connect(input);
       st = { input, inst };
       strips.set(ch, st);
@@ -1567,6 +1806,7 @@ function createWebAudioBackend(BackendLib: any): any {
     stopRecording() { /* an offline render cannot be usefully interrupted; it is near-instant */ },
 
     // Exposed for tests and for the shell's "click to start audio" affordance.
+    _snapshotMix: snapshotMix,
     _context: () => ctx,
     _isPlaying: () => playing,
     _currentTick: currentTick
@@ -1575,7 +1815,8 @@ function createWebAudioBackend(BackendLib: any): any {
   return backend;
 }
 
-  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt,
+  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt, voicesToRelease,
+                ceilingCurve, HEADROOM_GAIN, HEADROOM_DB, CEILING_KNEE, CEILING_RANGE,
                 LOOKAHEAD_S, TICK_INTERVAL_MS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasWebAudio = api;
