@@ -42,6 +42,34 @@ claim a ticket (`samu ticket move <KEY> "In Progress"`); file anything you disco
 mark a ticket Done until the change is actually built and exercised. Reference the ticket key
 in commits (e.g. `GMD-8: …`). The board is at http://127.0.0.1:8080 (workspace `gomidas`).
 
+## How work lands — the `ship` workflow (2026-08-17)
+
+**Every ticket goes through `.claude/skills/ship/SKILL.md`** (`/ship GMD-<n>`). One ticket, one
+branch, one PR — no more batched local merges straight into `main`.
+
+```
+CLAIM → PLAN → BRANCH → IMPLEMENT → VERIFY → PR → REVIEW → MERGE → CLOSE
+```
+
+**Two hard stops where you wait for the user: the plan, and the merge.** Everything else you
+drive. Failures go *backwards* — never a PR on a red gate, never a merge on a red review, never
+`Done` on an unverified merge.
+
+**The four verification gates, all before the PR exists:**
+- **A — automated:** `pnpm typecheck` · `pnpm test` · `cmake --build build` · `ctest`.
+- **B — the checkJs sweep** (the one from the *Key facts* section below). Only acceptable output
+  is 105 × `alphaTab` + 22 × `GomidasCore`; **a third undefined name is a bug you just wrote**.
+  Manual until GMD-68 wires it into CI.
+- **C — runtime verification.** Build green ≠ works. Exercise it; measure anything measurable;
+  evidence goes in the PR body. If it truly can't be verified here, **say so in the PR** — this
+  is exactly how the live-input/plugin/recording stack got to "builds but UNVERIFIED".
+- **D — both products.** `packages/core` is shared; GMD-44/57/62 were all one product fixed and
+  the other left broken. Check for the parallel code path.
+
+Review is **`/code-review high <PR#>`**, looped until clean — always pass the level, or the skill
+silently reuses whatever was typed last and the gate stops being reproducible. **`ultra` is on
+the user's demand ONLY: never run it, never propose it.** CI already runs on `pull_request`.
+
 ## Architecture (decided)
 
 ```

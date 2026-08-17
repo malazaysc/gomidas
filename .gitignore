@@ -17,8 +17,11 @@ node_modules/
 apps/packages/core/dist/
 packages/core/coverage/
 
-# Local Claude Code session artifacts (scheduled-task locks, etc.)
-.claude/
+# Local Claude Code session artifacts (scheduled-task locks, etc.) — but the shared
+# project skills ARE the workflow (see CLAUDE.md "How work lands"), so they are tracked.
+# settings.local.json stays ignored: it holds machine-specific paths + local skill overrides.
+.claude/*
+!.claude/skills/
 
 # Large optional high-quality SoundFont (144MB, over GitHub's 100MB limit).
 # Build falls back to the embedded sonivox bank when absent. See README "SoundFonts".
