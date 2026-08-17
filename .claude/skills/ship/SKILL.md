@@ -18,6 +18,18 @@ Every stage that can fail sends you *backwards*, not forwards.
 Two hard stops where you **must** wait for the user: the plan (stage 2) and the merge (stage 8).
 Everything else you drive yourself.
 
+## When this workflow does NOT apply
+
+**Meta-work on the tooling itself — skills, `CLAUDE.md`, `.gitignore`, harness config — goes
+straight to `main` when the user asks for it.** No branch, no PR, no review. It isn't a GMD
+ticket, the verification gates have no code to check, and a PR round-trip on a workflow file
+buys nothing. This is the user's standing call (2026-08-17); it is not a licence to skip the
+loop for anything that touches `src/`, `packages/`, or `apps/`.
+
+Still log it to Samu (`samu status log`) — the board should show the tooling changing too.
+
+Everything else — every GMD ticket, every code change — goes through all nine stages.
+
 ---
 
 ## 1. CLAIM

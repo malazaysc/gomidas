@@ -55,6 +55,11 @@ CLAIM → PLAN → BRANCH → IMPLEMENT → VERIFY → PR → REVIEW → MERGE �
 drive. Failures go *backwards* — never a PR on a red gate, never a merge on a red review, never
 `Done` on an unverified merge.
 
+**One exception (user's standing call, 2026-08-17):** meta-work on the tooling itself — skills,
+`CLAUDE.md`, `.gitignore`, harness config — **goes straight to `main` on request**, no branch/PR/
+review, since there's no code for the gates to check. Still `samu status log` it. Anything
+touching `src/`, `packages/` or `apps/` takes the full loop.
+
 **The four verification gates, all before the PR exists:**
 - **A — automated:** `pnpm typecheck` · `pnpm test` · `cmake --build build` · `ctest`.
 - **B — the checkJs sweep** (the one from the *Key facts* section below). Only acceptable output
