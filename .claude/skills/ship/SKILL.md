@@ -52,8 +52,13 @@ git checkout main && git pull
 
 ## 2. PLAN — and stop
 
-Read the ticket, read the code it touches, then present a short plan: what changes, which files,
-how you'll verify it. **Use plan mode (`EnterPlanMode` / `ExitPlanMode`) and wait for approval.**
+**Call `EnterPlanMode` FIRST — before reading the code, not after.** Read the ticket, then enter
+plan mode, then explore. Doing the exploration first and only then entering plan mode wastes a
+round trip: plan mode has its own read-only exploration phase, and you end up re-entering it with
+the work already done. Ticket → `EnterPlanMode` → read → plan → `ExitPlanMode`.
+
+Inside plan mode: read the code the ticket touches, then present a short plan — what changes,
+which files, how you'll verify it — and **wait for approval** via `ExitPlanMode`.
 
 Ask now, not later, about anything where two readings lead to materially different work. A
 question asked before the branch costs a message; asked after the PR it costs the PR. If the
@@ -62,6 +67,11 @@ ticket body is ambiguous, say which reading you're taking.
 Check `CLAUDE.md` for what's already known about the area — most of this repo's traps are
 written down (bank selection, three instrument factories, `snapshotMix`, the alphaTab rAF
 bootstrap, `AudioParam.value` on web). Re-deriving one of those is wasted work.
+
+**Measure anything you're about to assert.** GMD-68's plan carried the runtime, the diagnostic
+histogram and the file-set delta, so the CI placement and the fatal-code set were decisions
+rather than guesses — and the one claim taken from a single measurement rather than reasoned
+through ("TS2552 is zero, so it can't matter") was the one the review overturned.
 
 ## 3. BRANCH
 
@@ -189,7 +199,17 @@ Then **triage every finding honestly**. Fix what's real. For anything you disagr
 in one sentence rather than silently dropping it. A fix means **re-running stage 5's gates** —
 at minimum the ones the fix could plausibly break — then push and confirm CI again.
 
+**Verify a suggested fix before adopting it.** A finding can be right about the problem and wrong
+about the remedy: GMD-68's review proposed `ts.readConfigFile` for JSONC parsing, but TypeScript 7
+is the native port and its package exposes only `version` — no compiler API to call. Checking took
+one command; adopting it blind would have broken the gate.
+
 Loop 7 → 4 → 5 → 7 until the review comes back clean. Only then go to stage 8.
+
+**Expect more than one round, and don't stop at the first clean-looking one.** GMD-68 took three:
+15 findings, none in the feature, all in the gate — four of them cases where it reported success
+having checked nothing. Stop when the findings are about wording rather than correctness, and
+**say in the merge ask which round you stopped at and why**.
 
 ⚠️ **`ultra` is on the user's demand ONLY.** Never run it, never propose it, never suggest a
 change is "risky enough to deserve ultra". It is billed and user-triggered — if they want the
