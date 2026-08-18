@@ -26,6 +26,12 @@ jobs:
           cache: pnpm
       # One install at the workspace root covers both packages.
       - run: pnpm install --frozen-lockfile
+      # GMD-68 — the plain-<script> editor files have no typecheck (checkJs is off in the main
+      # tsconfig on purpose), so a reference to something that does not exist is invisible until
+      # that line runs. GMD-67 shipped exactly that and silenced note audition on both products
+      # for a day. Runs in ~0.3s, so it goes first: cheapest check, fastest failure.
+      - name: Dangling-reference sweep (checkJs)
+        run: pnpm -C packages/core run sweep
       - run: pnpm -C packages/core run test
 
   # Native audio-path smoke tests (sfizz SFZ load + render) via ctest. Heavier: this

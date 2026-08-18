@@ -73,9 +73,9 @@ touching `src/`, `packages/` or `apps/` takes the full loop.
 
 **The four verification gates, all before the PR exists:**
 - **A — automated:** `pnpm typecheck` · `pnpm test` · `cmake --build build` · `ctest`.
-- **B — the checkJs sweep** (the one from the *Key facts* section below). Only acceptable output
-  is 105 × `alphaTab` + 22 × `GomidasCore`; **a third undefined name is a bug you just wrote**.
-  Manual until GMD-68 wires it into CI.
+- **B — the checkJs sweep:** `pnpm sweep`. **0** clean · **1** you referenced something that
+  doesn't exist · **2** it checked *nothing* (and 2 is the worse one — no coverage, not one bug).
+  Also runs in CI, first in `web-tests` (GMD-68).
 - **C — runtime verification.** Build green ≠ works. Exercise it; measure anything measurable;
   evidence goes in the PR body. If it truly can't be verified here, **say so in the PR** — this
   is exactly how the live-input/plugin/recording stack got to "builds but UNVERIFIED".
@@ -301,17 +301,35 @@ Key facts learned (don't relearn):
   `initDrawers`) interleave their rAF-deferred appends and defeat the counter even after bootstrap.
   Still reachable from a **second** trigger: `addTrack` followed by `selectTrack` with no wait
   overlaps two renders and the title doubles again (GMD-70, open).
-- ⚠️ **`editor.js`/`app.js`/`fretboard.js` are plain `<script>` globals with NO typecheck**, so a
-  dangling reference is invisible until that line happens to run. Sweep them with the already-installed
-  compiler — no new dependency:
-  `pnpm exec tsc --ignoreConfig --allowJs --checkJs --noEmit --target es2020 --skipLibCheck app.js
-  editor.js fretboard.js` — which reports exactly **three** undefined names: `alphaTab` (105) and
-  `GomidasCore` (22), both real globals from other script tags, plus anything actually broken. That is
-  how GMD-67 was found: GMD-54 removed a `const pb = t.playbackInfo` and left `pb.program` two lines
-  below, so **every note audition threw and clicking a fret was silent on both products for a day** —
-  invisible because `previewBeat()` runs LAST in `setFret`, so the edit still committed and the app
-  looked fine. GMD-68 tracks making it a CI gate (needs the two globals declared; the exit code is
-  unusable on its own because `--checkJs` also emits ~1400 unrelated inference diagnostics).
+- ⚠️ **`editor.js`/`app.js`/`fretboard.js`/`grooves.js`/`core/gomidas-core.js` are plain `<script>`
+  globals with NO typecheck** (the main tsconfig sets `checkJs: false` deliberately — on, it buries
+  the build in ~1400 inference diagnostics from 5,700 un-migrated lines), so a dangling reference is
+  invisible until that line happens to run. **`pnpm sweep` is the gate** (GMD-68): the
+  already-installed compiler, no new dependency, ~0.3s, and it **runs in CI** first in `web-tests`.
+  `tools/checkjs-sweep.mjs` classifies the diagnostics and sets its own exit code — tsc's is
+  useless because the inference noise makes it non-zero always. Fatal: **TS2304 + TS2552** (2552 is
+  what tsc emits *instead of* 2304 when a similar name is in scope — i.e. the typo case, the
+  likeliest dangling reference of all), plus syntax (TS1xxx) and config/host (TS5xxx/TS6xxx) errors,
+  because those mean **the sweep didn't check what it claims** — a stale `files` entry after a
+  `.js`→`.ts` rename is silent coverage loss. Everything else (TS7006 ×510, TS2339 ×472 …) is
+  inference noise and must not gate. The classifier is unit-tested (`tests/checkjs-sweep.test.js`)
+  precisely because a misclassification is indistinguishable from "clean". A legitimate new global
+  goes in `types/globals.d.ts`; **never** delete the check.
+- ⚠️ **A gate must never infer success from the absence of a bad diagnostic** — two review rounds
+  found four ways `pnpm sweep` printed "clean" while checking *nothing* (stale `files` entry,
+  **empty** `files` list → TS18002, a 5-digit code no pattern matched, syntax error, SIGKILLed
+  tsc). So it now asserts the **positive**: `--listFiles` makes tsc name every file it processed,
+  and every entry must appear or it exits 2 — hence "clean — 6 files checked". `--showConfig`
+  supplies the file list, because the config is JSONC (block comments, trailing commas) and
+  **TypeScript 7's package exposes no compiler API to parse it** — only `version`, so
+  `ts.readConfigFile` does not exist. A hand-rolled stripper was tried and broke twice.
+- ⚠️ **A green sweep ≠ every reference resolves.** It sees **bare identifiers** only; cross-file
+  calls go through `window.<name>`, and a missing `window` property is TS2339 — noise, ungateable.
+  Renaming a `window.gomidas*` entry point passes a green sweep. GMD-67 was found by it because
+  GMD-54 removed a `const pb = t.playbackInfo` and left `pb.program` two lines below, so **every
+  note audition threw and clicking a fret was silent on both products for a day** — invisible
+  because `previewBeat()` runs LAST in `setFret`, so the edit still committed and the app looked
+  fine.
 - **Everything the inspector renders must branch on `s.isPercussion`** (GMD-69). A tuning row, palm
   mute, auto let ring, auto brush, "Stringed" and the bundled melodic CC0 SFZ presets are all
   properties of a *fretted* instrument, and showing them on a drum track is what makes the panel read

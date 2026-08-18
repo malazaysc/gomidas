@@ -10,6 +10,7 @@
   "scripts": {
     "build": "pnpm -C packages/core run build",
     "typecheck": "pnpm -C packages/core run typecheck",
+    "sweep": "pnpm -C packages/core run sweep",
     "test": "pnpm -C packages/core run test",
     "web:dev": "pnpm -C apps/web run dev",
     "web:build": "pnpm -C apps/web run build",

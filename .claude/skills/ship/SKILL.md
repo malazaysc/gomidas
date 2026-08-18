@@ -98,19 +98,28 @@ cmake --build build --target gomidas_tests && ctest --test-dir build --output-on
 The desktop app itself must also still build — `cmake --build build`. The standing rule is that
 **every commit leaves `cmake --build build` green and the macOS app behaving identically**.
 
-**Gate B — the dangling-reference sweep.** `app.js` / `editor.js` / `fretboard.js` are plain
-`<script>` globals with no typecheck, so a dangling reference is invisible until that line runs
-(this is what shipped GMD-67's silent note audition for a day):
+**Gate B — the dangling-reference sweep.** `app.js` / `editor.js` / `fretboard.js` / `grooves.js`
+/ `core/gomidas-core.js` are plain `<script>` globals with no typecheck, so a dangling reference
+is invisible until that line runs (this is what shipped GMD-67's silent note audition for a day):
 
 ```bash
-cd packages/core && pnpm exec tsc --ignoreConfig --allowJs --checkJs --noEmit \
-  --target es2020 --skipLibCheck app.js editor.js fretboard.js 2>&1 | grep TS2304
+pnpm sweep   # 0 = clean · 1 = you referenced something that doesn't exist · 2 = it checked NOTHING
 ```
 
-The **only** acceptable output is the two known real globals — 105 × `Cannot find name
-'alphaTab'` and 22 × `Cannot find name 'GomidasCore'`. **Any third name is a bug you just
-wrote.** Ignore the ~1400 other inference diagnostics and the exit code; grep `TS2304` only.
-(Wiring this into CI is GMD-68 — until it lands, this gate is manual and mandatory.)
+**Exit 2 is not a pass.** It means the sweep couldn't do its job — a stale or empty `files` list, a
+plain-JS file the build compiles that nobody added to it, tsc killed, tsc missing. Treat 2 as
+harder than 1: on a 1 you have one bug; on a 2 you have no coverage.
+
+No counting by eye any more (GMD-68): the two real globals are declared in
+`packages/core/types/globals.d.ts`, so **any** surviving `TS2304`/`TS2552` is a real bug and the
+script fails on it. Runs in ~0.3s and **also runs in CI**, first in the `web-tests` job. If it
+names a legitimate new global from another `<script>` tag, declare it in `globals.d.ts` — never
+delete the check.
+
+⚠️ **A green sweep is not "every reference resolves."** It sees **bare identifiers** only.
+Cross-file calls in these files mostly go via `window.<name>`, and a missing property on `window`
+is TS2339 — 472 of those exist as noise, so they can't gate. Renaming a `window.gomidas*` entry
+point passes a green sweep. GMD-67 was a bare identifier, which is why this catches it.
 
 **Gate C — runtime verification.** Build green ≠ works. Actually exercise the change and keep
 the evidence for the PR body. Pick by what you touched:
