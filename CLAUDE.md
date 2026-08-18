@@ -492,6 +492,12 @@ stereo and its snare has **seven** velocity layers.
   `allNotesOff` fades over 80 ms rather than the zone release, or Stop leaves a 9 s crash ringing.
 - **Kit selection:** use `bank.findDrumPreset(program)`, never `findPreset(128, program)` — the
   latter falls back to "same program in bank 0", so sonivox answers program 16 with **Organ 1**.
+- ⚠️ **The committed pack contains exactly ONE kit** (`program 0, Standard`), and the pack's own
+  `findDrumPreset` ends in `|| presets[0]` (`webaudio.ts:1118`) — so **every** GM kit (Room, Power,
+  Electronic, 808, Jazz, Brush, Orchestra) silently resolves to Standard, with no warning (GMD-74).
+  The extractor already supports several kits deduped into one blob (`--programs 0,8,16,…`); it was
+  simply run with its default `--programs 0`. Kit variety is now planned as **processing**, not more
+  samples — see "Drum kit character" below.
 - ⚠️ **Never write `percussion = (channel === 9)`** (GMD-54). Four call sites did, so a file whose
   drum track sits on any other channel took the melodic branch, where a drum note's key becomes
   `note.realValue` on a melodic program — soft wooden thuds at arbitrary pitches. Ask
@@ -509,6 +515,46 @@ stereo and its snare has **seven** velocity layers.
   dead): stub `GomidasFiles.saveData` to capture instead of download, call
   `GomidasAudio.startRecording()` — the offline bounce — and analyse the WAV. Deterministic, and
   it exercises the real instrument path.
+
+### Drum kit character = ONE sample set + per-piece processing (GMD-77/78/79, 2026-08-18)
+**Decided by the user 2026-08-18.** Kit variety comes from **processing**, not from shipping more
+sample sets: one FluidR3 Standard kit, and each "kit" is a **preset = a data table of per-piece
+`{gain, eq3, compressor, drive}`** applied to a **bus per `PIECE_KEYS` group**. Preset picker only —
+no exposed per-piece knobs. **Web first (GMD-77/78); desktop is GMD-79**, and that divergence is
+deliberate and tracked, not an oversight.
+- **Nothing new to build DSP-wise.** `core/fx.ts` `FX_TYPES` already has **compressor / drive
+  (overdrive·distortion·fuzz) / eq3 / reverb** with a versioned backend-agnostic chain + sends, and
+  `applyFx(target, ch, spec)` builds one. `fretboard.js:323 PIECE_KEYS` (+ `pieceMixKeys`, GMD-72) is
+  the piece→GM-key-group map — **the routing key**. Import it into core; do not copy it.
+- **The seam:** today `s.instrument.output.connect(s.input)` is a SINGLE output per instrument
+  (`webaudio.ts:1274`). Percussion voices must instead reach a per-group bus → its chain → the channel
+  input. Must be a **no-op for every melodic track**.
+- ⚠️ **FluidR3's kit is an ACOUSTIC balance, not a produced one** — measured from the committed pack
+  (raw sample peak × zone attenuation, vel 102): **snare −0.07 dB (the 0 dB reference), kick −3.88,
+  open hat −4.60, crash −6.02, closed hat −8.42**; every melodic zone is 0.0 dB and its samples are
+  normalised the same. So drums are **not** globally quiet — the snare sits level with a guitar note.
+  The kick and hat, which carry the groove, are the buried ones. That table is the default preset's
+  gain column (GMD-73).
+- ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
+  8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
+  vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
+- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, and
+  kick/snare have **7 velocity layers** (0-80, 81-88, 89-96, 97-104, 105-112, 113-120, 121-127) — so
+  scaling velocity changes **which layer fires**, i.e. timbre, not just level. `gomidasDrumGains`
+  (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
+- ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
+  read as a drum.
+- **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
+  (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
+  articulation — swirls, not filtered stick hits), and convincingly **Room / Power** (real room mics
+  + gated tails). Hats/crash are **single-layer**, so compression cannot add dynamics that aren't
+  there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
+- ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
+  the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
+  GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
+- ⚠️ **GMD-53 gates the desktop half.** TSF uses the literal −200 attenuation divisor and a LINEAR
+  velocity curve, so desktop's starting balance differs from web's *before* any preset applies.
+  Settle GMD-53 first or the preset gains get tuned against the wrong baseline.
 
 ### Web melodic instruments — per-program FluidR3 packs (GMD-57, 2026-08-14)
 GMD-50 fixed percussion and left guitars and basses on sonivox. Same extractor, same pack format,
