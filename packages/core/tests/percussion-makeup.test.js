@@ -1,4 +1,4 @@
-// GMD-73 — per-piece percussion make-up gain.
+// GMD-73 — per-piece percussion make-up gain, a FLOOR under each drum piece.
 //
 // FluidR3 authors an ACOUSTIC kit balance: its snare is at 0 dB attenuation (exactly level with
 // every melodic zone, which are all 0 dB too) and everything that carries the groove sits under it
@@ -6,17 +6,19 @@
 // the committed pack at velocity 102 including each sample's own peak. That is what "the drums are
 // too soft" is, and it is why measuring the drum track in isolation (GMD-55) found nothing wrong.
 //
-// The table is the contract. If it drifts, drums go back to sounding like a snare with faint
-// company, and nothing else in the build would notice.
+// Both banks this exercises are COMMITTED, so neither may be skipped: a suite that vanishes when a
+// file is renamed reports success having checked nothing, which is the failure mode CLAUDE.md
+// records for `pnpm sweep`. Missing file -> loud failure, never a green skip.
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import SF from '../core/sf2.ts';
 
-const { percussionMakeupGain, attenuationGain, PERCUSSION_TARGET_DB,
-        MAKEUP_MIN_DB, MAKEUP_MAX_DB } = SF;
+const { percussionMakeupGain, attenuationGain, parseSf2, zonesFor,
+        PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB } = SF;
 
 const dB = g => 20 * Math.log10(g);
+const TARGETED = Object.keys(PERCUSSION_FLOOR_DB).map(Number).sort((a, b) => a - b);
 
 /** Level a zone plays at, in dB relative to a melodic note at the same velocity. */
 const levelDb = (key, attenuationDb) =>
@@ -33,7 +35,7 @@ describe('percussionMakeupGain', () => {
     }
   });
 
-  it('brings a FluidR3 kick up to the snare/guitar reference', () => {
+  it('brings a FluidR3 kick up to the snare/melodic reference', () => {
     // The kick's zone attenuation is 10 in pack units = -3.76 dB through the EMU divisor, so the
     // make-up is +3.76 dB and the result is 0. Before this it read -3.76.
     expect(dB(percussionMakeupGain(36, 10))).toBeCloseTo(3.76, 1);
@@ -41,41 +43,39 @@ describe('percussionMakeupGain', () => {
     expect(levelDb(35, 10)).toBeCloseTo(0, 2);
   });
 
-  it('lands each targeted piece on its declared target', () => {
-    // key, the pack's attenuation, the target it must reach.
+  it('raises each targeted piece to its floor', () => {
+    // key, the pack's attenuation, the floor it must reach.
     const cases = [[42, 21, -5], [44, 21, -5], [46, 11, -3], [49, 16, -4], [52, 21, -4],
                    [55, 18, -4], [57, 20, -4], [51, 19.5, -5], [53, 21, -5], [59, 21, -5]];
-    for (const [key, att, target] of cases) {
-      expect(levelDb(key, att), 'key ' + key).toBeCloseTo(target, 2);
+    for (const [key, att, floor] of cases) {
+      expect(levelDb(key, att), 'key ' + key).toBeCloseTo(floor, 2);
     }
   });
 
-  it('only ever moves a piece TOWARD its target, in either direction', () => {
-    // sonivox — the fallback bank when the pack fetch fails — authors the same kit nearly flat
-    // (closed hat -0.75 dB, crash -2.26). A fixed FluidR3-derived boost would over-play it; a
-    // target cuts instead, so whichever bank loaded lands on one defined balance.
-    expect(dB(percussionMakeupGain(42, 2))).toBeLessThan(0);      // hat already loud -> cut
-    expect(levelDb(42, 2)).toBeCloseTo(-5, 2);
-    expect(dB(percussionMakeupGain(42, 21))).toBeGreaterThan(0);  // FluidR3's hat -> boost
-    expect(levelDb(42, 21)).toBeCloseTo(-5, 2);
+  it('BOOSTS ONLY — a bank that already plays a piece loud enough is never cut', () => {
+    // The rule that keeps the fallback path from regressing: a two-way normalisation would pull
+    // sonivox's hats and cymbals DOWN by up to 4.25 dB, which is this ticket's own symptom made
+    // worse on the one path nobody hears until they are offline.
+    for (const key of TARGETED) {
+      expect(percussionMakeupGain(key, 0), 'key ' + key + ' at 0 attenuation').toBe(1);
+      expect(percussionMakeupGain(key, 2), 'key ' + key + ' barely attenuated')
+        .toBeGreaterThanOrEqual(1);
+    }
+    // A piece already above its floor keeps the bank's level, not the floor's.
+    expect(levelDb(42, 2)).toBeCloseTo(-0.75, 2);   // sonivox's closed hat, untouched
+    expect(levelDb(42, 21)).toBeCloseTo(-5, 2);     // FluidR3's, raised
   });
 
-  it('clamps a pathological bank at both ends', () => {
+  it('clamps a pathological bank', () => {
     // 200 pack units is -75 dB; without the clamp the make-up would be a +70 dB boost.
     expect(dB(percussionMakeupGain(36, 200))).toBeCloseTo(MAKEUP_MAX_DB, 6);
-    // A zone already far above its target must not be cut into inaudibility.
-    expect(dB(percussionMakeupGain(59, 0))).toBeCloseTo(-5, 6);
-    expect(dB(percussionMakeupGain(36, -50))).toBeCloseTo(0, 6);
-    expect(MAKEUP_MIN_DB).toBeLessThan(0);
     expect(MAKEUP_MAX_DB).toBeGreaterThan(0);
   });
 
-  it('never boosts a piece past the melodic reference', () => {
-    // The kit's peak must not move: no target may be positive, or the snare stops being the
-    // loudest hit and the mix bounce climbs into the WaveShaper knee.
-    for (const [key, target] of Object.entries(PERCUSSION_TARGET_DB)) {
-      expect(target, 'key ' + key).toBeLessThanOrEqual(0);
-    }
+  it('never lifts a piece past the melodic reference', () => {
+    // The kit's peak must not move: no floor may be positive, or the snare stops being the loudest
+    // hit and the mix bounce climbs into the WaveShaper knee.
+    for (const key of TARGETED) expect(PERCUSSION_FLOOR_DB[key], 'key ' + key).toBeLessThanOrEqual(0);
   });
 
   it('is a no-op on a bad key', () => {
@@ -86,14 +86,18 @@ describe('percussionMakeupGain', () => {
 });
 
 // The pack is generated once on a machine that has the 151MB FluidR3 bank and then committed, so
-// the FILE is what the table is calibrated against. A re-extract that changes an attenuation has
-// to fail here rather than in someone's ears.
-const dir = fileURLToPath(new URL('../../../assets/drumkits/', import.meta.url));
-const jsonPath = dir + 'gm-standard.json';
-const havePack = existsSync(jsonPath);
-const head = havePack ? JSON.parse(readFileSync(jsonPath, 'utf8')) : null;
+// the FILE is what the floors are calibrated against. A re-extract that changes an attenuation has
+// to fail here rather than in someone's ears — which means pinning the pack's OWN numbers. Asserting
+// that the result lands on the floor would prove nothing: it does so by construction, for any input.
+const packPath = fileURLToPath(new URL('../../../assets/drumkits/gm-standard.json', import.meta.url));
 
-describe.skipIf(!havePack)('against the committed FluidR3 pack', () => {
+describe('against the committed FluidR3 pack', () => {
+  it('is present — this suite may never silently skip', () => {
+    expect(existsSync(packPath), packPath + ' is committed; a missing pack is a failure, not a skip')
+      .toBe(true);
+  });
+
+  const head = JSON.parse(readFileSync(packPath, 'utf8'));
   const VEL = 102;   // dynamic F — what a real GP import writes on nearly every beat (GMD-73)
 
   /** The zones the SF2 instrument would pick for this key, in the order it caps them. */
@@ -101,19 +105,25 @@ describe.skipIf(!havePack)('against the committed FluidR3 pack', () => {
     .filter(z => key >= z.keyLo && key <= z.keyHi && VEL >= z.velLo && VEL <= z.velHi)
     .slice(0, 4);
 
-  it('has a zone for every key the table targets', () => {
-    // A target on a key the kit cannot play is dead weight and hides a typo.
-    for (const key of Object.keys(PERCUSSION_TARGET_DB).map(Number)) {
-      expect(zonesAt(key).length, 'no zone for key ' + key).toBeGreaterThan(0);
+  it('still carries the attenuations the floors were calibrated against', () => {
+    // THE golden assertion. Every number here was read off the committed pack; if a re-extract
+    // moves one, the floor above it is stale and this fails.
+    const PINNED = { 35: 10, 36: 10, 42: 21, 44: 21, 46: 11, 49: 16,
+                     51: 19.5, 52: 21, 53: 21, 55: 18, 57: 20, 59: 21 };
+    expect(Object.keys(PINNED).map(Number).sort((a, b) => a - b)).toEqual(TARGETED);
+    for (const key of TARGETED) {
+      const zs = zonesAt(key);
+      expect(zs.length, 'no zone for key ' + key).toBeGreaterThan(0);
+      // Every zone of a key must agree, or the make-up would flatten a layered dynamic.
+      for (const z of zs) expect(z.attenuationDb, 'key ' + key).toBe(PINNED[key]);
     }
   });
 
-  it('lands every targeted piece within 1 dB of its target', () => {
-    // 1 dB, not exact: the target is set against the zone attenuation, while the audible level also
-    // carries each sample's own normalisation (0.88..1.0 peak across the kit, i.e. up to ~1.2 dB).
-    for (const key of Object.keys(PERCUSSION_TARGET_DB).map(Number)) {
-      const z = zonesAt(key)[0];
-      expect(levelDb(key, z.attenuationDb), 'key ' + key).toBeCloseTo(PERCUSSION_TARGET_DB[key], 0);
+  it('has something to raise for every floor it declares', () => {
+    // A floor on a piece the pack already plays loud enough is dead weight and hides a typo.
+    for (const key of TARGETED) {
+      expect(percussionMakeupGain(key, zonesAt(key)[0].attenuationDb), 'key ' + key)
+        .toBeGreaterThan(1);
     }
   });
 
@@ -127,9 +137,9 @@ describe.skipIf(!havePack)('against the committed FluidR3 pack', () => {
   });
 
   it('closes the gap it was filed for', () => {
-    // Before: kick -3.84 dB and closed hat -8.33 dB under a guitar note at the same velocity.
+    // Before: kick -3.76 dB and closed hat -7.90 dB under a melodic note of the same velocity.
     const kick = zonesAt(36)[0], hat = zonesAt(42)[0], snare = zonesAt(38)[0];
-    const before = k => dB(attenuationGain(k.attenuationDb));
+    const before = z => dB(attenuationGain(z.attenuationDb));
     expect(before(kick)).toBeCloseTo(-3.76, 1);
     expect(before(hat)).toBeCloseTo(-7.90, 1);
     expect(before(snare)).toBeCloseTo(0, 6);
@@ -138,5 +148,39 @@ describe.skipIf(!havePack)('against the committed FluidR3 pack', () => {
     expect(levelDb(36, kick.attenuationDb)).toBeCloseTo(0, 1);
     expect(levelDb(42, hat.attenuationDb) - before(hat)).toBeGreaterThan(2.5);
     expect(levelDb(42, hat.attenuationDb)).toBeLessThan(levelDb(38, snare.attenuationDb) - 3);
+  });
+});
+
+// The fallback bank, which is what plays when the pack fetch fails — offline, an SPA host answering
+// the .bin with index.html, an IndexedDB miss plus a network error. It is committed too, and it is
+// the bank the boost-only rule exists for.
+const sonivoxPath = fileURLToPath(new URL('../../../assets/soundfont/sonivox.sf2', import.meta.url));
+
+describe('against the committed sonivox fallback bank', () => {
+  it('is present — this suite may never silently skip', () => {
+    expect(existsSync(sonivoxPath), sonivoxPath + ' is committed').toBe(true);
+  });
+
+  const buf = readFileSync(sonivoxPath);
+  const bank = parseSf2(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const preset = bank.findDrumPreset(0);
+
+  it('authors its kit nearly flat, which is why the rule is boost-only', () => {
+    // Measured: closed hat -0.75 dB, crash -2.26. A two-way normalisation would cut these to the
+    // -5 / -4 floors. If this ever stops being true the boost-only argument needs re-checking.
+    const at = key => dB(attenuationGain(zonesFor(preset, key, 102)[0].attenuationDb));
+    expect(at(42)).toBeCloseTo(-0.75, 1);
+    expect(at(49)).toBeCloseTo(-2.26, 1);
+    expect(at(36)).toBeCloseTo(0, 6);
+  });
+
+  it('is never made quieter than it already is', () => {
+    // The concrete regression the review caught: hats and cymbals down 1.7-4.25 dB on the exact
+    // path where the good samples are already unavailable.
+    for (const key of TARGETED) {
+      for (const z of zonesFor(preset, key, 102)) {
+        expect(percussionMakeupGain(key, z.attenuationDb), 'key ' + key).toBeGreaterThanOrEqual(1);
+      }
+    }
   });
 });
