@@ -345,9 +345,14 @@ function attenuationGain(attenuationDb: number): number {
  * ticket's own symptom, made worse, on the degraded path nobody hears until they are offline. The
  * fallback bank's balance is not this function's problem; a buried groove is.
  *
- * Keys absent from the table are left exactly alone. Snare, toms, clap and the aux percussion are
- * already at the reference, and the user's call (2026-08-19) was an internal rebalance that must
- * not move the kit's PEAK: GMD-42 left only 6 dB of headroom above the mix.
+ * Keys absent from the table are left exactly alone, and they are NOT all at the reference. Snare
+ * 38/40, clap 39 and the toms 41-48 are (0.00 dB), and they are out because raising them would move
+ * the kit's PEAK, which GMD-42's 6 dB of headroom cannot absorb — the user's call (2026-08-19) was
+ * an internal rebalance, not a lift. But **side stick 37 is at -3.76 dB** (inside PIECE_KEYS.snare,
+ * so one mixer fader now spans two keys 3.8 dB apart) and the aux percussion is attenuated
+ * throughout — bongos/congas 60-64 at -3.76, timbales/agogo 65-68 at -3.01..-5.64, guiro 71-73 at
+ * -1.88..-3.76. Those are undecided, not judged fine: the nine kit pieces were what the user was
+ * shown. Pinned in tests/percussion-makeup.test.js so the omission stays visible.
  *
  * The floor is compared against the zone's ATTENUATION alone, while the table above was measured
  * including each sample's own peak (0.88..1.0 across this kit). So a piece lands within ~0.6 dB of

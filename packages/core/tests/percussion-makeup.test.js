@@ -26,9 +26,10 @@ const levelDb = (key, attenuationDb) =>
 
 describe('percussionMakeupGain', () => {
   it('leaves every untargeted key exactly alone', () => {
-    // Snare, toms and clap are already AT the reference, and the aux percussion is not part of the
-    // kit balance. Touching them would move the kit's peak, which GMD-42's 6 dB of headroom cannot
-    // absorb — the user's call was an internal rebalance, not a lift.
+    // Whatever the bank says about them. Snare/toms/clap are out because raising them would move
+    // the kit's peak (GMD-42 left 6 dB of headroom, and the user's call was a rebalance, not a
+    // lift); side stick 37 and the aux percussion are out because nobody has decided them — see
+    // 'pins the attenuated keys it deliberately does NOT raise' below.
     for (const key of [37, 38, 39, 40, 41, 43, 45, 47, 48, 50, 54, 56, 60, 75, 81]) {
       expect(percussionMakeupGain(key, 0), 'key ' + key).toBe(1);
       expect(percussionMakeupGain(key, 21), 'key ' + key).toBe(1);
@@ -131,9 +132,31 @@ describe('against the committed FluidR3 pack', () => {
     // The regression that matters most: the kit's peak is the snare, and it must not move.
     for (const key of [38, 40, 41, 43, 45, 47, 48, 50]) {
       for (const z of zonesAt(key)) {
+        expect(z.attenuationDb, 'key ' + key + ' is no longer at the reference').toBe(0);
         expect(percussionMakeupGain(key, z.attenuationDb), 'key ' + key).toBe(1);
       }
     }
+  });
+
+  it('pins the attenuated keys it deliberately does NOT raise', () => {
+    // "Absent from the table" does not mean "already at the reference" — these are not, and the
+    // gap is a decision nobody has taken, not a measurement nobody made. Pinned so it stays
+    // visible: side stick 37 shares PIECE_KEYS.snare with keys this PR leaves at 0 dB, and the
+    // aux percussion sits under the rebalanced kit.
+    const UNRAISED = { 37: 10, 60: 10, 61: 10, 63: 10, 64: 10, 65: 5, 66: 8, 67: 12, 68: 15,
+                       71: 5, 72: 5, 73: 10 };
+    for (const [k, att] of Object.entries(UNRAISED)) {
+      const key = Number(k);
+      expect(TARGETED, 'key ' + key + ' is now targeted — move it out of UNRAISED')
+        .not.toContain(key);
+      expect(zonesAt(key)[0].attenuationDb, 'key ' + key).toBe(att);
+      expect(percussionMakeupGain(key, att), 'key ' + key).toBe(1);
+    }
+    // Side stick was level with the kick before this change and is 3.76 dB under it after.
+    expect(dB(attenuationGain(zonesAt(37)[0].attenuationDb)))
+      .toBeCloseTo(dB(attenuationGain(zonesAt(36)[0].attenuationDb)), 6);
+    expect(levelDb(36, zonesAt(36)[0].attenuationDb) - levelDb(37, zonesAt(37)[0].attenuationDb))
+      .toBeCloseTo(3.76, 1);
   });
 
   it('closes the gap it was filed for', () => {

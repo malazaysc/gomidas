@@ -533,22 +533,37 @@ deliberate and tracked, not an oversight.
   (raw sample peak × zone attenuation, vel 102): **snare −0.07 dB (the 0 dB reference), kick −3.88,
   open hat −4.60, crash −6.02, closed hat −8.42**; every melodic zone is 0.0 dB and its samples are
   normalised the same. So drums are **not** globally quiet — the snare sits level with a guitar note.
-  The kick and hat, which carry the groove, are the buried ones. That table is the default preset's
-  gain column (GMD-73).
+  The kick and hat, which carry the groove, are the buried ones.
+- ⚠️ **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
+  `core/sf2.ts` `PERCUSSION_FLOOR_DB` → `percussionMakeupGain(key, attenuationDb)`, applied at the SF2
+  voice's peak in `webaudio.ts createSf2Instrument` (**web only**; desktop is GMD-79, gated by
+  GMD-53). It is a **floor, boost-only** — kick 35/36 raised to **0**, open hat 46 to **−3**,
+  crash/china/splash/crash2 49/52/55/57 to **−4**, closed+pedal hat 42/44 and ride 51/53/59 to
+  **−5** dB; it never cuts, so the sonivox fallback (which authors the same kit nearly flat) is
+  untouched. **Do not build GMD-77/78's preset gain column from the acoustic table above** — that
+  compensates a second time and moves the kit peak ~7.5 dB, the one thing the user asked not to
+  move. The column is relative to the **post-floor** levels. Keys outside the floor list still play
+  at the bank's own level, and not all of them are at the reference: **side stick 37 is −3.76**
+  (inside `PIECE_KEYS.snare`, so one fader spans two keys 3.8 dB apart) and the aux percussion is
+  attenuated throughout (bongos/congas 60–64 −3.76, timbales/agogo 65–68 −3.01…−5.64). Undecided,
+  not judged fine — pinned in `tests/percussion-makeup.test.js`.
 - ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
-- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, and
-  kick/snare have **7 velocity layers** (0-80, 81-88, 89-96, 97-104, 105-112, 113-120, 121-127) — so
-  scaling velocity changes **which layer fires**, i.e. timbre, not just level. `gomidasDrumGains`
-  (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
+- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
+  velocity trim bends the dynamic curve instead of setting a level. (Correction, GMD-81: kick/snare
+  *declare* 7 velocity layers — 0-80, 81-88, … 121-127 — but in the committed pack all seven point at
+  the **same sample with the same attenuation and envelope**, so switching layer changes nothing.
+  `sf2.ts` does not parse the SF2 filter generators, which is what would differentiate them. The
+  squared curve alone is reason enough for the rule.) `gomidasDrumGains` (the kit MIXER tab, GMD-72)
+  stays as the **user's** trim *on top of* the preset.
 - ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
   read as a drum.
 - **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
   (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
   articulation — swirls, not filtered stick hits), and convincingly **Room / Power** (real room mics
-  + gated tails). Hats/crash are **single-layer**, so compression cannot add dynamics that aren't
-  there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
+  + gated tails). Hats/crash are **single-layer** — and per GMD-81 the kick/snare layers are
+  currently indistinguishable too — so compression cannot add dynamics that aren't there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
 - ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
   the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
   GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
