@@ -673,7 +673,15 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
       const gain = ctx.createGain();
       // Both curves are the bank's, not ours: the EMU attenuation factor every SF2 was authored
       // against, and SF2's default velocity->attenuation modulator. See core/sf2.ts.
-      const peak = Math.max(0.0001, SF2.velocityGain(velocity) * SF2.attenuationGain(z.attenuationDb || 0));
+      //
+      // The make-up is ours, and only for drums: FluidR3 authors an acoustic kit balance in which
+      // the kick and hats sit several dB under the snare (GMD-73). This is the ONE place a voice's
+      // peak is born, and everything below — sustain, the recorded envelope, the release and the
+      // choke level — derives from it, so nothing else needs to know. It reaches the offline bounce
+      // for free because both graphs build their instrument through makeInstrument.
+      const makeup = percussion ? SF2.percussionMakeupGain(key, z.attenuationDb || 0) : 1;
+      const peak = Math.max(0.0001,
+        SF2.velocityGain(velocity) * SF2.attenuationGain(z.attenuationDb || 0) * makeup);
       const sustainAt = Math.max(0.0001, peak * (z.sustain != null ? z.sustain : 1));
       // Approximate the SF2 volume envelope: attack -> hold -> decay to sustain.
       const a = Math.max(0.001, z.attack || 0.001);

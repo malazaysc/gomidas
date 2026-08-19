@@ -318,6 +318,64 @@ function attenuationGain(attenuationDb: number): number {
   return Math.pow(10, -(attenuationDb * 10) / ATTEN_POWER_FACTOR);
 }
 
+/**
+ * Per-piece percussion make-up gain — the level a drum piece SHOULD play at, rather than the level
+ * FluidR3 happened to author it at.
+ *
+ * MEASURED (GMD-73) by decoding the committed pack and taking samplePeak x attenuationGain x
+ * velocityGain(102), in dB relative to a guitar note at the same velocity — every melodic zone in
+ * FluidR3 is 0 dB attenuation, so a guitar note IS the 0 dB reference:
+ *
+ *   snare 38/40, clap 39, toms 41-48    0.00   <- already exactly level with a guitar note
+ *   kick 35/36                         -3.84
+ *   open hat 46                        -4.29
+ *   crash 49 / splash 55 / crash2 57   -6.02 / -6.77 / -7.53
+ *   ride 51 / bell 53 / ride2 59       -7.34 / -7.90 / -7.90
+ *   closed hat 42 / pedal hat 44       -8.33 / -7.90
+ *   china 52                           -8.51
+ *
+ * So the kit is NOT globally quiet — its snare sits level with a guitar note. FluidR3 authored an
+ * ACOUSTIC balance, where everything carrying the groove (kick, hats) sits several dB under the
+ * snare waiting for a mixer we do not have. That is what "the drums are too soft" actually is, and
+ * why measuring the drum track in isolation (GMD-55) found nothing wrong.
+ *
+ * The table is a TARGET, not a fixed boost, deliberately: sonivox — the fallback bank when the
+ * pack fetch fails — authors the same kit nearly flat (kick 0.0, closed hat -0.75, crash -2.26 dB),
+ * so a FluidR3-derived boost would over-play it. A target normalises whichever bank loaded onto one
+ * defined balance.
+ *
+ * Keys absent from the table are left exactly alone. Snare, toms, clap and the aux percussion are
+ * already at the reference, and the user's call (2026-08-19) was an internal rebalance that must
+ * not move the kit's PEAK: GMD-42 left only 6 dB of headroom above the mix.
+ *
+ * NOT applied to velocity. On web velocity lands SQUARED (velocityGain above) and picks the zone's
+ * velocity layer, so a velocity trim bends the dynamic curve instead of setting a level. Balance
+ * belongs in gain. The user's own kit-MIXER trim (window.gomidasDrumGains, GMD-72) is a separate
+ * thing and still rides on top of this.
+ *
+ * Web only, deliberately: the desktop engine reads these same zones through TinySoundFont's
+ * literal -200 divisor and a LINEAR velocity curve, so its baseline differs before any make-up
+ * applies. That divergence is GMD-53; the desktop half of this work is GMD-79.
+ */
+const PERCUSSION_TARGET_DB: Record<number, number> = {
+  35: 0,  36: 0,                     // acoustic + standard kick -> snare/guitar level
+  42: -5, 44: -5, 46: -3,            // closed / pedal / open hi-hat
+  49: -4, 52: -4, 55: -4, 57: -4,    // crash 1, china, splash, crash 2
+  51: -5, 53: -5, 59: -5             // ride 1, ride bell, ride 2
+};
+
+/** Bounds, so a pathological bank cannot turn this into a 30 dB boost or mute a piece outright. */
+const MAKEUP_MIN_DB = -12;
+const MAKEUP_MAX_DB = 6;
+
+function percussionMakeupGain(key: number, attenuationDb: number): number {
+  const target = PERCUSSION_TARGET_DB[key];
+  if (target == null) return 1;
+  const current = 20 * Math.log10(attenuationGain(attenuationDb));   // <= 0, the bank's own level
+  const db = Math.max(MAKEUP_MIN_DB, Math.min(MAKEUP_MAX_DB, target - current));
+  return Math.pow(10, db / 20);
+}
+
 /** Zones matching a key+velocity, in file order. Empty means the preset cannot play that note. */
 function zonesFor(preset: Sf2Preset, key: number, velocity: number): Sf2Zone[] {
   if (!preset) return [];
@@ -331,7 +389,8 @@ function rateFor(zone: Sf2Zone, sample: Sf2Sample, key: number, outputRate: numb
   return Math.pow(2, cents / 1200) * (sample.sampleRate / outputRate);
 }
 
-  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain, GEN };
+  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain,
+                percussionMakeupGain, PERCUSSION_TARGET_DB, MAKEUP_MIN_DB, MAKEUP_MAX_DB, GEN };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasSf2 = api;
 }());
