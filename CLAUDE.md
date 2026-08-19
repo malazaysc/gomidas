@@ -531,8 +531,10 @@ deliberate and tracked, not an oversight.
   input. Must be a **no-op for every melodic track**.
 - ⚠️ **FluidR3's kit is an ACOUSTIC balance, not a produced one** — measured from the committed pack
   (raw sample peak × zone attenuation, vel 102): **snare −0.07 dB (the 0 dB reference), kick −3.88,
-  open hat −4.60, crash −6.02, closed hat −8.42**; every melodic zone is 0.0 dB and its samples are
-  normalised the same. So drums are **not** globally quiet — the snare sits level with a guitar note.
+  open hat −4.60, crash −6.02, closed hat −8.42**. So drums are **not** globally quiet — the snare
+  sits level with a guitar note. (Precisely: with an **unattenuated** melodic zone. Every guitar and
+  ordinary bass is 0.0 dB, but 233 of the 1275 melodic-pack zones are not — 26 Jazz Guitar −1.51,
+  35 Fretless Bass −3.39, 39 Synth Bass 2 −3.01, **38 Synth Bass 1 −6.40**.)
   The kick and hat, which carry the groove, are the buried ones.
 - ⚠️ **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
   `core/sf2.ts` `PERCUSSION_FLOOR_DB` → `percussionMakeupGain(key, attenuationDb)`, applied at the SF2
@@ -545,8 +547,13 @@ deliberate and tracked, not an oversight.
   move. The column is relative to the **post-floor** levels. Keys outside the floor list still play
   at the bank's own level, and not all of them are at the reference: **side stick 37 is −3.76**
   (inside `PIECE_KEYS.snare`, so one fader spans two keys 3.8 dB apart) and the aux percussion is
-  attenuated throughout (bongos/congas 60–64 −3.76, timbales/agogo 65–68 −3.01…−5.64). Undecided,
-  not judged fine — pinned in `tests/percussion-makeup.test.js`.
+  attenuated throughout (bongos/congas 60–64 −3.76, timbales 65/66 −1.88/−3.01, agogo 67/68
+  −4.52/−5.64, guiro 73 −3.76). Undecided, not judged fine — pinned in
+  `tests/percussion-makeup.test.js`. Two limits worth knowing before extending it: a floor
+  **collapses** what sits under it (splash/crash2/china all land on crash 1's −4), and it assumes
+  the bank has **no preset-level attenuation** — `parseSf2` folds that into `z.attenuationDb`, so a
+  kit with a global offset would lift the twelve targeted keys and leave snare/toms low, putting the
+  kick above the snare. Unreachable on today's banks; reachable via GMD-74.
 - ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.

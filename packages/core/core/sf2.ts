@@ -323,16 +323,22 @@ function attenuationGain(attenuationDb: number): number {
  * groove is left buried by the bank that happens to be loaded.
  *
  * MEASURED (GMD-73) by decoding the committed pack and taking samplePeak x attenuationGain x
- * velocityGain(102), in dB relative to a guitar note at the same velocity — every melodic zone in
- * FluidR3 is 0 dB attenuation, so a melodic note IS the 0 dB reference:
+ * velocityGain(102), in dB relative to an UNATTENUATED melodic zone at the same velocity:
  *
- *   snare 38/40, clap 39, toms 41-48    0.00   <- already exactly level with a melodic note
- *   kick 35/36                         -3.84
- *   open hat 46                        -4.29
- *   crash 49 / splash 55 / crash2 57   -6.02 / -6.77 / -7.53
- *   ride 51 / bell 53 / ride2 59       -7.34 / -7.90 / -7.90
- *   closed hat 42 / pedal hat 44       -8.33 / -7.90
- *   china 52                           -8.51
+ *   snare 38/40, clap 39, toms 41/43/45/47/48/50   0.00 (50: -0.97)  <- at the reference already
+ *   side stick 37 / kick 35/36                    -3.76 / -3.84
+ *   open hat 46                                   -4.29
+ *   crash 49 / splash 55 / crash2 57              -6.02 / -6.77 / -7.53
+ *   ride 51 / bell 53 / ride2 59                  -7.34 / -7.90 / -7.90
+ *   pedal hat 44 / closed hat 42                  -7.90 / -8.33
+ *   china 52                                      -8.51
+ *
+ * "Unattenuated melodic zone", not "melodic note": 233 of the 1275 zones in the melodic packs DO
+ * carry attenuation — 26 Jazz Guitar -1.51, 35 Fretless Bass -3.39, 39 Synth Bass 2 -3.01, and
+ * 38 Synth Bass 1 -6.40 dB. Every guitar and every ordinary bass is at 0, which is why the
+ * reference is the right one to calibrate against, but a score on Synth Bass 1 sits 6.4 dB under
+ * it and the kick now sits 6.4 dB over that bass rather than 2.6. Levelling the melodic side is
+ * not this function's job; knowing the reference is not universal is.
  *
  * So the kit is NOT globally quiet — its snare sits level with a melodic note. FluidR3 authored an
  * ACOUSTIC balance, where everything carrying the groove (kick, hats) sits several dB under the
@@ -350,14 +356,28 @@ function attenuationGain(attenuationDb: number): number {
  * the kit's PEAK, which GMD-42's 6 dB of headroom cannot absorb — the user's call (2026-08-19) was
  * an internal rebalance, not a lift. But **side stick 37 is at -3.76 dB** (inside PIECE_KEYS.snare,
  * so one mixer fader now spans two keys 3.8 dB apart) and the aux percussion is attenuated
- * throughout — bongos/congas 60-64 at -3.76, timbales/agogo 65-68 at -3.01..-5.64, guiro 71-73 at
- * -1.88..-3.76. Those are undecided, not judged fine: the nine kit pieces were what the user was
- * shown. Pinned in tests/percussion-makeup.test.js so the omission stays visible.
+ * throughout — bongos/congas 60-64 at -3.76, timbales 65/66 at -1.88/-3.01, agogo 67/68 at
+ * -4.52/-5.64, whistles 71/72 at -1.88, guiro 73 at -3.76. Those are undecided, not judged fine:
+ * the nine kit pieces were what the user was shown. Pinned in tests/percussion-makeup.test.js so
+ * the omission stays visible.
  *
  * The floor is compared against the zone's ATTENUATION alone, while the table above was measured
  * including each sample's own peak (0.88..1.0 across this kit). So a piece lands within ~0.6 dB of
  * its floor rather than on it — china 52 reads -4.61 against a floor of -4. That is the intended
  * precision: a floor, not a fader.
+ *
+ * A floor COLLAPSES what sits under it, by definition: splash, crash 2 and china all arrive at -4
+ * with crash 1, and the ride bell arrives at -5 with the ride, so FluidR3's ordering inside those
+ * groups is gone. That is what the user approved — the floors they were shown are shared per group.
+ * A per-key relative offset would keep the ordering; that belongs to GMD-78's preset column, which
+ * is where per-piece character is supposed to live.
+ *
+ * ASSUMES the bank carries no PRESET-level attenuation. parseSf2 folds it into z.attenuationDb
+ * (sf2.ts, preset expansion), so a kit preset with a global offset would have its twelve targeted
+ * keys pulled back up to the absolute floors while the untargeted snare and toms kept the offset —
+ * the kick would end up ABOVE the snare, the one move the user ruled out. Both committed banks have
+ * preset attenuation 0, so it is unreachable today; it becomes reachable the moment GMD-74 re-runs
+ * the extractor over more kits, which is noted on that ticket.
  *
  * NOT applied to velocity. On web velocity lands SQUARED (velocityGain above) and picks the zone's
  * velocity layer, so a velocity trim bends the dynamic curve instead of setting a level. Balance
