@@ -30,7 +30,7 @@ describe('percussionMakeupGain', () => {
     // the kit's peak (GMD-42 left 6 dB of headroom, and the user's call was a rebalance, not a
     // lift); side stick 37 and the aux percussion are out because nobody has decided them — see
     // 'pins the attenuated keys it deliberately does NOT raise' below.
-    for (const key of [37, 38, 39, 40, 41, 43, 45, 47, 48, 50, 54, 56, 60, 75, 81]) {
+    for (const key of [38, 39, 40, 41, 43, 45, 47, 48, 50, 54, 56, 60, 75, 81]) {
       expect(percussionMakeupGain(key, 0), 'key ' + key).toBe(1);
       expect(percussionMakeupGain(key, 21), 'key ' + key).toBe(1);
     }
@@ -46,8 +46,9 @@ describe('percussionMakeupGain', () => {
 
   it('raises each targeted piece to its floor', () => {
     // key, the pack's attenuation, the floor it must reach.
-    const cases = [[42, 21, -5], [44, 21, -5], [46, 11, -3], [49, 16, -4], [52, 21, -4],
-                   [55, 18, -4], [57, 20, -4], [51, 19.5, -5], [53, 21, -5], [59, 21, -5]];
+    const cases = [[37, 10, -2], [42, 21, -5], [44, 21, -5], [46, 11, -3], [49, 16, -4],
+                   [52, 21, -4], [55, 18, -4], [57, 20, -4], [51, 19.5, -5], [53, 21, -5],
+                   [59, 21, -5]];
     for (const [key, att, floor] of cases) {
       expect(levelDb(key, att), 'key ' + key).toBeCloseTo(floor, 2);
     }
@@ -109,7 +110,7 @@ describe('against the committed FluidR3 pack', () => {
   it('still carries the attenuations the floors were calibrated against', () => {
     // THE golden assertion. Every number here was read off the committed pack; if a re-extract
     // moves one, the floor above it is stale and this fails.
-    const PINNED = { 35: 10, 36: 10, 42: 21, 44: 21, 46: 11, 49: 16,
+    const PINNED = { 35: 10, 36: 10, 37: 10, 42: 21, 44: 21, 46: 11, 49: 16,
                      51: 19.5, 52: 21, 53: 21, 55: 18, 57: 20, 59: 21 };
     expect(Object.keys(PINNED).map(Number).sort((a, b) => a - b)).toEqual(TARGETED);
     for (const key of TARGETED) {
@@ -143,7 +144,7 @@ describe('against the committed FluidR3 pack', () => {
     // gap is a decision nobody has taken, not a measurement nobody made. Pinned so it stays
     // visible: side stick 37 shares PIECE_KEYS.snare with keys this PR leaves at 0 dB, and the
     // aux percussion sits under the rebalanced kit.
-    const UNRAISED = { 37: 10, 60: 10, 61: 10, 63: 10, 64: 10, 65: 5, 66: 8, 67: 12, 68: 15,
+    const UNRAISED = { 60: 10, 61: 10, 63: 10, 64: 10, 65: 5, 66: 8, 67: 12, 68: 15,
                        71: 5, 72: 5, 73: 10 };
     for (const [k, att] of Object.entries(UNRAISED)) {
       const key = Number(k);
@@ -152,11 +153,19 @@ describe('against the committed FluidR3 pack', () => {
       expect(zonesAt(key)[0].attenuationDb, 'key ' + key).toBe(att);
       expect(percussionMakeupGain(key, att), 'key ' + key).toBe(1);
     }
-    // Side stick was level with the kick before this change and is 3.76 dB under it after.
-    expect(dB(attenuationGain(zonesAt(37)[0].attenuationDb)))
-      .toBeCloseTo(dB(attenuationGain(zonesAt(36)[0].attenuationDb)), 6);
-    expect(levelDb(36, zonesAt(36)[0].attenuationDb) - levelDb(37, zonesAt(37)[0].attenuationDb))
-      .toBeCloseTo(3.76, 1);
+  });
+
+  it('keeps the side stick under the snare without dropping it under the kick', () => {
+    // 37 carries the KICK's attenuation, not the snare's — both are att 10 — and it shares one
+    // mixer fader with 38/40 (PIECE_KEYS.snare). Raising the kick alone opened a 3.8 dB gap inside
+    // that fader, so 37 gets its own floor: quieter than a snare hit, as a cross-stick is, without
+    // falling under the kick it used to sit level with.
+    expect(zonesAt(37)[0].attenuationDb, 'side stick no longer shares the kick attenuation')
+      .toBe(zonesAt(36)[0].attenuationDb);
+    const att = zonesAt(37)[0].attenuationDb;
+    expect(levelDb(37, att)).toBeCloseTo(-2, 2);
+    expect(levelDb(36, att) - levelDb(37, att)).toBeCloseTo(2, 1);   // was 3.76 before this floor
+    expect(levelDb(37, att)).toBeLessThan(levelDb(38, zonesAt(38)[0].attenuationDb));
   });
 
   it('closes the gap it was filed for', () => {

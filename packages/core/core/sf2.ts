@@ -354,12 +354,15 @@ function attenuationGain(attenuationDb: number): number {
  * Keys absent from the table are left exactly alone, and they are NOT all at the reference. Snare
  * 38/40, clap 39 and the toms 41-48 are (0.00 dB), and they are out because raising them would move
  * the kit's PEAK, which GMD-42's 6 dB of headroom cannot absorb — the user's call (2026-08-19) was
- * an internal rebalance, not a lift. But **side stick 37 is at -3.76 dB** (inside PIECE_KEYS.snare,
- * so one mixer fader now spans two keys 3.8 dB apart) and the aux percussion is attenuated
- * throughout — bongos/congas 60-64 at -3.76, timbales 65/66 at -1.88/-3.01, agogo 67/68 at
- * -4.52/-5.64, whistles 71/72 at -1.88, guiro 73 at -3.76. Those are undecided, not judged fine:
- * the nine kit pieces were what the user was shown. Pinned in tests/percussion-makeup.test.js so
- * the omission stays visible.
+ * an internal rebalance, not a lift. The aux percussion IS attenuated and is left alone anyway —
+ * bongos/congas 60-64 at -3.76, timbales 65/66 at -1.88/-3.01, agogo 67/68 at -4.52/-5.64,
+ * whistles 71/72 at -1.88, guiro 73 at -3.76. Undecided, not judged fine: the kit pieces were what
+ * the user was shown. Pinned in tests/percussion-makeup.test.js so the omission stays visible.
+ *
+ * Side stick 37 carries the KICK's attenuation (both -3.76), so raising the kick alone opened a
+ * 3.8 dB gap inside PIECE_KEYS.snare — one mixer fader spanning 37/38/40. It gets -2 rather than
+ * the snare's 0 (user's call, 2026-08-21): a cross-stick really is quieter than a snare hit, but it
+ * should not fall under the kick it used to sit level with.
  *
  * The floor is compared against the zone's ATTENUATION alone, while the table above was measured
  * including each sample's own peak (0.88..1.0 across this kit). So a piece lands within ~0.6 dB of
@@ -390,6 +393,7 @@ function attenuationGain(attenuationDb: number): number {
  */
 const PERCUSSION_FLOOR_DB: Record<number, number> = {
   35: 0,  36: 0,                     // acoustic + standard kick -> snare/melodic level
+  37: -2,                            // side stick: under the snare, but not under the kick
   42: -5, 44: -5, 46: -3,            // closed / pedal / open hi-hat
   49: -4, 52: -4, 55: -4, 57: -4,    // crash 1, china, splash, crash 2
   51: -5, 53: -5, 59: -5             // ride 1, ride bell, ride 2

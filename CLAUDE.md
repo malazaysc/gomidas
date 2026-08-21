@@ -539,14 +539,13 @@ deliberate and tracked, not an oversight.
 - ⚠️ **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
   `core/sf2.ts` `PERCUSSION_FLOOR_DB` → `percussionMakeupGain(key, attenuationDb)`, applied at the SF2
   voice's peak in `webaudio.ts createSf2Instrument` (**web only**; desktop is GMD-79, gated by
-  GMD-53). It is a **floor, boost-only** — kick 35/36 raised to **0**, open hat 46 to **−3**,
-  crash/china/splash/crash2 49/52/55/57 to **−4**, closed+pedal hat 42/44 and ride 51/53/59 to
-  **−5** dB; it never cuts, so the sonivox fallback (which authors the same kit nearly flat) is
+  GMD-53). It is a **floor, boost-only** — kick 35/36 raised to **0**, side stick 37 to **−2**, open
+  hat 46 to **−3**, crash/china/splash/crash2 49/52/55/57 to **−4**, closed+pedal hat 42/44 and ride
+  51/53/59 to **−5** dB; it never cuts, so the sonivox fallback (which authors the same kit flat) is
   untouched. **Do not build GMD-77/78's preset gain column from the acoustic table above** — that
   compensates a second time and moves the kit peak ~7.5 dB, the one thing the user asked not to
   move. The column is relative to the **post-floor** levels. Keys outside the floor list still play
-  at the bank's own level, and not all of them are at the reference: **side stick 37 is −3.76**
-  (inside `PIECE_KEYS.snare`, so one fader spans two keys 3.8 dB apart) and the aux percussion is
+  at the bank's own level, and not all of them are at the reference: the aux percussion is
   attenuated throughout (bongos/congas 60–64 −3.76, timbales 65/66 −1.88/−3.01, agogo 67/68
   −4.52/−5.64, guiro 73 −3.76). Undecided, not judged fine — pinned in
   `tests/percussion-makeup.test.js`. Two limits worth knowing before extending it: a floor
