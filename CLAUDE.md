@@ -551,7 +551,7 @@ deliberate and tracked, not an oversight.
   `tests/percussion-makeup.test.js`. Two limits worth knowing before extending it: a floor
   **collapses** what sits under it (splash/crash2/china all land on crash 1's −4), and it assumes
   the bank has **no preset-level attenuation** — `parseSf2` folds that into `z.attenuationDb`, so a
-  kit with a global offset would lift the twelve targeted keys and leave snare/toms low, putting the
+  kit with a global offset would lift the thirteen targeted keys and leave snare/toms low, putting the
   kick above the snare. Unreachable on today's banks; reachable via GMD-74.
 - ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×

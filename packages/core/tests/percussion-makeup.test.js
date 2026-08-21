@@ -107,6 +107,9 @@ describe('against the committed FluidR3 pack', () => {
     .filter(z => key >= z.keyLo && key <= z.keyHi && VEL >= z.velLo && VEL <= z.velHi)
     .slice(0, 4);
 
+  /** EVERY zone for a key, at any velocity — the floor is absolute, so all layers must agree. */
+  const allZonesAt = key => head.kits[0].zones.filter(z => key >= z.keyLo && key <= z.keyHi);
+
   it('still carries the attenuations the floors were calibrated against', () => {
     // THE golden assertion. Every number here was read off the committed pack; if a re-extract
     // moves one, the floor above it is stale and this fails.
@@ -114,10 +117,14 @@ describe('against the committed FluidR3 pack', () => {
                      51: 19.5, 52: 21, 53: 21, 55: 18, 57: 20, 59: 21 };
     expect(Object.keys(PINNED).map(Number).sort((a, b) => a - b)).toEqual(TARGETED);
     for (const key of TARGETED) {
-      const zs = zonesAt(key);
+      const zs = allZonesAt(key);
       expect(zs.length, 'no zone for key ' + key).toBeGreaterThan(0);
-      // Every zone of a key must agree, or the make-up would flatten a layered dynamic.
-      for (const z of zs) expect(z.attenuationDb, 'key ' + key).toBe(PINNED[key]);
+      // EVERY velocity layer must agree, not just the one at VEL: the floor is an absolute target,
+      // so a re-extract (GMD-74) giving a key per-layer attenuations would collapse its dynamics to
+      // one level. Checking only the 97-104 layer would not see that.
+      for (const z of zs) {
+        expect(z.attenuationDb, 'key ' + key + ' vel ' + z.velLo + '-' + z.velHi).toBe(PINNED[key]);
+      }
     }
   });
 

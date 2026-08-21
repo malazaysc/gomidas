@@ -352,7 +352,8 @@ function attenuationGain(attenuationDb: number): number {
  * fallback bank's balance is not this function's problem; a buried groove is.
  *
  * Keys absent from the table are left exactly alone, and they are NOT all at the reference. Snare
- * 38/40, clap 39 and the toms 41-48 are (0.00 dB), and they are out because raising them would move
+ * 38/40, clap 39 and the toms 41/43/45/47/48/50 are (0.00 dB — 42/44/46 in that span are the HATS,
+ * and they are floored above), and they are out because raising them would move
  * the kit's PEAK, which GMD-42's 6 dB of headroom cannot absorb — the user's call (2026-08-19) was
  * an internal rebalance, not a lift. The aux percussion IS attenuated and is left alone anyway —
  * bongos/congas 60-64 at -3.76, timbales 65/66 at -1.88/-3.01, agogo 67/68 at -4.52/-5.64,
@@ -376,7 +377,7 @@ function attenuationGain(attenuationDb: number): number {
  * is where per-piece character is supposed to live.
  *
  * ASSUMES the bank carries no PRESET-level attenuation. parseSf2 folds it into z.attenuationDb
- * (sf2.ts, preset expansion), so a kit preset with a global offset would have its twelve targeted
+ * (sf2.ts, preset expansion), so a kit preset with a global offset would have its thirteen targeted
  * keys pulled back up to the absolute floors while the untargeted snare and toms kept the offset —
  * the kick would end up ABOVE the snare, the one move the user ruled out. Both committed banks have
  * preset attenuation 0, so it is unreachable today; it becomes reachable the moment GMD-74 re-runs
