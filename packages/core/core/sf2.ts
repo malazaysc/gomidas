@@ -318,6 +318,100 @@ function attenuationGain(attenuationDb: number): number {
   return Math.pow(10, -(attenuationDb * 10) / ATTEN_POWER_FACTOR);
 }
 
+/**
+ * Per-piece percussion make-up gain — a FLOOR under each drum piece, so nothing that carries the
+ * groove is left buried by the bank that happens to be loaded.
+ *
+ * MEASURED (GMD-73) by decoding the committed pack and taking samplePeak x attenuationGain x
+ * velocityGain(102), in dB relative to an UNATTENUATED melodic zone at the same velocity:
+ *
+ *   snare 38/40, clap 39, toms 41/43/45/47/48/50   0.00 (50: -0.97)  <- at the reference already
+ *   side stick 37 / kick 35/36                    -3.76 / -3.84
+ *   open hat 46                                   -4.29
+ *   crash 49 / splash 55 / crash2 57              -6.02 / -6.77 / -7.53
+ *   ride 51 / bell 53 / ride2 59                  -7.34 / -7.90 / -7.90
+ *   pedal hat 44 / closed hat 42                  -7.90 / -8.33
+ *   china 52                                      -8.51
+ *
+ * "Unattenuated melodic zone", not "melodic note": 233 of the 1275 zones in the melodic packs DO
+ * carry attenuation — 26 Jazz Guitar -1.51, 35 Fretless Bass -3.39, 39 Synth Bass 2 -3.01, and
+ * 38 Synth Bass 1 -6.40 dB. Every guitar and every ordinary bass is at 0, which is why the
+ * reference is the right one to calibrate against, but a score on Synth Bass 1 sits 6.4 dB under
+ * it and the kick now sits 6.4 dB over that bass rather than 2.6. Levelling the melodic side is
+ * not this function's job; knowing the reference is not universal is.
+ *
+ * So the kit is NOT globally quiet — its snare sits level with a melodic note. FluidR3 authored an
+ * ACOUSTIC balance, where everything carrying the groove (kick, hats) sits several dB under the
+ * snare waiting for a mixer we do not have. That is what "the drums are too soft" actually is, and
+ * why measuring the drum track in isolation (GMD-55) found nothing wrong.
+ *
+ * BOOST ONLY, deliberately — this raises a piece to its floor and never lowers one to it. sonivox,
+ * the fallback bank when the pack fetch fails, authors the same kit nearly flat (closed hat -0.75,
+ * crash -2.26 dB), so a two-way normalisation would CUT its hats and cymbals by 1.7-4.25 dB: the
+ * ticket's own symptom, made worse, on the degraded path nobody hears until they are offline. The
+ * fallback bank's balance is not this function's problem; a buried groove is.
+ *
+ * Keys absent from the table are left exactly alone, and they are NOT all at the reference. Snare
+ * 38/40, clap 39 and the toms 41/43/45/47/48/50 are (0.00 dB — 42/44/46 in that span are the HATS,
+ * and they are floored above), and they are out because raising them would move
+ * the kit's PEAK, which GMD-42's 6 dB of headroom cannot absorb — the user's call (2026-08-19) was
+ * an internal rebalance, not a lift. The aux percussion IS attenuated and is left alone anyway —
+ * bongos/congas 60-64 at -3.76, timbales 65/66 at -1.88/-3.01, agogo 67/68 at -4.52/-5.64,
+ * whistles 71/72 at -1.88, guiro 73 at -3.76. Undecided, not judged fine: the kit pieces were what
+ * the user was shown. Pinned in tests/percussion-makeup.test.js so the omission stays visible.
+ *
+ * Side stick 37 carries the KICK's attenuation (both -3.76), so raising the kick alone opened a
+ * 3.8 dB gap inside PIECE_KEYS.snare — one mixer fader spanning 37/38/40. It gets -2 rather than
+ * the snare's 0 (user's call, 2026-08-21): a cross-stick really is quieter than a snare hit, but it
+ * should not fall under the kick it used to sit level with.
+ *
+ * The floor is compared against the zone's ATTENUATION alone, while the table above was measured
+ * including each sample's own peak (0.88..1.0 across this kit). So a piece lands within ~0.6 dB of
+ * its floor rather than on it — china 52 reads -4.61 against a floor of -4. That is the intended
+ * precision: a floor, not a fader.
+ *
+ * A floor COLLAPSES what sits under it, by definition: splash, crash 2 and china all arrive at -4
+ * with crash 1, and the ride bell arrives at -5 with the ride, so FluidR3's ordering inside those
+ * groups is gone. That is what the user approved — the floors they were shown are shared per group.
+ * A per-key relative offset would keep the ordering; that belongs to GMD-78's preset column, which
+ * is where per-piece character is supposed to live.
+ *
+ * ASSUMES the bank carries no PRESET-level attenuation. parseSf2 folds it into z.attenuationDb
+ * (sf2.ts, preset expansion), so a kit preset with a global offset would have its thirteen targeted
+ * keys pulled back up to the absolute floors while the untargeted snare and toms kept the offset —
+ * the kick would end up ABOVE the snare, the one move the user ruled out. Both committed banks have
+ * preset attenuation 0, so it is unreachable today; it becomes reachable the moment GMD-74 re-runs
+ * the extractor over more kits, which is noted on that ticket.
+ *
+ * NOT applied to velocity. On web velocity lands SQUARED (velocityGain above) and picks the zone's
+ * velocity layer, so a velocity trim bends the dynamic curve instead of setting a level. Balance
+ * belongs in gain. The user's own kit-MIXER trim (window.gomidasDrumGains, GMD-72) is a separate
+ * thing and still rides on top of this.
+ *
+ * Web only, deliberately: the desktop engine reads these same zones through TinySoundFont's
+ * literal -200 divisor and a LINEAR velocity curve, so its baseline differs before any make-up
+ * applies. That divergence is GMD-53; the desktop half of this work is GMD-79.
+ */
+const PERCUSSION_FLOOR_DB: Record<number, number> = {
+  35: 0,  36: 0,                     // acoustic + standard kick -> snare/melodic level
+  37: -2,                            // side stick: under the snare, but not under the kick
+  42: -5, 44: -5, 46: -3,            // closed / pedal / open hi-hat
+  49: -4, 52: -4, 55: -4, 57: -4,    // crash 1, china, splash, crash 2
+  51: -5, 53: -5, 59: -5             // ride 1, ride bell, ride 2
+};
+
+/** Upper bound, so a pathological bank cannot turn a floor into a 30 dB boost. */
+const MAKEUP_MAX_DB = 6;
+
+function percussionMakeupGain(key: number, attenuationDb: number): number {
+  const floor = PERCUSSION_FLOOR_DB[key];
+  if (floor == null) return 1;
+  const current = 20 * Math.log10(attenuationGain(attenuationDb));   // <= 0, the bank's own level
+  const db = Math.min(MAKEUP_MAX_DB, floor - current);
+  // Raise to the floor, never cut down to it — see the boost-only paragraph above.
+  return db > 0 ? Math.pow(10, db / 20) : 1;
+}
+
 /** Zones matching a key+velocity, in file order. Empty means the preset cannot play that note. */
 function zonesFor(preset: Sf2Preset, key: number, velocity: number): Sf2Zone[] {
   if (!preset) return [];
@@ -331,7 +425,8 @@ function rateFor(zone: Sf2Zone, sample: Sf2Sample, key: number, outputRate: numb
   return Math.pow(2, cents / 1200) * (sample.sampleRate / outputRate);
 }
 
-  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain, GEN };
+  const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain,
+                percussionMakeupGain, PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB, GEN };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasSf2 = api;
 }());

@@ -531,24 +531,45 @@ deliberate and tracked, not an oversight.
   input. Must be a **no-op for every melodic track**.
 - ⚠️ **FluidR3's kit is an ACOUSTIC balance, not a produced one** — measured from the committed pack
   (raw sample peak × zone attenuation, vel 102): **snare −0.07 dB (the 0 dB reference), kick −3.88,
-  open hat −4.60, crash −6.02, closed hat −8.42**; every melodic zone is 0.0 dB and its samples are
-  normalised the same. So drums are **not** globally quiet — the snare sits level with a guitar note.
-  The kick and hat, which carry the groove, are the buried ones. That table is the default preset's
-  gain column (GMD-73).
+  open hat −4.60, crash −6.02, closed hat −8.42**. So drums are **not** globally quiet — the snare
+  sits level with a guitar note. (Precisely: with an **unattenuated** melodic zone. Every guitar and
+  ordinary bass is 0.0 dB, but 233 of the 1275 melodic-pack zones are not — 26 Jazz Guitar −1.51,
+  35 Fretless Bass −3.39, 39 Synth Bass 2 −3.01, **38 Synth Bass 1 −6.40**.)
+  The kick and hat, which carry the groove, are the buried ones.
+- ⚠️ **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
+  `core/sf2.ts` `PERCUSSION_FLOOR_DB` → `percussionMakeupGain(key, attenuationDb)`, applied at the SF2
+  voice's peak in `webaudio.ts createSf2Instrument` (**web only**; desktop is GMD-79, gated by
+  GMD-53). It is a **floor, boost-only** — kick 35/36 raised to **0**, side stick 37 to **−2**, open
+  hat 46 to **−3**, crash/china/splash/crash2 49/52/55/57 to **−4**, closed+pedal hat 42/44 and ride
+  51/53/59 to **−5** dB; it never cuts, so the sonivox fallback (which authors the same kit flat) is
+  untouched. **Do not build GMD-77/78's preset gain column from the acoustic table above** — that
+  compensates a second time and moves the kit peak ~7.5 dB, the one thing the user asked not to
+  move. The column is relative to the **post-floor** levels. Keys outside the floor list still play
+  at the bank's own level, and not all of them are at the reference: the aux percussion is
+  attenuated throughout (bongos/congas 60–64 −3.76, timbales 65/66 −1.88/−3.01, agogo 67/68
+  −4.52/−5.64, guiro 73 −3.76). Undecided, not judged fine — pinned in
+  `tests/percussion-makeup.test.js`. Two limits worth knowing before extending it: a floor
+  **collapses** what sits under it (splash/crash2/china all land on crash 1's −4), and it assumes
+  the bank has **no preset-level attenuation** — `parseSf2` folds that into `z.attenuationDb`, so a
+  kit with a global offset would lift the thirteen targeted keys and leave snare/toms low, putting the
+  kick above the snare. Unreachable on today's banks; reachable via GMD-74.
 - ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
-- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, and
-  kick/snare have **7 velocity layers** (0-80, 81-88, 89-96, 97-104, 105-112, 113-120, 121-127) — so
-  scaling velocity changes **which layer fires**, i.e. timbre, not just level. `gomidasDrumGains`
-  (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
+- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
+  velocity trim bends the dynamic curve instead of setting a level. (Correction, GMD-81: kick/snare
+  *declare* 7 velocity layers — 0-80, 81-88, … 121-127 — but in the committed pack all seven point at
+  the **same sample with the same attenuation and envelope**, so switching layer changes nothing.
+  `sf2.ts` does not parse the SF2 filter generators, which is what would differentiate them. The
+  squared curve alone is reason enough for the rule.) `gomidasDrumGains` (the kit MIXER tab, GMD-72)
+  stays as the **user's** trim *on top of* the preset.
 - ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
   read as a drum.
 - **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
   (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
   articulation — swirls, not filtered stick hits), and convincingly **Room / Power** (real room mics
-  + gated tails). Hats/crash are **single-layer**, so compression cannot add dynamics that aren't
-  there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
+  + gated tails). Hats/crash are **single-layer** — and per GMD-81 the kick/snare layers are
+  currently indistinguishable too — so compression cannot add dynamics that aren't there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
 - ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
   the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
   GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
