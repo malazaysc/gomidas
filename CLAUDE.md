@@ -631,11 +631,29 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   GMD-81 note above — with these parsed, a velocity layer now changes brightness and not just level,
   on the drum kit as well as on Nylon (see the twice-corrected note in the drum-kit section).
   The **volume**-envelope offsets are still dropped (GMD-82), and the cutoff is **static** (GMD-83).
-- Coverage: **765 of 1275** packed melodic zones filter, and **56 of 149** drum zones.
+- ⚠️ **gen 8 is where the cutoff STARTS, not where it lands.** TSF renders
+  `fres = initialFilterFc + modEnvToFilterFc x modEnv + modLfoToFilterFc x lfo`. Taking gen 8 as the
+  answer shipped **Synth Bass 1 through a fixed 120Hz low-pass** — the bank sweeps it to 251Hz and
+  it had no filter at all before. `zoneFilter` therefore resolves the **steady state**
+  (`fc + modEnvSustain x modEnvToFilterFc`) and applies it **only when the envelope settles within
+  20ms**; above that it returns null and the zone plays unfiltered until GMD-83. The measured
+  settle times leave nothing in the gap: FluidR3 prog 30/35 **2ms** (so the static value is exact),
+  prog 38 **252ms**, the drum kit up to **9.5s**, sonivox a median **1.03s**. That last one is why
+  the fallback bank barely moves — 28 of its 653 zones qualify, where gen 8 alone would have
+  filtered 147 and the steady state 295, turning every piano dark from its first sample.
+- Clamped to TSF's own generator limits ([1500, 13500] for gen 8, [0, 960] for gen 9), applied where
+  TSF applies them — gen 8 clamps BEFORE the envelope is added, and the sum is tested unclamped.
+  Unclamped, FluidR3's Chiffer Lead sums to 1139 cents = **15.7Hz**, i.e. silence.
+- Coverage: **674 of 1275** packed melodic zones filter, and **56 of 149** drum zones.
 - Measured through the offline bounce, single note vel 0.8, before → after: Clean +2.11 → −0.80 dB
-  (**−2.92**), Overdrive +2.12 → −3.44 (**−5.56**), Distortion +1.98 → −2.44 (**−4.42**); Nylon,
-  Jazz and Fingered Bass within 0.20 dB. **This is most of GMD-42's headline** ("a single note peaks
-  at +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
+  (**−2.92**), Overdrive +2.12 → −3.44 (**−5.56**); Nylon, Jazz, Fretless, Synth Bass 1 and
+  Fingered Bass all within 0.20 dB. **This is most of GMD-42's headline** ("a single note peaks at
+  +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
+- ⚠️ **Distortion Guitar stays hot on purpose** (+1.98 → +1.81 dB, only −0.17). Its two layers
+  resolve to 3619Hz and — because 11108 + 2468 clears the open threshold — **dry**. So prog 30 really
+  does sum two voices, TSF plays it the same way, and GMD-80's title is wrong about that one program.
+  Do not "finish the job" by filtering layer B at gen 8's 5001Hz; that is reading half the
+  instruction.
 - ⚠️ **The kit balance is untouched but the TOMS lost peak**: over all 47 GM drum keys, kick/snare/
   cymbals move ≤0.15dB, while toms 41/43/45/47/48/50 drop **0.56–2.25dB of PEAK at unchanged RMS
   (±0.03dB)** — the filter takes the stick spike off the transient and leaves the body. GMD-73's

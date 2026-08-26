@@ -47,6 +47,40 @@ describe('zoneFilter — the rule', () => {
     expect(zoneFilter({ filterFc: 7935 }, RATE).qDb).toBe(0);
   });
 
+  it('resolves the cutoff through a FAST modulation envelope, not from gen 8 alone', () => {
+    // FluidR3 Distortion Guitar: 8080 cents (870Hz) that the modulation envelope opens to 3619Hz
+    // in 2ms and holds there (sustain 1.0). Taking gen 8 as the answer plays it at 870Hz — four
+    // times darker than the bank asks for, which is what review round 1 caught.
+    const z = { filterFc: 8080, filterModEnv: 2468, modEnvSustain: 1, modEnvSettle: 0.002 };
+    expect(zoneFilter(z, RATE).hz).toBeCloseTo(3619.05, 2);
+    // And when the sum clears the open threshold the zone has NO filter, however low gen 8 was.
+    expect(zoneFilter({ ...z, filterFc: 11108 }, RATE), '11108 + 2468 = 13576 -> open').toBeNull();
+    // A partial sustain lands partway up, as TSF's modEnv would hold it.
+    expect(zoneFilter({ ...z, modEnvSustain: 0.5 }, RATE).hz).toBeCloseTo(1774.33, 2);
+  });
+
+  it('refuses a SLOW envelope instead of freezing it somewhere', () => {
+    const slow = { filterFc: 4651, filterModEnv: 6723, modEnvSustain: 0.19, modEnvSettle: 0.252 };
+    expect(zoneFilter(slow, RATE), 'Synth Bass 1 sweeps for 252ms — not a static filter').toBeNull();
+    expect(zoneFilter({ ...slow, modEnvSettle: 0.002 }, RATE).hz).toBeCloseTo(251.03, 2);
+    // A pack that somehow carries filterModEnv without the settle time must fail CLOSED. Written
+    // as `!(x <= T)` in the source precisely so undefined does not sail through the comparison.
+    expect(zoneFilter({ filterFc: 4651, filterModEnv: 6723, modEnvSustain: 0.19 }, RATE)).toBeNull();
+  });
+
+  it('clamps to TSF\'s generator limits, so a summed offset cannot fall off the end', () => {
+    // TSF merges gen 8 into [1500, 13500] and gen 9 into [0, 960] (GEN_INT_LIMITFC/LIMITQ).
+    // Unclamped, FluidR3's "Chiffer Lead" sums to 1139 cents = 15.7Hz and plays as silence.
+    expect(zoneFilter({ filterFc: 1139 }, RATE).hz).toBeCloseTo(centsToHertz(1500), 6);
+    expect(zoneFilter({ filterFc: -3000 }, RATE).hz).toBeCloseTo(centsToHertz(1500), 6);
+    expect(zoneFilter({ filterFc: 7935, filterQ: 5000 }, RATE).qDb).toBe(96);
+    expect(zoneFilter({ filterFc: 7935, filterQ: -200 }, RATE).qDb).toBe(0);
+    // The clamp is applied BEFORE the envelope, exactly where TSF applies it: 14400 clamps to
+    // 13500 and the negative envelope then brings it back under the threshold.
+    expect(zoneFilter({ filterFc: 14400, filterModEnv: -1000, modEnvSustain: 1, modEnvSettle: 0.002 }, RATE)
+      .hz).toBeCloseTo(centsToHertz(12500), 6);
+  });
+
   it('skips a cutoff at or above Nyquist', () => {
     // TSF's own test (lowpassFc < 0.499). Such a filter removes nothing and only rings the biquad.
     // 13100 cents = 15.7kHz: audible at 44.1k, above Nyquist at 22.05k.
@@ -67,11 +101,27 @@ describe('preset filter generators are additive offsets', () => {
     // Every zone gets a value: absent gen 8 means the 13500 default, never undefined.
     expect(zones.every(z => typeof z.filterFc === 'number')).toBe(true);
     expect(zones.every(z => typeof z.filterQ === 'number')).toBe(true);
-    // sonivox uses the filter on a handful of zones and carries NO preset-level offsets, which is
-    // why the fallback bank sounds the same before and after this change.
+    // Corrected during review: the first version of this comment claimed sonivox was untouched
+    // because it carries no PRESET-level offsets. True, and irrelevant — 147 of its zones set gen 8
+    // at instrument level, and 268 more have a modulation envelope driving the cutoff. What
+    // actually keeps the fallback bank nearly unchanged is the settle-time rule: sonivox sweeps
+    // slowly (median 1.03s to reach sustain), so only 28 zones qualify for a static filter.
     const filtered = zones.filter(z => zoneFilter(z, RATE));
-    expect(filtered.length).toBeGreaterThan(0);
-    expect(filtered.length).toBeLessThan(zones.length / 2);
+    expect(filtered.length).toBe(28);
+    expect(zones.filter(z => z.filterFc < 13500).length,
+           'gen 8 alone would have filtered far more').toBe(147);
+  });
+
+  it('leaves a SLOW modulation sweep alone rather than guessing a point on it', () => {
+    // sonivox authors most of its bank as "open, closing over about a second" — Piano 1 is
+    // 13500 cents with modEnv -4050 at full sustain, i.e. it settles at 1919Hz after a 1s attack.
+    // Freezing it there would make every piano note dark from its first sample. GMD-83 owns this.
+    const buf = readFileSync(bankPath);
+    const bank = parseSf2(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    const piano = bank.findPreset(0, 0).zones[0];
+    expect(piano.filterModEnv).toBeLessThan(0);
+    expect(piano.modEnvSettle).toBeGreaterThan(0.5);
+    expect(zoneFilter(piano, RATE), 'a 1s sweep must not become a static filter').toBeNull();
   });
 });
 
@@ -125,7 +175,7 @@ describe('the committed packs carry the filter', () => {
     const m = melodic();
     const zones = m.programs.flatMap(p => p.zones);
     expect(zones.length).toBe(1275);
-    expect(zones.filter(z => zoneFilter(z, RATE)).length).toBe(765);
+    expect(zones.filter(z => zoneFilter(z, RATE)).length).toBe(674);
     const per = (prog) => {
       const p = m.programs.find(x => x.program === prog);
       return p.zones.filter(z => zoneFilter(z, RATE)).length;
@@ -134,7 +184,10 @@ describe('the committed packs carry the filter', () => {
     expect(per(25)).toBe(0);      // Steel String: none — its layers are genuinely different samples
     expect(per(26)).toBe(216);    // Jazz Guitar: every zone
     expect(per(27)).toBe(90);     // Clean: half — the second layer of each pair
-    expect(per(30)).toBe(180);    // Distortion: every zone
+    // Distortion: only the layer whose modEnv-resolved cutoff lands under the open threshold. The
+    // other 90 zones resolve to 5001 + 2468 = 13576 cents, which IS open — filtering them at
+    // gen 8's 5001 would be reading half the instruction.
+    expect(per(30)).toBe(90);
     const dz = drums().kits[0].zones;
     expect(dz.length).toBe(149);
     expect(dz.filter(z => zoneFilter(z, RATE)).length).toBe(56);

@@ -126,8 +126,23 @@ function zonesOf(preset, localOf, sampleIds) {
     // is "open" and 0 centibels is "no resonance", so writing the defaults would add two numbers
     // to all 1275 zones to say nothing. Absence is also what an OLDER runtime reads as "no
     // filter", which is the behaviour it had before this field existed.
-    if (z.filterFc !== 13500) out.filterFc = z.filterFc;
+    // Emitted whenever the zone can filter AT ALL, which is not the same as "gen 8 is not the
+    // default": a zone at 13500 with a NEGATIVE modEnv still lands under the open threshold
+    // (FluidR3's Fretless Bass does, at 18795Hz). Omitting it there would make a pack quietly
+    // play a zone that a direct .sf2 parse filters, and absence has to keep meaning exactly one
+    // thing — an old pack with no filter data.
+    if (z.filterFc !== 13500 || z.filterModEnv) out.filterFc = z.filterFc;
     if (z.filterQ) out.filterQ = z.filterQ;
+    // The modulation envelope's contribution to the cutoff. Only emitted where the bank uses it,
+    // but where it does it is not a refinement: prog 38's gen 8 is 120Hz and the envelope is what
+    // carries it to 251Hz. Without these two, a reader takes gen 8 for the whole answer.
+    // Both only matter when the modulation envelope actually moves the cutoff, so they ride along
+    // with filterModEnv rather than being emitted 1275 times to say "no".
+    if (z.filterModEnv) {
+      out.filterModEnv = z.filterModEnv;
+      out.modEnvSustain = round(z.modEnvSustain, 5);
+      out.modEnvSettle = round(z.modEnvSettle, 5);
+    }
     return out;
   });
 }
