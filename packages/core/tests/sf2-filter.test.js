@@ -382,26 +382,26 @@ describe('preset generators fold onto the instrument value', () => {
     return zs[0];
   };
 
-  it('clamps at EVERY merge, as TSF does — not once at the end', () => {
-    // TSF bounds gen 8 into [1500, 13500] on the instrument merge AND again after the preset
-    // offset (tsf_region_operator / GEN_INT_LIMITFC). Summing raw and clamping once is a different
-    // function whenever the instrument value is itself out of range:
+  it('clamps ONCE, on the instrument+preset sum — not each input', () => {
+    // `tsf_region_operator` assigns a single generator UNCLAMPED (tsf.h:625), which is how both the
+    // instrument gens (:841) and the preset gens (:853) are applied; only the merge call at :813
+    // adds the two regions and then clamps, and it runs exactly once per zone. So an out-of-range
+    // instrument value survives to meet its preset offset:
     //
-    //   per-merge (TSF, and us):  clamp(16000) = 13500, then 13500 - 2786 = 10714 cents ~ 4.2kHz
-    //   clamp-once:               16000 - 2786 = 13214 cents ~ 14.5kHz
+    //   clamp the sum (TSF, and us):  16000 - 2786 = 13214 cents ~ 14.5kHz
+    //   clamp each input:             13500 - 2786 = 10714 cents ~  4.2kHz
     //
-    // Nearly two octaves apart. Measured on FluidR3, 64 preset zones diverge under clamp-once
-    // (worst 8 cents, none of them packed) — small today, unbounded in principle, free to fix.
+    // Nearly two octaves. An earlier revision did the second, on a review note that misread the
+    // call sites; 64 FluidR3 preset zones diverged (worst 8 cents, none packed). Review round 7
+    // caught it — hence this test pinning the direction explicitly.
     const z = zoneAt(30, { instFc: 16000, instQ: 1200 });
-    expect(z.filterFc, 'clamp to 13500 BEFORE the -2786 preset offset').toBe(10714);
-    expect(z.filterQ, 'clamp to 960 before the -15 offset').toBe(945);
-    // And the SECOND clamp is real too: a preset offset that pushes the sum back out of range must
-    // be bounded again, or the extractor writes 16500 into the pack. zoneFilter re-clamps on read,
-    // so this is only visible on the parsed field — which is exactly what gets committed.
+    expect(z.filterFc, 'the raw 16000 meets the -2786 offset, THEN clamps').toBe(13214);
+    expect(z.filterQ, '1200 + (-15) = 1185, clamped to the 960 ceiling').toBe(960);
+    // The sum is what gets bounded, at both ends.
     const up = zoneAt(30, { instFc: 13500, presetFc: 3000 });
-    expect(up.filterFc, 'the sum is clamped as well as each input').toBe(13500);
+    expect(up.filterFc, '16500 -> the 13500 ceiling').toBe(13500);
     const down = zoneAt(30, { instFc: 1500, presetFc: -3000 });
-    expect(down.filterFc).toBe(1500);
+    expect(down.filterFc, '-1500 -> the 1500 floor').toBe(1500);
   });
 
   it('pins an unset envelope segment to zero, as TSF does', () => {

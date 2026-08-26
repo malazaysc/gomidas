@@ -650,13 +650,21 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
 - ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
   bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we
   apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed program.
-- ⚠️ Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 — at
-  **every merge TSF clamps at**: the instrument zone, and again after the preset offset. Clamping
-  once at the end is a *different function* whenever the instrument value is itself out of range
-  (fc 16000 with a −3000 preset offset resolves 10500 vs 13000 cents — two octaves). The
-  envelope-resolved sum is then left unclamped, because TSF leaves it unclamped too. Be precise
-  about what the low bound buys: 1500 cents is **19.4Hz**, so it is parity, not a guard against
-  silence.
+- ⚠️ Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 —
+  **ONCE, on the instrument+preset SUM**, never on either input alone. `tsf_region_operator`
+  assigns a single generator *unclamped* (tsf.h:625, used for both the instrument gens at :841 and
+  the preset gens at :853); only the merge call at :813 adds the regions and then clamps, and it
+  runs exactly once per zone. Clamping each input instead is a *different function* whenever the
+  instrument value is out of range — fc 16000 with a −3000 preset offset gives **13000** cents the
+  right way and **10500** the wrong way, two octaves apart, and it bakes into the packs.
+  This was gotten backwards once already: **review round 5 asserted per-merge clamping, I adopted
+  it without checking the call sites, and round 7 caught it.** The envelope-resolved sum is then
+  left unclamped, because TSF leaves it unclamped too. Be precise about what the low bound buys:
+  1500 cents is **19.4Hz**, so it is parity, not a guard against silence.
+- ⚠️ The settle time is **velocity-independent here and is not in TSF** — the mod envelope's attack
+  scales by `(145 − velocity) / 144` (tsf.h:1032). One-directional (we can only decline a filter
+  desktop applies), and worth 3 sonivox zones at velocity 127; no packed program moves. So the
+  pinned "28 zones" is a velocity-0 figure. GMD-83 territory.
 - ⚠️ **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
   LIFT, not a cut, so skipping it throws away something desktop has. **96** zones in the committed
   packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum, **closed and pedal

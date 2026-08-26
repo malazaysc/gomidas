@@ -106,8 +106,19 @@ interface Sf2Zone {
 interface Sf2Preset { bank: number; program: number; name: string; zones: Sf2Zone[] }
 
 /**
- * TSF's generator limits for the filter gens (GEN_INT_LIMITFC / LIMITQ / LIMIT12K), applied at
- * EVERY merge as TSF applies them — instrument zone first, then again after the preset offset.
+ * TSF's generator limits for the filter gens (GEN_INT_LIMITFC / LIMITQ / LIMIT12K).
+ *
+ * ⚠️ Applied ONCE, to the instrument+preset SUM — never to the instrument value on its own.
+ * `tsf_region_operator` has two paths: with a generator amount it is a plain unclamped assignment
+ * (tsf.h:625, and that is how both the instrument gens at :841 and the preset gens at :853 are
+ * applied), and only the merge call at :813 — `tsf_region_operator(&zoneRegion, 0, TSF_NULL,
+ * &presetRegion)`, invoked exactly once per zone — adds and then clamps.
+ *
+ * The difference is not cosmetic. Instrument fc 16000 with a −3000 preset offset:
+ *     clamp the sum (TSF, and us):   16000 − 3000 = 13000 cents  ~ 15.7kHz
+ *     clamp each input:              13500 − 3000 = 10500 cents  ~  3.9kHz
+ * Two octaves, and it is baked into the committed packs. A previous revision of this file did the
+ * second one, on a review note that misread the call sites; 64 FluidR3 preset zones diverged.
  */
 const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960, MOD_ENV_MAX = 12000;
 const clampFc = (v: number) => Math.max(FILTER_FC_MIN, Math.min(FILTER_FC_OPEN, v));
@@ -244,15 +255,13 @@ function parseSf2(buffer: ArrayBuffer): {
         rootKey: merged[GEN.overridingRootKey] != null ? num(GEN.overridingRootKey, 60) : null,
         tuneCents: num(GEN.coarseTune, 0) * 100 + num(GEN.fineTune, 0),
         attenuationDb: num(GEN.initialAttenuation, 0) / 10,   // stored in centibels
-        // Clamped HERE as well as after the preset offset, because TSF clamps at every merge
-        // (tsf_region_operator, GEN_INT_LIMIT*). Summing raw and clamping once at the end is not
-        // the same function: an instrument value of 16000 with a preset offset of -3000 resolves
-        // to 10500 cents on desktop and 13000 here — two octaves apart.
-        filterFc: clampFc(num(GEN.initialFilterFc, 13500)),
-        filterQ: clampQ(num(GEN.initialFilterQ, 0)),
-        filterModEnv: clampModEnv(num(GEN.modEnvToFilterFc, 0)),
-        // Same 0.1%-decrease encoding as sustainVolEnv below.
-        modEnvSustain: Math.max(0, Math.min(1, 1 - num(GEN.sustainModEnv, 0) / 1000)),
+        // Deliberately UNCLAMPED here: TSF assigns instrument generators raw and clamps only the
+        // instrument+preset sum. See the clampFc/clampQ block above for why the order matters.
+        filterFc: num(GEN.initialFilterFc, 13500),
+        filterQ: num(GEN.initialFilterQ, 0),
+        filterModEnv: num(GEN.modEnvToFilterFc, 0),
+        // Same 0.1%-decrease encoding as sustainVolEnv below, and likewise clamped on the sum.
+        modEnvSustain: 1 - num(GEN.sustainModEnv, 0) / 1000,
         modEnvSettle: envSeconds(num(GEN.delayModEnv, -12000))
                     + envSeconds(num(GEN.attackModEnv, -12000))
                     + envSeconds(num(GEN.holdModEnv, -12000)),
@@ -316,13 +325,14 @@ function parseSf2(buffer: ArrayBuffer): {
         if (keyLo > keyHi || velLo > velHi) continue;
         zones.push({ ...z, keyLo, keyHi, velLo, velHi,
                      attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune,
+                     // THE clamp point, matching TSF's single merge.
                      filterFc: clampFc(z.filterFc + pFc), filterQ: clampQ(z.filterQ + pQ),
-                     // Clamped like gens 8 and 9 beside it — TSF puts gen 11 under
-                     // GEN_INT_LIMIT12K on the same merge.
                      filterModEnv: clampModEnv(z.filterModEnv + pMe),
                      // Preset-level modEnv TIMING offsets are not folded — the same gap GMD-82
                      // tracks for the volume envelope. No bank we ship uses them.
                      modEnvSustain: Math.max(0, Math.min(1, z.modEnvSustain - pMeSus / 1000)) });
+                     // ^ gen 29 is GEN_FLOAT_MAX1000, so clamping the FRACTION after folding is
+                     //   the same thing as clamping the centibel sum to [0, 1000].
       }
     }
     presets.push({ bank: phdr[pi].bank, program: phdr[pi].program, name: phdr[pi].name, zones });
@@ -543,13 +553,22 @@ function centsToHertz(cents: number): number {
  *
  * The LFO term is left out on purpose: it oscillates about zero, so its steady state IS zero.
  *
- * Clamped to TSF's generator limits at every point TSF clamps: gens 8/9/11 are bounded on the
- * instrument merge AND again after the preset offset (see clampFc/clampQ/clampModEnv), while the
- * ENVELOPE-resolved sum below is left unclamped because TSF leaves it unclamped too. Clamping once
- * at the end instead would be a different function — an instrument fc of 16000 with a preset offset
- * of -3000 resolves two octaves apart. Be precise about what the low bound buys, though: 1500 cents
- * is 19.4Hz, so it is parity, not a guard against silence, and the lowest resolved cutoff in either
- * committed pack today is 388Hz.
+ * ⚠️ The settle time is also VELOCITY-INDEPENDENT here and is not in TSF: the mod envelope's attack
+ * scales by `(145 - velocity) / 144` (tsf.h:1032, amp envelope excluded), so a hard-struck note
+ * reaches its cutoff in an eighth of the stored duration. The error is one-directional — we can
+ * only decline a filter desktop applies, never impose one it does not — and small on shipped
+ * content: 3 more sonivox zones would qualify at velocity 127 (28 -> 31), and no packed FluidR3
+ * program moves at all, because 30/35 settle at 0 and 38's 203ms comes from decay, not attack. So
+ * the pinned count of 28 is a velocity-0 figure. Folded into GMD-83, which needs the envelope
+ * anyway; `zoneFilter` has no velocity parameter today and giving it one would make the biquad
+ * per-note rather than per-zone.
+ *
+ * Clamped to TSF's generator limits exactly where TSF clamps: once, on the instrument+preset SUM
+ * (see clampFc/clampQ/clampModEnv). The ENVELOPE-resolved sum below is then left unclamped, because
+ * TSF leaves that unclamped too. The re-clamp of `zone.filterFc` here is a read-side guard for
+ * hand-built and pack-supplied zones, not a second merge. Be precise about what the low bound buys:
+ * 1500 cents is 19.4Hz, so it is parity, not a guard against silence, and the lowest resolved
+ * cutoff in either committed pack today is 388Hz.
  *
  * DELIBERATE DIVERGENCE, the only one, and narrower than it first read: TSF's test is
  * `fres <= 13500`, so at EXACTLY the default it still builds a 19913Hz lowpass. We skip that —
@@ -593,7 +612,7 @@ function zoneFilter(zone: { filterFc?: number; filterQ?: number; filterModEnv?: 
     // `decay * (1 - sustain)`, not the whole decay (tsf.h, tsf_voice_envelope_nextsegment). At full
     // sustain the term vanishes on its own. `modEnvSustain` may also have been moved by a preset
     // offset AFTER modEnvSettle was computed, which is why the two are stored apart.
-    const sustain = zone.modEnvSustain != null ? zone.modEnvSustain : 1;
+    const sustain = Math.max(0, Math.min(1, zone.modEnvSustain != null ? zone.modEnvSustain : 1));
     const settle = (zone.modEnvSettle != null ? zone.modEnvSettle : Infinity)
                  + (1 - sustain) * (zone.modEnvDecay || 0);
     // Written so that a MISSING settle time fails the test rather than passing it.
