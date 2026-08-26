@@ -557,19 +557,22 @@ deliberate and tracked, not an oversight.
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
 - ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
-  velocity trim bends the dynamic curve instead of setting a level. (Correction, GMD-81: kick/snare
-  *declare* 7 velocity layers — 0-80, 81-88, … 121-127 — but in the committed pack all seven point at
-  the **same sample with the same attenuation and envelope**, so switching layer changes nothing.
-  `sf2.ts` does not parse the SF2 filter generators, which is what would differentiate them. The
-  squared curve alone is reason enough for the rule.) `gomidasDrumGains` (the kit MIXER tab, GMD-72)
-  stays as the **user's** trim *on top of* the preset.
+  velocity trim bends the dynamic curve instead of setting a level. (Twice-corrected: kick/snare
+  declare 7 velocity layers — 0-80, 81-88, … 121-127 — whose sample, attenuation and envelope are
+  all identical, which is why GMD-81 read them as inert. They differ by **filter cutoff**, and as of
+  GMD-80 that is parsed: the kick sweeps **5.0kHz → 8.0kHz** across its layers and the snare
+  **7.0kHz → 10.0kHz**, so drum velocity now changes timbre and barely changes level — measured
+  ≤0.15dB of peak on kick and snare. The squared curve alone is still reason enough for the rule.)
+  `gomidasDrumGains` (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
 - ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
   read as a drum.
 - **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
   (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
   articulation — swirls, not filtered stick hits), and convincingly **Room / Power** (real room mics
-  + gated tails). Hats/crash are **single-layer** — and per GMD-81 the kick/snare layers are
-  currently indistinguishable too — so compression cannot add dynamics that aren't there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
+  + gated tails). Hats/crash are **single-layer**, so compression cannot add dynamics that are not
+  there — but kick and snare now DO get brighter with velocity (GMD-80 parsed the filter), so a
+  preset is shaping something real on those two. Name presets for what they are: Dry / Rock /
+  Vintage / Compressed / Lo-fi.
 - ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
   the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
   GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
@@ -607,6 +610,40 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   energy ratio) **0.0367 sonivox → 0.1604 packs**, RMS 0.128 → 0.178.
 - ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
   scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
+
+### The SF2 low-pass filter — gens 8/9, and why a "duplicate zone" was never one (GMD-80/81, 2026-08-26)
+- ⚠️ **FluidR3 voices its guitars as a DRY copy plus a LOW-PASSED copy of the same sample**, layered.
+  `instrument 63 "Clean Guitar"` is 10 key ranges x 2 bags: bags 973-982 carry no gen 8, bags 983-992
+  carry the identical samples and key ranges with `initialFilterFc = 7935` (800Hz). Read without
+  gens 8/9 the two are **indistinguishable**, so both play dry and sum coherently: **+6.05dB** of
+  broadband guitar over every single-layer program, measured. It looks exactly like a parser
+  double-counting the preset x instrument expansion and it is not — **the expansion was correct**.
+  Same shape on 29 (1kHz) and 30. Before "fixing" a duplicated zone, print gens 8/9.
+- ⚠️ **Web Audio's lowpass `Q` is a resonance in DECIBELS**, not the cookbook's dimensionless Q —
+  which is SF2 centibels / 10, so `filterQ / 10` lands in the destination unit with no conversion.
+  Off by 10x and every resonant zone either rings or goes flat.
+- **`SF2.zoneFilter(zone, sampleRate)` is THE ONE PLACE** the "is there a filter, at what frequency"
+  decision is made, and it uses **TSF's** audibility test (`fc < 13500` and `hz < 0.499 * rate`) so
+  both products filter the same zones. `filterFc == null` means an OLD PACK and must stay a no-op —
+  reading a missing field as 0 filters every note at 8Hz, i.e. silence.
+- **Preset gens 8/9 are ADDITIVE offsets**, and that is where FluidR3 keeps a velocity layer's
+  *timbre*: Nylon's preset bags run +0 cents at vel 121-127 down to −2786 at 0-64. Correcting the
+  GMD-81 note above — with these parsed, a velocity layer now changes brightness and not just level,
+  on the drum kit as well as on Nylon (see the twice-corrected note in the drum-kit section).
+  The **volume**-envelope offsets are still dropped (GMD-82), and the cutoff is **static** (GMD-83).
+- Coverage: **765 of 1275** packed melodic zones filter, and **56 of 149** drum zones.
+- Measured through the offline bounce, single note vel 0.8, before → after: Clean +2.11 → −0.80 dB
+  (**−2.92**), Overdrive +2.12 → −3.44 (**−5.56**), Distortion +1.98 → −2.44 (**−4.42**); Nylon,
+  Jazz and Fingered Bass within 0.20 dB. **This is most of GMD-42's headline** ("a single note peaks
+  at +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
+- ⚠️ **The kit balance is untouched but the TOMS lost peak**: over all 47 GM drum keys, kick/snare/
+  cymbals move ≤0.15dB, while toms 41/43/45/47/48/50 drop **0.56–2.25dB of PEAK at unchanged RMS
+  (±0.03dB)** — the filter takes the stick spike off the transient and leaves the body. GMD-73's
+  floor still stands; do not re-tune it against a peak reading alone.
+- ⚠️ **A pack re-extract only changes the `.json`.** The `.bin` blobs came out byte-identical, which
+  is the extractor's determinism claim holding. **If a `.bin` shows as modified, stop** — that means
+  the local ffmpeg differs from the one that built the committed pack, and you are about to commit
+  9MB of re-encoded audio for a metadata change.
 
 ### Web pack cache — IndexedDB, so a repeat visit is shell-only (GMD-58, 2026-08-15)
 `core/packcache.ts` (`GomidasPackCache`) caches every lazily-fetched **binary** payload — sonivox,
