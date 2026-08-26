@@ -7985,6 +7985,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8004,6 +8005,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8023,6 +8025,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8042,6 +8045,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8061,6 +8065,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8080,6 +8085,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8099,6 +8105,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8118,6 +8125,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8137,6 +8145,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8156,6 +8165,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8365,6 +8375,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8384,6 +8395,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8403,6 +8415,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8422,6 +8435,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8441,6 +8455,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8460,6 +8475,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8479,6 +8495,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8498,6 +8515,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8517,6 +8535,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8536,6 +8555,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8745,6 +8765,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8764,6 +8785,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8783,6 +8805,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8802,6 +8825,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8821,6 +8845,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8840,6 +8865,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8859,6 +8885,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8878,6 +8905,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8897,6 +8925,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -8916,6 +8945,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9125,6 +9155,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9144,6 +9175,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9163,6 +9195,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9182,6 +9215,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9201,6 +9235,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9220,6 +9255,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9239,6 +9275,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9258,6 +9295,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9277,6 +9315,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9296,6 +9335,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9505,6 +9545,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9524,6 +9565,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9543,6 +9585,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9562,6 +9605,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9581,6 +9625,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9600,6 +9645,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9619,6 +9665,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9638,6 +9685,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9657,6 +9705,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9676,6 +9725,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9885,6 +9935,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9904,6 +9955,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9923,6 +9975,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9942,6 +9995,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9961,6 +10015,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9980,6 +10035,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -9999,6 +10055,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10018,6 +10075,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10037,6 +10095,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10056,6 +10115,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10265,6 +10325,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10284,6 +10345,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10303,6 +10365,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10322,6 +10385,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10341,6 +10405,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10360,6 +10425,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10379,6 +10445,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10398,6 +10465,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10417,6 +10485,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10436,6 +10505,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10645,6 +10715,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10664,6 +10735,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10683,6 +10755,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10702,6 +10775,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10721,6 +10795,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10740,6 +10815,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10759,6 +10835,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10778,6 +10855,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10797,6 +10875,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -10816,6 +10895,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11025,6 +11105,7 @@
      "decay": 25.00538,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11044,6 +11125,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11063,6 +11145,7 @@
      "decay": 22.99636,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11082,6 +11165,7 @@
      "decay": 21.99596,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11101,6 +11185,7 @@
      "decay": 19.00535,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11120,6 +11205,7 @@
      "decay": 16,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11139,6 +11225,7 @@
      "decay": 14.99767,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11158,6 +11245,7 @@
      "decay": 12.00031,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11177,6 +11265,7 @@
      "decay": 9.99819,
      "sustain": 0,
      "release": 2,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -11196,6 +11285,7 @@
      "decay": 9.00047,
      "sustain": 0,
      "release": 1.50004,
+     "filterFc": 13500,
      "filterQ": 30
     },
     {
@@ -16748,7 +16838,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -16770,7 +16861,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -16792,7 +16884,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -16814,7 +16907,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -16836,7 +16930,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -16858,7 +16953,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -16880,7 +16976,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -16902,7 +16999,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -16924,7 +17022,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -16946,7 +17045,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -16969,7 +17069,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -16992,7 +17093,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -17015,7 +17117,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -17038,7 +17141,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -17061,7 +17165,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -17084,7 +17189,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -17107,7 +17213,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -17130,7 +17237,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -17153,7 +17261,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -17176,7 +17285,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -17198,7 +17308,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -17220,7 +17331,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -17242,7 +17354,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -17264,7 +17377,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -17286,7 +17400,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -17308,7 +17423,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -17330,7 +17446,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -17352,7 +17469,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -17374,7 +17492,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -17396,7 +17515,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -17419,7 +17539,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -17442,7 +17563,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -17465,7 +17587,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -17488,7 +17611,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -17511,7 +17635,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -17534,7 +17659,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -17557,7 +17683,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -17580,7 +17707,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -17603,7 +17731,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -17626,7 +17755,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -17648,7 +17778,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -17670,7 +17801,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -17692,7 +17824,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -17714,7 +17847,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -17736,7 +17870,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -17758,7 +17893,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -17780,7 +17916,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -17802,7 +17939,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -17824,7 +17962,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -17846,7 +17985,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -17869,7 +18009,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -17892,7 +18033,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -17915,7 +18057,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -17938,7 +18081,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -17961,7 +18105,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -17984,7 +18129,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -18007,7 +18153,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -18030,7 +18177,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -18053,7 +18201,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -18076,7 +18225,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -18098,7 +18248,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -18120,7 +18271,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -18142,7 +18294,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -18164,7 +18317,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -18186,7 +18340,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -18208,7 +18363,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -18230,7 +18386,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -18252,7 +18409,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -18274,7 +18432,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -18296,7 +18455,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -18319,7 +18479,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -18342,7 +18503,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -18365,7 +18527,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -18388,7 +18551,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -18411,7 +18575,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -18434,7 +18599,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -18457,7 +18623,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -18480,7 +18647,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -18503,7 +18671,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -18526,7 +18695,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -18548,7 +18718,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -18570,7 +18741,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -18592,7 +18764,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -18614,7 +18787,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -18636,7 +18810,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -18658,7 +18833,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -18680,7 +18856,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -18702,7 +18879,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -18724,7 +18902,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -18746,7 +18925,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -18769,7 +18949,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -18792,7 +18973,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -18815,7 +18997,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -18838,7 +19021,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -18861,7 +19045,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -18884,7 +19069,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -18907,7 +19093,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -18930,7 +19117,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -18953,7 +19141,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -18976,7 +19165,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -18998,7 +19188,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -19020,7 +19211,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -19042,7 +19234,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -19064,7 +19257,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -19086,7 +19280,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -19108,7 +19303,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -19130,7 +19326,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -19152,7 +19349,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -19174,7 +19372,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -19196,7 +19395,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -19219,7 +19419,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -19242,7 +19443,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -19265,7 +19467,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -19288,7 +19491,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -19311,7 +19515,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -19334,7 +19539,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -19357,7 +19563,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -19380,7 +19587,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -19403,7 +19611,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -19426,7 +19635,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -19448,7 +19658,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -19470,7 +19681,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -19492,7 +19704,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -19514,7 +19727,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -19536,7 +19750,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -19558,7 +19773,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -19580,7 +19796,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -19602,7 +19819,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -19624,7 +19842,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -19646,7 +19865,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -19669,7 +19889,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -19692,7 +19913,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -19715,7 +19937,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -19738,7 +19961,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -19761,7 +19985,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -19784,7 +20009,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -19807,7 +20033,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -19830,7 +20057,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -19853,7 +20081,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -19876,7 +20105,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -19898,7 +20128,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -19920,7 +20151,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -19942,7 +20174,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -19964,7 +20197,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -19986,7 +20220,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -20008,7 +20243,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -20030,7 +20266,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -20052,7 +20289,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -20074,7 +20312,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -20096,7 +20335,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -20119,7 +20359,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -20142,7 +20383,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -20165,7 +20407,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -20188,7 +20431,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -20211,7 +20455,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -20234,7 +20479,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -20257,7 +20503,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -20280,7 +20527,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -20303,7 +20551,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -20326,7 +20575,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -20348,7 +20598,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -20370,7 +20621,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -20392,7 +20644,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -20414,7 +20667,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -20436,7 +20690,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -20458,7 +20713,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -20480,7 +20736,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -20502,7 +20759,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -20524,7 +20782,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -20546,7 +20805,8 @@
      "filterFc": 8080,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -20569,7 +20829,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 44,
@@ -20592,7 +20853,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -20615,7 +20877,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 54,
@@ -20638,7 +20901,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 58,
@@ -20661,7 +20925,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 61,
@@ -20684,7 +20949,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 66,
@@ -20707,7 +20973,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 70,
@@ -20730,7 +20997,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 73,
@@ -20753,7 +21021,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 77,
@@ -20776,7 +21045,8 @@
      "filterQ": 70,
      "filterModEnv": 2468,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     }
    ],
    "samples": [
@@ -25240,7 +25510,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 29,
@@ -25262,7 +25533,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 32,
@@ -25284,7 +25556,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 35,
@@ -25306,7 +25579,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 39,
@@ -25328,7 +25602,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 45,
@@ -25350,7 +25625,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 49,
@@ -25372,7 +25648,8 @@
      "filterFc": 13500,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     },
     {
      "keyLo": 0,
@@ -25395,7 +25672,8 @@
      "filterQ": 48,
      "filterModEnv": -100,
      "modEnvSustain": 1,
-     "modEnvSettle": 0.00195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.00098
     }
    ],
    "samples": [
@@ -26083,7 +26361,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 0,
@@ -26105,7 +26384,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 46,
@@ -26127,7 +26407,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 46,
@@ -26149,7 +26430,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 58,
@@ -26171,7 +26453,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 58,
@@ -26193,7 +26476,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 70,
@@ -26215,7 +26499,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     },
     {
      "keyLo": 70,
@@ -26237,7 +26522,8 @@
      "filterFc": 4651,
      "filterModEnv": 6723,
      "modEnvSustain": 0.19,
-     "modEnvSettle": 0.25195
+     "modEnvSettle": 0.00293,
+     "modEnvDecay": 0.25
     }
    ],
    "samples": [

@@ -18,11 +18,40 @@ const { parseSf2, zoneFilter, centsToHertz } = SF;
 const RATE = 44100;
 
 describe('zoneFilter — the rule', () => {
-  it('treats the SF2 default as no filter at all', () => {
-    // 13500 cents is ~19.9kHz: the spec's "open" value, carried by 510 of the 1275 packed melodic
-    // zones. Building a biquad for those would be pure CPU for nothing.
+  it('treats the SF2 default as no filter at all — but only when it is FLAT', () => {
+    // 13500 cents is ~19.9kHz, the spec's "open" value. TSF's test is `fres <= 13500`, so it does
+    // build a filter there; we skip it, because at Q=0 the only thing it does is a ~2dB shelf
+    // between 19.9kHz and Nyquist, and it would cost a biquad on 40% of every score's voices.
     expect(zoneFilter({ filterFc: 13500, filterQ: 0 }, RATE)).toBeNull();
     expect(zoneFilter({ filterFc: 14400 }, RATE)).toBeNull();   // one drum zone really is above it
+    // A RESONANT zone at 13500 is a different thing and review round 2 caught it: the resonance is
+    // a top-octave LIFT, which desktop has and dropping it is an audible divergence. 186 zones in
+    // the committed packs are like this, including the closed and pedal hi-hat at 10dB.
+    const hat = zoneFilter({ filterFc: 13500, filterQ: 100 }, RATE);
+    expect(hat).not.toBeNull();
+    expect(hat.qDb).toBe(10);
+    expect(hat.hz).toBeCloseTo(19912.62, 2);
+    // Above 13500 both engines agree there is nothing, resonant or not. It takes an ENVELOPE to
+    // get there: gen 8 itself is clamped to 13500 first, so a raw 13501 comes back down to it.
+    expect(zoneFilter({ filterFc: 13501, filterQ: 100 }, RATE).hz).toBeCloseTo(19912.62, 2);
+    expect(zoneFilter({ filterFc: 13500, filterQ: 100, filterModEnv: 100,
+                        modEnvSustain: 1, modEnvSettle: 0.002, modEnvDecay: 0 }, RATE)).toBeNull();
+  });
+
+  it('counts the mod-env DELAY, and lets a preset\'s sustain re-open the decay', () => {
+    // Both latent traps from review round 2 — no shipped bank hits either, but the values are
+    // baked into the committed packs, so a re-extract of any other bank would inherit them.
+    // gen 25: a zone can sit at gen 8 for a second before the envelope even starts.
+    const delayed = { filterFc: 8080, filterModEnv: 2468, modEnvSustain: 1,
+                      modEnvSettle: 1.16, modEnvDecay: 0.001 };
+    expect(zoneFilter(delayed, RATE), 'a 1.16s delay is not a static filter').toBeNull();
+    // And the decay counts only when the envelope decays — which a PRESET offset can turn on after
+    // modEnvSettle was computed, so the two are stored apart and combined here.
+    const held = { filterFc: 8080, filterModEnv: 2468, modEnvSustain: 1,
+                   modEnvSettle: 0.002, modEnvDecay: 3 };
+    expect(zoneFilter(held, RATE).hz, 'full sustain never reaches the decay').toBeCloseTo(3619.05, 2);
+    expect(zoneFilter({ ...held, modEnvSustain: 0.9 }, RATE),
+           'a preset dropping sustain below 1 makes that 3s decay count').toBeNull();
   });
 
   it('is a no-op for a zone that carries no filter fields at all', () => {
@@ -148,9 +177,13 @@ describe('the committed packs carry the filter', () => {
     expect(zs.length).toBe(2);
     expect(zs[0].sampleIndex).toBe(zs[1].sampleIndex);              // the same sample, twice
     expect(zs[0].attenuationDb).toBe(zs[1].attenuationDb);          // at the same level
+    // Both resolve to a filter — the dry layer carries a 3dB resonance at the open default — but
+    // only ONE of them actually removes anything: 800Hz against 19.9kHz. That gap is the +6.05dB.
     const filters = zs.map(z => zoneFilter(z, RATE));
-    expect(filters.filter(Boolean).length, 'exactly one layer is filtered').toBe(1);
-    expect(filters.find(Boolean).hz).toBeCloseTo(800.022, 3);
+    const audible = filters.filter(f => f && f.hz < 15000);
+    expect(audible.length, 'exactly one layer is low-passed').toBe(1);
+    expect(audible[0].hz).toBeCloseTo(800.022, 3);
+    expect(filters.filter(f => f && f.hz > 15000).length, 'the other is open, with resonance').toBe(1);
   });
 
   it('keeps Nylon Guitar\'s per-velocity brightness, which lives on the PRESET bags', () => {
@@ -171,133 +204,42 @@ describe('the committed packs carry the filter', () => {
 
   it('filters the zones the bank asks it to, and no others', () => {
     // Pinned counts, measured off FluidR3 by expanding every packed preset. A re-extract that
-    // dropped the two fields reads as 0 here rather than as a silent +6dB in someone's ears.
+    // dropped the fields reads as 0 here rather than as a silent +6dB in someone's ears.
+    //
+    // TWO counts per program, because they answer different questions: `built` is how many zones
+    // get a biquad at all, and `lowPassed` is how many of those actually remove anything. A zone
+    // sitting at the open default with a resonance is in the first and not the second, and
+    // conflating them is what made the first version of this test misread program 27.
     const m = melodic();
     const zones = m.programs.flatMap(p => p.zones);
+    const built = z => !!zoneFilter(z, RATE);
+    // "Actually removes something" = a cutoff strictly below the open default, not an arbitrary
+    // kHz line: 19912.6Hz IS the open value, so a zone sitting exactly there is resonance only.
+    const OPEN_HZ = centsToHertz(13500);
+    const lowPassed = z => { const f = zoneFilter(z, RATE); return !!f && f.hz < OPEN_HZ; };
     expect(zones.length).toBe(1275);
-    expect(zones.filter(z => zoneFilter(z, RATE)).length).toBe(674);
-    const per = (prog) => {
-      const p = m.programs.find(x => x.program === prog);
-      return p.zones.filter(z => zoneFilter(z, RATE)).length;
-    };
-    expect(per(24)).toBe(90);     // Nylon: every zone, per-velocity
-    expect(per(25)).toBe(0);      // Steel String: none — its layers are genuinely different samples
-    expect(per(26)).toBe(216);    // Jazz Guitar: every zone
-    expect(per(27)).toBe(90);     // Clean: half — the second layer of each pair
+    expect(zones.filter(built).length).toBe(764);
+    expect(zones.filter(lowPassed).length).toBe(674);
+
+    const per = (prog, fn) => m.programs.find(x => x.program === prog).zones.filter(fn).length;
+    expect(per(24, lowPassed)).toBe(90);    // Nylon: every zone, per-velocity
+    expect(per(25, built)).toBe(0);         // Steel String: no filter data at all
+    expect(per(26, lowPassed)).toBe(216);   // Jazz Guitar: every zone
+    // Clean Guitar is GMD-80 in one line: 180 zones build a filter, but only 90 of them are a
+    // low-pass. The other 90 are the DRY layer, open at 13500 with a 3dB resonance.
+    expect(per(27, built)).toBe(180);
+    expect(per(27, lowPassed)).toBe(90);
     // Distortion: only the layer whose modEnv-resolved cutoff lands under the open threshold. The
-    // other 90 zones resolve to 5001 + 2468 = 13576 cents, which IS open — filtering them at
-    // gen 8's 5001 would be reading half the instruction.
-    expect(per(30)).toBe(90);
+    // other 90 resolve to 5001 + 2468 = 13576 cents, which IS open — filtering them at gen 8's
+    // 5001 would be reading half the instruction.
+    expect(per(30, lowPassed)).toBe(90);
+    expect(per(38, built), 'Synth Bass 1 sweeps for 252ms — left alone entirely').toBe(0);
+
     const dz = drums().kits[0].zones;
     expect(dz.length).toBe(149);
-    expect(dz.filter(z => zoneFilter(z, RATE)).length).toBe(56);
-  });
-});
-
-// ── the graph: is the filter actually WIRED? ──────────────────────────────────
-//
-// Everything above tests the PARSER. Delete the biquad from webaudio.ts and every one of those
-// assertions stays green while the guitar goes back to +6dB — which is exactly how this bug
-// survived in the first place. So drive the real voice factory and look at the nodes it builds.
-describe('createSf2Instrument wires the zone lowpass', () => {
-  let createSf2Instrument;
-  let created;
-
-  const param = (v) => ({
-    value: v, setValueAtTime() { return this; }, linearRampToValueAtTime() { return this; },
-    exponentialRampToValueAtTime() { return this; }, setTargetAtTime() { return this; },
-    cancelScheduledValues() { return this; }
-  });
-
-  function fakeContext() {
-    const mk = (kind) => {
-      const node = {
-        kind, connections: [],
-        connect(to) { this.connections.push(to); }, disconnect() {}, start() {}, stop() {},
-        gain: param(1), pan: param(0), frequency: param(350), Q: param(1),
-        playbackRate: param(1), detune: param(0),
-        type: kind === 'createBiquadFilter' ? 'lowpass' : 'peaking',
-        buffer: null, loop: false, loopStart: 0, loopEnd: 0, onended: null
-      };
-      created.push(node);
-      return node;
-    };
-    return new Proxy({
-      currentTime: 0, sampleRate: RATE, state: 'running', destination: mk('destination'),
-      createBuffer: () => ({ length: 8, duration: 0.1, sampleRate: RATE, numberOfChannels: 1,
-                             getChannelData: () => new Float32Array(8) })
-    }, { get: (t, k) => (k in t ? t[k] : (typeof k === 'string' && k.startsWith('create')
-                                          ? () => mk(k) : undefined)) });
-  }
-
-  /** A one-zone bank, so the graph under test has exactly one voice in it. */
-  function bankWith(zone) {
-    const preset = { bank: 0, program: 27, name: 'test', zones: [Object.assign({
-      keyLo: 0, keyHi: 127, velLo: 0, velHi: 127, sampleIndex: 0, rootKey: 60, tuneCents: 0,
-      attenuationDb: 0, pan: 0, loopMode: 0, exclusiveClass: 0,
-      attack: 0.001, hold: 0, decay: 0, sustain: 1, release: 0.3
-    }, zone)] };
-    return {
-      presets: [preset], samples: [{ start: 0, end: 8, startLoop: 0, endLoop: 8,
-                                     sampleRate: RATE, originalPitch: 60, pitchCorrection: 0 }],
-      pcm: new Int16Array(8), findPreset: () => preset, findDrumPreset: () => preset
-    };
-  }
-
-  const filters = () => created.filter(n => n.kind === 'createBiquadFilter');
-  // The FIRST gain the factory builds is the instrument's shared output; the voice's own gain is
-  // the one after it. Picking the wrong one silently turns the wiring assertions into noise.
-  const voiceGain = () => created.filter(n => n.kind === 'createGain').slice(-1)[0];
-
-  beforeAll(async () => {
-    const fs = await import('node:fs/promises');
-    const win = {};
-    win.window = win;
-    for (const m of ['timebase', 'fx', 'sf2', 'sfz', 'packcache', 'webaudio']) {
-      const src = await fs.readFile(new URL(`../dist/core/${m}.js`, import.meta.url), 'utf8');
-      new Function('window', 'module', src)(win, { exports: {} });
-    }
-    createSf2Instrument = win.GomidasWebAudio.createSf2Instrument;
-    expect(typeof createSf2Instrument, 'the factory must be exported to be testable').toBe('function');
-  });
-
-  it('inserts a lowpass at the zone cutoff, between the sample and its envelope', () => {
-    created = [];
-    const ctx = fakeContext();
-    createSf2Instrument(ctx, bankWith({ filterFc: 7935, filterQ: 30 }), 27, false, new Map())
-      .noteOn(60, 0.8, 0);
-    expect(filters().length, 'a filtered zone gets exactly one biquad').toBe(1);
-    const lp = filters()[0];
-    expect(lp.type).toBe('lowpass');
-    expect(lp.frequency.value).toBeCloseTo(800.022, 3);
-    expect(lp.Q.value).toBeCloseTo(3, 9);            // 30 centibels -> 3 dB, Web Audio's unit
-    // Order matters: the filter shapes the SOURCE and the envelope still owns the level. Wired
-    // after the gain instead, the release ramp would be smeared by the filter's own decay.
-    const src = created.find(n => n.kind === 'createBufferSource');
-    const gain = voiceGain();
-    expect(src.connections).toContain(lp);
-    expect(lp.connections).toContain(gain);
-    expect(src.connections).not.toContain(gain);
-  });
-
-  it('builds no filter node at all for an open zone', () => {
-    created = [];
-    const ctx = fakeContext();
-    createSf2Instrument(ctx, bankWith({ filterFc: 13500, filterQ: 0 }), 27, false, new Map())
-      .noteOn(60, 0.8, 0);
-    expect(filters().length).toBe(0);
-    const src = created.find(n => n.kind === 'createBufferSource');
-    expect(src.connections, 'an unfiltered zone keeps its direct connection').toContain(voiceGain());
-  });
-
-  it('builds no filter for a pack zone that predates the fields', () => {
-    created = [];
-    const ctx = fakeContext();
-    const bank = bankWith({});
-    delete bank.presets[0].zones[0].filterFc;
-    delete bank.presets[0].zones[0].filterQ;
-    createSf2Instrument(ctx, bank, 27, false, new Map()).noteOn(60, 0.8, 0);
-    expect(filters().length).toBe(0);
+    expect(dz.filter(built).length).toBe(62);
+    // 6 of those are the resonant-at-13500 case: closed and pedal hi-hat, 10dB of top-octave lift.
+    expect(dz.filter(z => z.filterFc === 13500 && built(z)).length).toBe(6);
   });
 });
 
@@ -361,13 +303,15 @@ describe('preset generators fold onto the instrument value', () => {
     ]);
     // The terminal bag must point PAST the sampleID at igen[5], or the zone reads as a global one
     // (no sampleID -> not a zone) and the preset comes back empty.
-    const ibag = concat([rec(4, (v) => v.setUint16(0, 0, true)), rec(4, (v) => v.setUint16(0, 6, true))]);
+    const ibag = concat([rec(4, (v) => v.setUint16(0, 0, true)), rec(4, (v) => v.setUint16(0, 8, true))]);
     const igen = concat([
       gen(43, 0, 127),       // keyRange
       gen(8, 10361),         // initialFilterFc: the zone's ABSOLUTE cutoff (3248 Hz)
       gen(9, 40),            // initialFilterQ 4.0 dB
       gen(48, 50),           // initialAttenuation 5.0 dB
       gen(51, 1),            // coarseTune +1 semitone
+      gen(11, 2000),         // modEnvToFilterFc: the envelope moves the cutoff
+      gen(25, 0),            // delayModEnv 0 timecents = a ONE SECOND delay before it starts
       gen(53, 0),            // sampleID (terminal generator)
       gen(0, 0)
     ]);
@@ -394,11 +338,22 @@ describe('preset generators fold onto the instrument value', () => {
     return zs[0];
   };
 
+  it('counts delayModEnv, which is a whole second the cutoff has not moved yet', () => {
+    // The gap review round 2 found in the SETTLE COMPOSITION, which the zoneFilter-level tests
+    // above cannot see because they hand it a settle time. delayModEnv 0 timecents is 1 second;
+    // without it this zone computes a ~2ms settle, passes the static gate, and gets frozen at a
+    // cutoff it will not reach for another second. sonivox has 61 zones carrying gen 25.
+    const z = zoneAt(100);
+    expect(z.filterModEnv).toBe(2000);
+    expect(z.modEnvSettle, 'the 1s delay must be in here').toBeCloseTo(1.00195, 4);
+    expect(zoneFilter(z, RATE), 'and it must disqualify the zone').toBeNull();
+  });
+
   it('reads the instrument value straight through when the preset adds nothing', () => {
     const z = zoneAt(100);
     expect(z.filterFc).toBe(10361);
-    expect(zoneFilter(z, RATE).hz).toBeCloseTo(3248.509, 3);
-    expect(zoneFilter(z, RATE).qDb).toBeCloseTo(4, 9);
+    expect(z.filterQ).toBe(40);
+    expect(centsToHertz(z.filterFc)).toBeCloseTo(3248.509, 3);
     expect(z.attenuationDb).toBeCloseTo(5, 9);
     expect(z.tuneCents).toBe(100);
   });
@@ -408,10 +363,13 @@ describe('preset generators fold onto the instrument value', () => {
     // ignoring would leave 3248 Hz, which is the bug: every dynamic at the same timbre.
     const z = zoneAt(30);
     expect(z.filterFc).toBe(7575);
-    expect(zoneFilter(z, RATE).hz).toBeCloseTo(649.819, 3);
+    expect(centsToHertz(z.filterFc)).toBeCloseTo(649.819, 3);
     // The other offsets fold the same way, and are asserted here so one fixture covers the rule.
     expect(z.attenuationDb).toBeCloseTo(7, 9);      // 5.0 instrument + 2.0 preset
     expect(z.tuneCents).toBe(100);                  // +1 semitone, no preset tune
-    expect(zoneFilter(z, RATE).qDb).toBeCloseTo(2.5, 9);   // 40 centibels + (-15) = 2.5 dB
+    expect(z.filterQ).toBe(25);                     // 40 centibels + (-15) = 2.5 dB
+    // Resolved through a fast envelope it would land here; this zone's own delay disqualifies it.
+    expect(zoneFilter({ ...z, modEnvSettle: 0.002 }, RATE).hz).toBeCloseTo(2063.05, 2);
+    expect(zoneFilter({ ...z, modEnvSettle: 0.002 }, RATE).qDb).toBeCloseTo(2.5, 9);
   });
 });

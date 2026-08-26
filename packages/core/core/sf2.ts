@@ -37,7 +37,7 @@ const GEN = {
   sustainVolEnv: 37, releaseVolEnv: 38,
   initialFilterFc: 8, initialFilterQ: 9,
   modLfoToFilterFc: 10, modEnvToFilterFc: 11,
-  attackModEnv: 26, holdModEnv: 27, decayModEnv: 28, sustainModEnv: 29,
+  delayModEnv: 25, attackModEnv: 26, holdModEnv: 27, decayModEnv: 28, sustainModEnv: 29,
   instrument: 41, keyRange: 43, velRange: 44,
   initialAttenuation: 48, coarseTune: 51, fineTune: 52,
   sampleID: 53, sampleModes: 54, scaleTuning: 56, exclusiveClass: 57,
@@ -89,8 +89,14 @@ interface Sf2Zone {
   filterModEnv: number;
   /** SF2 gen 29 as a fraction: where that envelope SETTLES. 1 = it holds its full level. */
   modEnvSustain: number;
-  /** Seconds for that envelope to REACH its sustain (attack + hold + decay). See zoneFilter. */
+  /**
+   * Seconds before that envelope starts to fall: delay + attack + hold. The DECAY is kept separate
+   * in `modEnvDecay` because whether it counts depends on `modEnvSustain`, which a preset zone can
+   * still change after this is computed. Folding them here would understate a slow sweep.
+   */
   modEnvSettle: number;
+  /** Seconds of that envelope's decay, added to the settle only when it actually decays. */
+  modEnvDecay: number;
   pan: number;
   loopMode: number;
   attack: number; hold: number; decay: number; sustain: number; release: number;
@@ -219,9 +225,10 @@ function parseSf2(buffer: ArrayBuffer): {
         filterModEnv: num(GEN.modEnvToFilterFc, 0),
         // Same 0.1%-decrease encoding as sustainVolEnv below.
         modEnvSustain: Math.max(0, Math.min(1, 1 - num(GEN.sustainModEnv, 0) / 1000)),
-        modEnvSettle: timecentsToSeconds(num(GEN.attackModEnv, -12000))
-                    + timecentsToSeconds(num(GEN.holdModEnv, -12000))
-                    + (num(GEN.sustainModEnv, 0) > 0 ? timecentsToSeconds(num(GEN.decayModEnv, -12000)) : 0),
+        modEnvSettle: timecentsToSeconds(num(GEN.delayModEnv, -12000))
+                    + timecentsToSeconds(num(GEN.attackModEnv, -12000))
+                    + timecentsToSeconds(num(GEN.holdModEnv, -12000)),
+        modEnvDecay: timecentsToSeconds(num(GEN.decayModEnv, -12000)),
         pan: num(GEN.pan, 0) / 1000,                          // -500..500 -> -0.5..0.5
         loopMode: num(GEN.sampleModes, 0),
         exclusiveClass: num(GEN.exclusiveClass, 0),
@@ -502,12 +509,20 @@ function centsToHertz(cents: number): number {
  * The LFO term is left out on purpose: it oscillates about zero, so its steady state IS zero.
  *
  * Clamped to TSF's own generator limits, applied at the same point TSF applies them: gen 8 merges
- * into [1500, 13500] BEFORE the envelope is added, and the sum is then tested unclamped. Without
- * the low bound, FluidR3's "Chiffer Lead" sums to 1139 cents = 15.7Hz and plays as silence.
+ * into [1500, 13500] BEFORE the envelope is added, and the resolved sum is then tested unclamped —
+ * TSF does not clamp it either, so this is parity, not a safety net. Be precise about what the low
+ * bound buys: FluidR3's "Chiffer Lead" merges to 1139 cents and 1500 is 19.4Hz, so both are
+ * sub-audible and the clamp only keeps the two engines agreeing. A zone whose ENVELOPE drags the
+ * resolved cutoff below 1500 would still build a sub-audible biquad, exactly as it does on desktop.
+ * The lowest resolved cutoff in either committed pack today is 388Hz.
  *
- * DELIBERATE DIVERGENCE, the only one: at exactly 13500 TSF still builds a filter (19913Hz, under
- * its Nyquist test) and we return null. That corner sits above the top octave of hearing, and 510
- * of the 1275 packed melodic zones sit exactly there — a biquad each, to remove nothing.
+ * DELIBERATE DIVERGENCE, the only one, and narrower than it first read: TSF's test is
+ * `fres <= 13500`, so at EXACTLY the default it still builds a 19913Hz lowpass. We skip that —
+ * but only when gen 9 is 0, where the claim "it removes nothing audible" actually holds. Review
+ * round 2 found the hole: 180 melodic and 6 drum zones sit at 13500 with a NON-ZERO resonance, up
+ * to 10 centibels-per-dB on the closed and pedal hi-hat, and dropping those threw away a top-octave
+ * lift that desktop has. Those now build the filter. The residual gap is a ~2dB shelf between
+ * 19.9kHz and Nyquist on flat zones, and it buys skipping a biquad on 40% of every score's voices.
  *
  * `filterFc == null` is the OLD-PACK path, not an error: a pack extracted before this shipped
  * carries no filter fields, and must keep playing exactly as it did rather than silently
@@ -524,23 +539,29 @@ const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960;
 const MODENV_STATIC_S = 0.02;
 
 function zoneFilter(zone: { filterFc?: number; filterQ?: number; filterModEnv?: number;
-                            modEnvSustain?: number; modEnvSettle?: number },
+                            modEnvSustain?: number; modEnvSettle?: number; modEnvDecay?: number },
                     sampleRate: number): { hz: number; qDb: number } | null {
   if (zone.filterFc == null) return null;                       // old pack: no filter data at all
   const base = Math.max(FILTER_FC_MIN, Math.min(FILTER_FC_OPEN, zone.filterFc));
-  const modEnv = zone.filterModEnv || 0;
-  let cents = base;
-  if (modEnv) {
-    // Written so that a MISSING settle time fails the test rather than passing it.
-    if (!(zone.modEnvSettle != null && zone.modEnvSettle <= MODENV_STATIC_S)) return null;
-    cents = base + (zone.modEnvSustain != null ? zone.modEnvSustain : 1) * modEnv;
-  }
-  if (cents >= FILTER_FC_OPEN) return null;
-  const hz = centsToHertz(cents);
-  if (!(hz > 0) || hz >= 0.499 * sampleRate) return null;
   // Web Audio's lowpass Q is a resonance in DECIBELS (not the cookbook's dimensionless Q), which
   // is exactly SF2's centibels / 10 — so this lands in the destination unit with no conversion.
   const q = Math.max(0, Math.min(FILTER_Q_MAX, zone.filterQ || 0));
+  const modEnv = zone.filterModEnv || 0;
+  let cents = base;
+  if (modEnv) {
+    // The decay counts only if the envelope actually decays, and `modEnvSustain` may have been
+    // moved by a preset offset AFTER modEnvSettle was computed — hence the two fields.
+    const sustain = zone.modEnvSustain != null ? zone.modEnvSustain : 1;
+    const settle = (zone.modEnvSettle != null ? zone.modEnvSettle : Infinity)
+                 + (sustain < 1 ? (zone.modEnvDecay || 0) : 0);
+    // Written so that a MISSING settle time fails the test rather than passing it.
+    if (!(settle <= MODENV_STATIC_S)) return null;
+    cents = base + sustain * modEnv;
+  }
+  // `>` not `>=` when the zone is resonant: see the divergence note above.
+  if (q ? cents > FILTER_FC_OPEN : cents >= FILTER_FC_OPEN) return null;
+  const hz = centsToHertz(cents);
+  if (!(hz > 0) || hz >= 0.499 * sampleRate) return null;
   return { hz, qDb: q / 10 };
 }
 
