@@ -14,8 +14,14 @@
 // golden-testable against the bundled sonivox.sf2.
 //
 // DELIBERATELY NOT IMPLEMENTED: modulators (SF2 §8.4 default modulators, velocity->filter etc.),
-// the low-pass filter generators, LFOs, vibrato, chorus/reverb sends. A GM bank still plays
-// recognisably without them; adding them silently and wrongly would be worse.
+// LFOs, vibrato, chorus/reverb sends. A GM bank still plays recognisably without them; adding
+// them silently and wrongly would be worse.
+//
+// The low-pass filter (gens 8/9) IS implemented, as of GMD-80/81 — it had to be. FluidR3 voices
+// its guitars as a dry copy plus a low-passed copy of the SAME sample layered under it; unparsed,
+// the two read as identical zones and sum to +6dB of broadband guitar. It is applied STATICALLY:
+// modEnvToFilterFc / modLfoToFilterFc (gens 11/10) sweep the cutoff in TinySoundFont and we hold
+// it at its initial value. 4 of the 17 packed presets use them (30, 35, 38, the drum kit).
 
 // SCOPE NOTE: body wrapped in an IIFE — these emit as plain <script> files sharing one global scope.
 (function () {
@@ -29,6 +35,7 @@ const GEN = {
   pan: 17,
   delayVolEnv: 33, attackVolEnv: 34, holdVolEnv: 35, decayVolEnv: 36,
   sustainVolEnv: 37, releaseVolEnv: 38,
+  initialFilterFc: 8, initialFilterQ: 9,
   instrument: 41, keyRange: 43, velRange: 44,
   initialAttenuation: 48, coarseTune: 51, fineTune: 52,
   sampleID: 53, sampleModes: 54, scaleTuning: 56, exclusiveClass: 57,
@@ -72,6 +79,10 @@ interface Sf2Zone {
   /** SF2 gen 57: >0 means "cut every sounding voice of this class" (closed hat chokes open hat). */
   exclusiveClass: number;
   attenuationDb: number;
+  /** SF2 gen 8: lowpass cutoff in ABSOLUTE cents. 13500 (~20kHz) is the spec default = open. */
+  filterFc: number;
+  /** SF2 gen 9: lowpass resonance in centibels. 0 = no resonant peak. */
+  filterQ: number;
   pan: number;
   loopMode: number;
   attack: number; hold: number; decay: number; sustain: number; release: number;
@@ -195,6 +206,8 @@ function parseSf2(buffer: ArrayBuffer): {
         rootKey: merged[GEN.overridingRootKey] != null ? num(GEN.overridingRootKey, 60) : null,
         tuneCents: num(GEN.coarseTune, 0) * 100 + num(GEN.fineTune, 0),
         attenuationDb: num(GEN.initialAttenuation, 0) / 10,   // stored in centibels
+        filterFc: num(GEN.initialFilterFc, 13500),
+        filterQ: num(GEN.initialFilterQ, 0),
         pan: num(GEN.pan, 0) / 1000,                          // -500..500 -> -0.5..0.5
         loopMode: num(GEN.sampleModes, 0),
         exclusiveClass: num(GEN.exclusiveClass, 0),
@@ -237,6 +250,12 @@ function parseSf2(buffer: ArrayBuffer): {
       const pAtten = merged[GEN.initialAttenuation] != null ? valueOf(pgen, merged[GEN.initialAttenuation]) / 10 : 0;
       const pTune = (merged[GEN.coarseTune] != null ? valueOf(pgen, merged[GEN.coarseTune]) * 100 : 0)
                   + (merged[GEN.fineTune] != null ? valueOf(pgen, merged[GEN.fineTune]) : 0);
+      // Filter generators are ADDITIVE offsets onto the instrument's absolute value, like tuning
+      // and attenuation. This is not a detail: FluidR3 puts Nylon Guitar's per-velocity brightness
+      // ONLY here (bags 121-127 -> +0, 113-120 -> -182 ... 0-64 -> -2786 cents), so a reader that
+      // takes the instrument value alone plays every dynamic at the same timbre (GMD-81).
+      const pFc = merged[GEN.initialFilterFc] != null ? valueOf(pgen, merged[GEN.initialFilterFc]) : 0;
+      const pQ = merged[GEN.initialFilterQ] != null ? valueOf(pgen, merged[GEN.initialFilterQ]) : 0;
 
       for (const z of instrumentZones(instIndex)) {
         // Preset ranges INTERSECT instrument ranges; a zone outside the preset's window is
@@ -245,7 +264,8 @@ function parseSf2(buffer: ArrayBuffer): {
         const velLo = Math.max(z.velLo, pVel.lo), velHi = Math.min(z.velHi, pVel.hi);
         if (keyLo > keyHi || velLo > velHi) continue;
         zones.push({ ...z, keyLo, keyHi, velLo, velHi,
-                     attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune });
+                     attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune,
+                     filterFc: z.filterFc + pFc, filterQ: z.filterQ + pQ });
       }
     }
     presets.push({ bank: phdr[pi].bank, program: phdr[pi].program, name: phdr[pi].name, zones });
@@ -425,8 +445,41 @@ function rateFor(zone: Sf2Zone, sample: Sf2Sample, key: number, outputRate: numb
   return Math.pow(2, cents / 1200) * (sample.sampleRate / outputRate);
 }
 
+/** SF2 absolute cents -> Hz. The same curve as TinySoundFont's tsf_cents2Hertz. */
+function centsToHertz(cents: number): number {
+  return 8.176 * Math.pow(2, cents / 1200);
+}
+
+/**
+ * The zone's lowpass, or null if it has none. THE one place that decision is made.
+ *
+ * WHY IT EXISTS (GMD-80): FluidR3's Clean/Overdrive/Distortion Guitar presets layer two copies of
+ * every sample — one dry, one low-passed (800Hz / 1000Hz / 870-5001Hz) — to give the guitar body.
+ * Ignore gens 8/9 and the two layers are indistinguishable, so both play dry and sum coherently:
+ * +6.05dB against every single-layer program, measured. The zones were never duplicates.
+ *
+ * The "is it audible" test is TinySoundFont's, deliberately, so the two products agree on which
+ * zones filter at all: 13500 cents is the SF2 default (~19.9kHz, i.e. open), and a cutoff at or
+ * above Nyquist would only ring the biquad rather than remove anything.
+ *
+ * `filterFc == null` is the OLD-PACK path, not an error: a pack extracted before this shipped
+ * carries no filter fields, and must keep playing exactly as it did rather than silently
+ * filtering at 0Hz.
+ */
+function zoneFilter(zone: { filterFc?: number; filterQ?: number },
+                    sampleRate: number): { hz: number; qDb: number } | null {
+  const fc = zone.filterFc != null ? zone.filterFc : 13500;
+  if (fc >= 13500) return null;
+  const hz = centsToHertz(fc);
+  if (!(hz > 0) || hz >= 0.499 * sampleRate) return null;
+  // Web Audio's lowpass Q is a resonance in DECIBELS (not the cookbook's dimensionless Q), which
+  // is exactly SF2's centibels / 10 — so this lands in the destination unit with no conversion.
+  return { hz, qDb: (zone.filterQ || 0) / 10 };
+}
+
   const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain,
-                percussionMakeupGain, PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB, GEN };
+                percussionMakeupGain, PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB,
+                zoneFilter, centsToHertz, GEN };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasSf2 = api;
 }());

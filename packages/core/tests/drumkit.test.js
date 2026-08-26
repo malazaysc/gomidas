@@ -55,6 +55,11 @@ describe.skipIf(!havePack)('gm-standard drum pack', () => {
                          'attack', 'hold', 'decay', 'sustain', 'release']) {
       expect(z[field], 'zone is missing ' + field).toBeDefined();
     }
+    // filterFc/filterQ (GMD-80) are deliberately NOT in that list: the extractor omits them when
+    // the zone has no filter, which is most zones, and absence is what an older runtime reads as
+    // "open". That the pack still carries them where the bank asks for one is pinned by
+    // tests/sf2-filter.test.js, against the exact count.
+    expect(head.kits[0].zones.some(z => z.filterFc != null), 'pack has no filter data').toBe(true);
     for (const s of head.samples) {
       expect(s.sampleRate).toBeGreaterThan(0);
       expect(s.end).toBeGreaterThan(s.start);

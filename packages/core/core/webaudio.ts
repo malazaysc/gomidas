@@ -702,7 +702,22 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
         pan.pan.value = Math.max(-1, Math.min(1, z.pan * 2));
         gain.connect(pan); node = pan;
       }
-      src.connect(gain); node.connect(output);
+      // The zone's own lowpass (SF2 gens 8/9), between the sample and its envelope so the filter
+      // shapes the source and the envelope still owns the level. Most zones have none and get the
+      // direct connection they always had. See SF2.zoneFilter: without this, FluidR3's guitars —
+      // a dry layer plus a low-passed layer of the same sample — play as two dry copies, +6dB
+      // (GMD-80). Static: the cutoff never moves after note-on (GMD-81).
+      const filt = SF2.zoneFilter(z, ctx.sampleRate);
+      if (filt) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = filt.hz;
+        lp.Q.value = filt.qDb;
+        src.connect(lp); lp.connect(gain);
+      } else {
+        src.connect(gain);
+      }
+      node.connect(output);
       src.start(when);
       // A percussion sample that does not loop is a ONE-SHOT: it has no sustain to hold, so a
       // note-off must not touch it. Gating a crash with the 16th note it was written on is what
@@ -1823,7 +1838,12 @@ function createWebAudioBackend(BackendLib: any): any {
   return backend;
 }
 
-  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt, voicesToRelease,
+  // createSf2Instrument is exported for the same reason createToneInstrument is: the voice graph
+  // it builds is only observable from outside. tests/sf2-filter.test.js drives it with a fake
+  // context to prove the zone's lowpass is actually WIRED — the parser tests alone would stay
+  // green if the biquad were deleted from this file.
+  const api = { createWebAudioBackend, createToneInstrument, createSf2Instrument,
+                envelopeLevelAt, voicesToRelease,
                 ceilingCurve, HEADROOM_GAIN, HEADROOM_DB, CEILING_KNEE, CEILING_RANGE,
                 LOOKAHEAD_S, TICK_INTERVAL_MS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;

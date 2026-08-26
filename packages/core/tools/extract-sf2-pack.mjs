@@ -113,7 +113,7 @@ function zonesOf(preset, localOf, sampleIds) {
     if (!localOf.has(z.sampleIndex)) { localOf.set(z.sampleIndex, sampleIds.length); sampleIds.push(z.sampleIndex); }
     // Deliberately the same field set core/sf2.ts emits, so the runtime reuses zonesFor/rateFor
     // unchanged — a pack is a bank, not a second format with a second interpreter.
-    return {
+    const out = {
       keyLo: z.keyLo, keyHi: z.keyHi, velLo: z.velLo, velHi: z.velHi,
       sampleIndex: localOf.get(z.sampleIndex),
       rootKey: z.rootKey, tuneCents: z.tuneCents,
@@ -122,6 +122,13 @@ function zonesOf(preset, localOf, sampleIds) {
       attack: round(z.attack, 5), hold: round(z.hold, 5), decay: round(z.decay, 5),
       sustain: round(z.sustain, 5), release: round(z.release, 5)
     };
+    // The lowpass (gens 8/9, GMD-80) is emitted only when the zone actually has one — 13500 cents
+    // is "open" and 0 centibels is "no resonance", so writing the defaults would add two numbers
+    // to all 1275 zones to say nothing. Absence is also what an OLDER runtime reads as "no
+    // filter", which is the behaviour it had before this field existed.
+    if (z.filterFc !== 13500) out.filterFc = z.filterFc;
+    if (z.filterQ) out.filterQ = z.filterQ;
+    return out;
   });
 }
 
