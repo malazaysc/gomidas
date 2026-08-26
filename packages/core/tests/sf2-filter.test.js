@@ -25,8 +25,10 @@ describe('zoneFilter — the rule', () => {
     expect(zoneFilter({ filterFc: 13500, filterQ: 0 }, RATE)).toBeNull();
     expect(zoneFilter({ filterFc: 14400 }, RATE)).toBeNull();   // one drum zone really is above it
     // A RESONANT zone at 13500 is a different thing and review round 2 caught it: the resonance is
-    // a top-octave LIFT, which desktop has and dropping it is an audible divergence. 186 zones in
-    // the committed packs are like this, including the closed and pedal hi-hat at 10dB.
+    // a top-octave LIFT, which desktop has and dropping it is an audible divergence. 96 zones in
+    // the committed packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum,
+    // the closed and pedal hi-hat at 10dB. (Round 4 corrected this from "186", which had counted
+    // all 180 of program 27's BUILT zones — the very conflation this file warns about below.)
     const hat = zoneFilter({ filterFc: 13500, filterQ: 100 }, RATE);
     expect(hat).not.toBeNull();
     expect(hat.qDb).toBe(10);
@@ -52,6 +54,14 @@ describe('zoneFilter — the rule', () => {
     expect(zoneFilter(held, RATE).hz, 'full sustain never reaches the decay').toBeCloseTo(3619.05, 2);
     expect(zoneFilter({ ...held, modEnvSustain: 0.9 }, RATE),
            'a preset dropping sustain below 1 makes that 3s decay count').toBeNull();
+    // And the decay is SCALED by how far the envelope falls — TSF's decay*(1-sustain), not the
+    // whole decay. 0.1s of decay to a 0.9 sustain is 10ms of movement, which is static enough;
+    // charging the full 100ms would reject a zone desktop filters.
+    const shallow = { filterFc: 8080, filterModEnv: 2468, modEnvSustain: 0.9,
+                      modEnvSettle: 0.002, modEnvDecay: 0.1 };
+    expect(zoneFilter(shallow, RATE), 'decay*(1-sustain) = 10ms, inside the gate').not.toBeNull();
+    expect(zoneFilter({ ...shallow, modEnvSustain: 0.1 }, RATE),
+           'the same decay to a 0.1 sustain is 90ms — a real sweep').toBeNull();
   });
 
   it('is a no-op for a zone that carries no filter fields at all', () => {
@@ -381,5 +391,126 @@ describe('preset generators fold onto the instrument value', () => {
     // Resolved through a fast envelope it would land here; this zone's own delay disqualifies it.
     expect(zoneFilter({ ...z, modEnvSettle: 0.002 }, RATE).hz).toBeCloseTo(2063.05, 2);
     expect(zoneFilter({ ...z, modEnvSettle: 0.002 }, RATE).qDb).toBeCloseTo(2.5, 9);
+  });
+});
+
+// ── the graph: is the filter actually WIRED? ──────────────────────────────────
+//
+// Everything above tests the PARSER. Delete the biquad from webaudio.ts and every one of those
+// assertions stays green while the guitar goes back to +6dB — which is exactly how this bug
+// survived in the first place. So drive the real voice factory and look at the nodes it builds.
+//
+// This block was written once, deleted by a careless range-replace while editing the goldens, and
+// restored when review round 4 noticed that `createSf2Instrument` was exported "for the test" and
+// no test imported it. Its absence is silent by construction: that is the whole point of it.
+describe('createSf2Instrument wires the zone lowpass', () => {
+  let createSf2Instrument;
+  let created;
+
+  const param = (v) => ({
+    value: v, setValueAtTime() { return this; }, linearRampToValueAtTime() { return this; },
+    exponentialRampToValueAtTime() { return this; }, setTargetAtTime() { return this; },
+    cancelScheduledValues() { return this; }
+  });
+
+  function fakeContext() {
+    const mk = (kind) => {
+      const node = {
+        kind, connections: [],
+        connect(to) { this.connections.push(to); }, disconnect() {}, start() {}, stop() {},
+        gain: param(1), pan: param(0), frequency: param(350), Q: param(1),
+        playbackRate: param(1), detune: param(0),
+        type: kind === 'createBiquadFilter' ? 'lowpass' : 'peaking',
+        buffer: null, loop: false, loopStart: 0, loopEnd: 0, onended: null
+      };
+      created.push(node);
+      return node;
+    };
+    return new Proxy({
+      currentTime: 0, sampleRate: RATE, state: 'running', destination: mk('destination'),
+      createBuffer: () => ({ length: 8, duration: 0.1, sampleRate: RATE, numberOfChannels: 1,
+                             getChannelData: () => new Float32Array(8) })
+    }, { get: (t, k) => (k in t ? t[k] : (typeof k === 'string' && k.startsWith('create')
+                                          ? () => mk(k) : undefined)) });
+  }
+
+  /** A one-zone bank, so the graph under test has exactly one voice in it. */
+  function bankWith(zone) {
+    const preset = { bank: 0, program: 27, name: 'test', zones: [Object.assign({
+      keyLo: 0, keyHi: 127, velLo: 0, velHi: 127, sampleIndex: 0, rootKey: 60, tuneCents: 0,
+      attenuationDb: 0, pan: 0, loopMode: 0, exclusiveClass: 0,
+      attack: 0.001, hold: 0, decay: 0, sustain: 1, release: 0.3
+    }, zone)] };
+    return {
+      presets: [preset], samples: [{ start: 0, end: 8, startLoop: 0, endLoop: 8,
+                                     sampleRate: RATE, originalPitch: 60, pitchCorrection: 0 }],
+      pcm: new Int16Array(8), findPreset: () => preset, findDrumPreset: () => preset
+    };
+  }
+
+  const filters = () => created.filter(n => n.kind === 'createBiquadFilter');
+  // The FIRST gain the factory builds is the instrument's shared output; the voice's own gain is
+  // the one after it. Picking the wrong one silently turns the wiring assertions into noise.
+  const voiceGain = () => created.filter(n => n.kind === 'createGain').slice(-1)[0];
+
+  beforeAll(async () => {
+    const fs = await import('node:fs/promises');
+    const win = {};
+    win.window = win;
+    for (const m of ['timebase', 'fx', 'sf2', 'sfz', 'packcache', 'webaudio']) {
+      const src = await fs.readFile(new URL(`../dist/core/${m}.js`, import.meta.url), 'utf8');
+      new Function('window', 'module', src)(win, { exports: {} });
+    }
+    createSf2Instrument = win.GomidasWebAudio.createSf2Instrument;
+    expect(typeof createSf2Instrument, 'the factory must be exported to be testable').toBe('function');
+  });
+
+  it('inserts a lowpass at the zone cutoff, between the sample and its envelope', () => {
+    created = [];
+    const ctx = fakeContext();
+    createSf2Instrument(ctx, bankWith({ filterFc: 7935, filterQ: 30 }), 27, false, new Map())
+      .noteOn(60, 0.8, 0);
+    expect(filters().length, 'a filtered zone gets exactly one biquad').toBe(1);
+    const lp = filters()[0];
+    expect(lp.type).toBe('lowpass');
+    expect(lp.frequency.value).toBeCloseTo(800.022, 3);
+    expect(lp.Q.value).toBeCloseTo(3, 9);            // 30 centibels -> 3 dB, Web Audio's unit
+    // Order matters: the filter shapes the SOURCE and the envelope still owns the level. Wired
+    // after the gain instead, the release ramp would be smeared by the filter's own decay.
+    const src = created.find(n => n.kind === 'createBufferSource');
+    expect(src.connections).toContain(lp);
+    expect(lp.connections).toContain(voiceGain());
+    expect(src.connections).not.toContain(voiceGain());
+  });
+
+  it('builds no filter node at all for an open zone', () => {
+    created = [];
+    const ctx = fakeContext();
+    createSf2Instrument(ctx, bankWith({ filterFc: 13500, filterQ: 0 }), 27, false, new Map())
+      .noteOn(60, 0.8, 0);
+    expect(filters().length).toBe(0);
+    const src = created.find(n => n.kind === 'createBufferSource');
+    expect(src.connections, 'an unfiltered zone keeps its direct connection').toContain(voiceGain());
+  });
+
+  it('builds no filter for a pack zone that predates the fields', () => {
+    created = [];
+    const ctx = fakeContext();
+    const bank = bankWith({});
+    delete bank.presets[0].zones[0].filterFc;
+    delete bank.presets[0].zones[0].filterQ;
+    createSf2Instrument(ctx, bank, 27, false, new Map()).noteOn(60, 0.8, 0);
+    expect(filters().length).toBe(0);
+  });
+
+  it('applies the resonance for a zone that is open but resonant', () => {
+    // The round-2 case, end to end: 13500 with Q is a top-octave lift, and it must reach the graph.
+    created = [];
+    const ctx = fakeContext();
+    createSf2Instrument(ctx, bankWith({ filterFc: 13500, filterQ: 100 }), 27, false, new Map())
+      .noteOn(60, 0.8, 0);
+    expect(filters().length).toBe(1);
+    expect(filters()[0].Q.value).toBe(10);
+    expect(filters()[0].frequency.value).toBeCloseTo(19912.62, 2);
   });
 });

@@ -640,18 +640,24 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   it had no filter at all before. `zoneFilter` therefore resolves the **steady state**
   (`fc + modEnvSustain x modEnvToFilterFc`) and applies it **only when the envelope settles within
   20ms**; above that it returns null and the zone plays unfiltered until GMD-83. The measured
-  settle times leave nothing in the gap: FluidR3 prog 30/35 **2ms** (so the static value is exact),
-  prog 38 **252ms**, the drum kit up to **9.5s**, sonivox a median **1.03s**. That last one is why
-  the fallback bank barely moves — 28 of its 653 zones qualify, where gen 8 alone would have
-  filtered 147 and the steady state 295, turning every piano dark from its first sample.
+  settle times: FluidR3 prog 30/35 **2ms** (so the static value is exact), prog 38 **203ms**, the
+  drum kit up to **9.5s**, sonivox a median **1.45s**. That last one is why the fallback bank barely
+  moves — 28 of its 653 zones qualify, where gen 8 alone would have filtered 147 and the steady
+  state 295, turning every piano dark from its first sample. ⚠️ **The 20ms boundary is a judgement
+  call, not a gap in the data** — an earlier version of this note claimed the two cases separate
+  cleanly and they do not. sonivox's minimum settle is **17.0ms**, 3ms inside the threshold, with
+  **15 more between 20 and 200ms**. Measure what moves before changing the constant.
+- ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
+  bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we
+  apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed program.
 - Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 — applied
   where TSF applies them: gen 8 clamps BEFORE the envelope is added, and the resolved sum is tested
   unclamped, because TSF does not clamp it either. Be precise about what the low bound buys:
   1500 cents is **19.4Hz**, so it is parity, not a guard against silence.
 - ⚠️ **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
-  LIFT, not a cut, so skipping it throws away something desktop has. 186 zones in the committed
-  packs are like this, including **closed and pedal hi-hat at 10 centibels-per-dB**; restoring them
-  measured **+0.86 / +0.81 dB** of hat peak. Flat zones at 13500 are still skipped: there the filter
+  LIFT, not a cut, so skipping it throws away something desktop has. **96** zones in the committed
+  packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum, **closed and pedal
+  hi-hat at 10 centibels-per-dB**; restoring them measured **+0.86 / +0.81 dB** of hat peak. Flat zones at 13500 are still skipped: there the filter
   is a ~2dB shelf between 19.9kHz and Nyquist, and skipping saves a biquad on 40% of every score's
   voices. That, and the settle rule, are the only two deliberate divergences from TSF.
 - Coverage: **764 of 1275** packed melodic zones BUILD a filter and **674 of those actually
@@ -697,8 +703,11 @@ Measured: cold visit 3 misses / 2.2MB; **warm visit 3 hits / 0 bytes**, with onl
 the wire. The 5.4MB drum blob round-trips exactly, 8ms warm.
 - **The JSON heads are deliberately NOT cached.** The manifest is 517KB raw but 9.1KB brotli, and
   it is what declares each blob's `blobBytes` — so reading every blob back against a
-  freshly-fetched head gives invalidation for free. A re-extract invalidates automatically; there
-  is no version to forget to bump. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
+  freshly-fetched head gives invalidation for free. A re-extract of the SAMPLES invalidates
+  automatically. ⚠️ **That stopped being the whole story with GMD-80**: a pack can gain metadata the
+  player reads while every `.bin` stays byte-identical, and then `blobBytes` sees nothing. That case
+  is covered by the pack's `version` against `webaudio.ts PACK_VERSION` — a number that DOES have to
+  be bumped by hand. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
 - ⚠️ **`indexedDB.open()` can hang with NO event** — not success, not error, not blocked — when a
   `deleteDatabase` from another tab is pending. It froze the renderer because every `fetchBuffer`
   awaited forever. Hence the 3s open / 4s read timeouts. **Nothing on this path may stall a pack

@@ -500,9 +500,14 @@ function centsToHertz(cents: number): number {
  *
  *   FluidR3 prog 30 Distortion   2ms   870Hz + 2468c at sustain 1.00 -> 3619Hz   static: EXACT
  *   FluidR3 prog 35 Fretless     2ms                                             static: EXACT
- *   FluidR3 prog 38 SynthBass1 252ms   120Hz + 6723c at sustain 0.19 ->  251Hz   a real sweep
+ *   FluidR3 prog 38 SynthBass1 203ms   120Hz + 6723c at sustain 0.19 ->  251Hz   a real sweep
  *   FluidR3 drum kit          <=9.5s   14 zones                                  a real sweep
- *   sonivox bank 0        median 1.0s  268 zones (pianos, pads, most of the bank) a real sweep
+ *   sonivox bank 0       median 1.45s  268 zones (pianos, pads, most of the bank) a real sweep
+ *
+ * ⚠️ Rejecting a sweep means the zone plays OPEN, and for Synth Bass 1 that is further from the
+ * bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and
+ * we apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed
+ * program — the price of not freezing a sweep at an arbitrary point, and what GMD-83 settles.
  *
  * Above the threshold we return NULL — the zone plays unfiltered, exactly as it did before any of
  * this, and GMD-83 is what earns it a moving cutoff. Guessing a point on a one-second sweep would
@@ -536,8 +541,15 @@ const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960;
 
 /**
  * How fast a modulation envelope must reach its sustain for one static biquad to stand in for it.
- * 20ms is an order of magnitude above the 2ms cluster this admits and an order below the 252ms
- * one it rejects — the gap in the measured data is that wide, so the exact number is not delicate.
+ *
+ * 20ms sits an order of magnitude above the 2ms cluster it admits (FluidR3's guitars) and an order
+ * below the 252ms one it rejects (Synth Bass 1). ⚠️ But do NOT read that as a clean separation —
+ * an earlier version of this comment claimed one and review round 4 disproved it. Across sonivox's
+ * 268 modulated zones the settle times are continuous: **minimum 17.0ms**, three milliseconds
+ * inside this threshold, and **15 more between 20ms and 200ms**. Moving the constant to 0.2 would
+ * flip those 15 from "plays open" to "plays at its settled cutoff". The median is 1.45s, so the
+ * bulk is nowhere near the boundary — but the boundary itself is a real judgement call, not a gap
+ * in the data, and anyone changing it should measure what moves.
  */
 const MODENV_STATIC_S = 0.02;
 
@@ -552,11 +564,13 @@ function zoneFilter(zone: { filterFc?: number; filterQ?: number; filterModEnv?: 
   const modEnv = zone.filterModEnv || 0;
   let cents = base;
   if (modEnv) {
-    // The decay counts only if the envelope actually decays, and `modEnvSustain` may have been
-    // moved by a preset offset AFTER modEnvSettle was computed — hence the two fields.
+    // The decay is scaled by how far the envelope actually falls — TSF's non-amp branch is
+    // `decay * (1 - sustain)`, not the whole decay (tsf.h, tsf_voice_envelope_nextsegment). At full
+    // sustain the term vanishes on its own. `modEnvSustain` may also have been moved by a preset
+    // offset AFTER modEnvSettle was computed, which is why the two are stored apart.
     const sustain = zone.modEnvSustain != null ? zone.modEnvSustain : 1;
     const settle = (zone.modEnvSettle != null ? zone.modEnvSettle : Infinity)
-                 + (sustain < 1 ? (zone.modEnvDecay || 0) : 0);
+                 + (1 - sustain) * (zone.modEnvDecay || 0);
     // Written so that a MISSING settle time fails the test rather than passing it.
     if (!(settle <= MODENV_STATIC_S)) return null;
     cents = base + sustain * modEnv;
