@@ -1144,6 +1144,13 @@ function createWebAudioBackend(BackendLib: any): any {
                        ' after a reload — the deployed pack predates this build');
         }
         return fresh;
+      }, (e: any) => {
+        // The forced-network refetch failed — offline, or a flaky host. Keep the stale head we
+        // already have: an out-of-date pack still plays FluidR3, while rejecting here drops all
+        // the way to sonivox's 20ms kick. Never let a cache-freshness check cost the good samples.
+        console.warn('[Gomidas] ' + what + ' refetch failed, using the cached v' + head.version +
+                     ' pack:', e);
+        return head;
       });
     });
   }

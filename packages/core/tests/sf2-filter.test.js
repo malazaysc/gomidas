@@ -404,6 +404,17 @@ describe('preset generators fold onto the instrument value', () => {
     expect(down.filterFc).toBe(1500);
   });
 
+  it('pins an unset envelope segment to zero, as TSF does', () => {
+    // An UNSET generator defaults to -12000 timecents, which converts to 0.977ms rather than 0.
+    // TSF pins anything below -11950 to zero (tsf_region_envtosecs: "timecents don't get to zero,
+    // and our EG is happier with zero values"). Summing four defaults otherwise accrues ~3.9ms of
+    // envelope that does not exist — a fifth of the 20ms budget zoneFilter spends. The fixture's
+    // instrument sets delayModEnv and nothing else, so settle must be the delay ALONE.
+    const z = zoneAt(100);
+    expect(z.modEnvSettle, 'exactly the 1s delay, no phantom attack or hold').toBe(1);
+    expect(z.modEnvDecay, 'an unset decay is zero seconds, not 0.977ms').toBe(0);
+  });
+
   it('counts delayModEnv, which is a whole second the cutoff has not moved yet', () => {
     // The gap review round 2 found in the SETTLE COMPOSITION, which the zoneFilter-level tests
     // above cannot see because they hand it a settle time. delayModEnv 0 timecents is 1 second;
@@ -411,7 +422,7 @@ describe('preset generators fold onto the instrument value', () => {
     // cutoff it will not reach for another second. sonivox has 61 zones carrying gen 25.
     const z = zoneAt(100);
     expect(z.filterModEnv).toBe(2000);
-    expect(z.modEnvSettle, 'the 1s delay must be in here').toBeCloseTo(1.00195, 4);
+    expect(z.modEnvSettle, 'the 1s delay must be in here').toBe(1);
     expect(zoneFilter(z, RATE), 'and it must disqualify the zone').toBeNull();
   });
 

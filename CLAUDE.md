@@ -645,7 +645,7 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   moves — 28 of its 653 zones qualify, where gen 8 alone would have filtered 147 and the steady
   state 295, turning every piano dark from its first sample. ⚠️ **The 20ms boundary is a judgement
   call, not a gap in the data** — an earlier version of this note claimed the two cases separate
-  cleanly and they do not. sonivox's minimum settle is **17.0ms**, 3ms inside the threshold, with
+  cleanly and they do not. sonivox's minimum settle is **14.1ms**, 6ms inside the threshold, with
   **15 more between 20 and 200ms**. Measure what moves before changing the constant.
 - ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
   bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we

@@ -119,6 +119,21 @@ function timecentsToSeconds(tc: number): number {
   return Math.pow(2, tc / 1200);
 }
 
+/**
+ * The same conversion, but with TSF's floor: anything below -11950 timecents is ZERO, not 0.977ms
+ * ("timecents don't get to zero, and our EG is happier with zero values" — tsf_region_envtosecs).
+ * It matters because an UNSET generator defaults to -12000, so summing four of them for the
+ * modulation-envelope settle time accrues ~3.9ms of envelope that does not exist — a fifth of the
+ * 20ms budget zoneFilter decides on.
+ *
+ * Deliberately used ONLY for the mod-env terms this ticket introduced. The volume envelope's
+ * attack/hold/decay/release predate GMD-80 and are floored downstream by the player; moving them
+ * would change how every note sounds, which is a separate change with its own measurements.
+ */
+function envSeconds(tc: number): number {
+  return tc < -11950 ? 0 : timecentsToSeconds(tc);
+}
+
 function parseSf2(buffer: ArrayBuffer): {
   presets: Sf2Preset[];
   samples: Sf2Sample[];
@@ -238,10 +253,10 @@ function parseSf2(buffer: ArrayBuffer): {
         filterModEnv: clampModEnv(num(GEN.modEnvToFilterFc, 0)),
         // Same 0.1%-decrease encoding as sustainVolEnv below.
         modEnvSustain: Math.max(0, Math.min(1, 1 - num(GEN.sustainModEnv, 0) / 1000)),
-        modEnvSettle: timecentsToSeconds(num(GEN.delayModEnv, -12000))
-                    + timecentsToSeconds(num(GEN.attackModEnv, -12000))
-                    + timecentsToSeconds(num(GEN.holdModEnv, -12000)),
-        modEnvDecay: timecentsToSeconds(num(GEN.decayModEnv, -12000)),
+        modEnvSettle: envSeconds(num(GEN.delayModEnv, -12000))
+                    + envSeconds(num(GEN.attackModEnv, -12000))
+                    + envSeconds(num(GEN.holdModEnv, -12000)),
+        modEnvDecay: envSeconds(num(GEN.decayModEnv, -12000)),
         pan: num(GEN.pan, 0) / 1000,                          // -500..500 -> -0.5..0.5
         loopMode: num(GEN.sampleModes, 0),
         exclusiveClass: num(GEN.exclusiveClass, 0),
@@ -554,7 +569,7 @@ function centsToHertz(cents: number): number {
  * 20ms sits an order of magnitude above the 2ms cluster it admits (FluidR3's guitars) and an order
  * below the 252ms one it rejects (Synth Bass 1). ⚠️ But do NOT read that as a clean separation —
  * an earlier version of this comment claimed one and review round 4 disproved it. Across sonivox's
- * 268 modulated zones the settle times are continuous: **minimum 17.0ms**, three milliseconds
+ * 268 modulated zones the settle times are continuous: **minimum 14.1ms**, six milliseconds
  * inside this threshold, and **15 more between 20ms and 200ms**. Moving the constant to 0.2 would
  * flip those 15 from "plays open" to "plays at its settled cutoff". The median is 1.45s, so the
  * bulk is nowhere near the boundary — but the boundary itself is a real judgement call, not a gap
