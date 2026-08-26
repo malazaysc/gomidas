@@ -105,6 +105,15 @@ interface Sf2Zone {
 
 interface Sf2Preset { bank: number; program: number; name: string; zones: Sf2Zone[] }
 
+/**
+ * TSF's generator limits for the filter gens (GEN_INT_LIMITFC / LIMITQ / LIMIT12K), applied at
+ * EVERY merge as TSF applies them — instrument zone first, then again after the preset offset.
+ */
+const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960, MOD_ENV_MAX = 12000;
+const clampFc = (v: number) => Math.max(FILTER_FC_MIN, Math.min(FILTER_FC_OPEN, v));
+const clampQ = (v: number) => Math.max(0, Math.min(FILTER_Q_MAX, v));
+const clampModEnv = (v: number) => Math.max(-MOD_ENV_MAX, Math.min(MOD_ENV_MAX, v));
+
 /** timecents -> seconds (SF2's logarithmic time unit). -12000 tc = 1ms, 0 tc = 1s. */
 function timecentsToSeconds(tc: number): number {
   return Math.pow(2, tc / 1200);
@@ -220,9 +229,13 @@ function parseSf2(buffer: ArrayBuffer): {
         rootKey: merged[GEN.overridingRootKey] != null ? num(GEN.overridingRootKey, 60) : null,
         tuneCents: num(GEN.coarseTune, 0) * 100 + num(GEN.fineTune, 0),
         attenuationDb: num(GEN.initialAttenuation, 0) / 10,   // stored in centibels
-        filterFc: num(GEN.initialFilterFc, 13500),
-        filterQ: num(GEN.initialFilterQ, 0),
-        filterModEnv: num(GEN.modEnvToFilterFc, 0),
+        // Clamped HERE as well as after the preset offset, because TSF clamps at every merge
+        // (tsf_region_operator, GEN_INT_LIMIT*). Summing raw and clamping once at the end is not
+        // the same function: an instrument value of 16000 with a preset offset of -3000 resolves
+        // to 10500 cents on desktop and 13000 here — two octaves apart.
+        filterFc: clampFc(num(GEN.initialFilterFc, 13500)),
+        filterQ: clampQ(num(GEN.initialFilterQ, 0)),
+        filterModEnv: clampModEnv(num(GEN.modEnvToFilterFc, 0)),
         // Same 0.1%-decrease encoding as sustainVolEnv below.
         modEnvSustain: Math.max(0, Math.min(1, 1 - num(GEN.sustainModEnv, 0) / 1000)),
         modEnvSettle: timecentsToSeconds(num(GEN.delayModEnv, -12000))
@@ -288,11 +301,10 @@ function parseSf2(buffer: ArrayBuffer): {
         if (keyLo > keyHi || velLo > velHi) continue;
         zones.push({ ...z, keyLo, keyHi, velLo, velHi,
                      attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune,
-                     filterFc: z.filterFc + pFc, filterQ: z.filterQ + pQ,
+                     filterFc: clampFc(z.filterFc + pFc), filterQ: clampQ(z.filterQ + pQ),
                      // Clamped like gens 8 and 9 beside it — TSF puts gen 11 under
-                     // GEN_INT_LIMIT12K on the same merge, and an unclamped sum would resolve a
-                     // different cutoff on web than on desktop.
-                     filterModEnv: Math.max(-12000, Math.min(12000, z.filterModEnv + pMe)),
+                     // GEN_INT_LIMIT12K on the same merge.
+                     filterModEnv: clampModEnv(z.filterModEnv + pMe),
                      // Preset-level modEnv TIMING offsets are not folded — the same gap GMD-82
                      // tracks for the volume envelope. No bank we ship uses them.
                      modEnvSustain: Math.max(0, Math.min(1, z.modEnvSustain - pMeSus / 1000)) });
@@ -516,13 +528,13 @@ function centsToHertz(cents: number): number {
  *
  * The LFO term is left out on purpose: it oscillates about zero, so its steady state IS zero.
  *
- * Clamped to TSF's own generator limits, applied at the same point TSF applies them: gen 8 merges
- * into [1500, 13500] BEFORE the envelope is added, and the resolved sum is then tested unclamped —
- * TSF does not clamp it either, so this is parity, not a safety net. Be precise about what the low
- * bound buys: FluidR3's "Chiffer Lead" merges to 1139 cents and 1500 is 19.4Hz, so both are
- * sub-audible and the clamp only keeps the two engines agreeing. A zone whose ENVELOPE drags the
- * resolved cutoff below 1500 would still build a sub-audible biquad, exactly as it does on desktop.
- * The lowest resolved cutoff in either committed pack today is 388Hz.
+ * Clamped to TSF's generator limits at every point TSF clamps: gens 8/9/11 are bounded on the
+ * instrument merge AND again after the preset offset (see clampFc/clampQ/clampModEnv), while the
+ * ENVELOPE-resolved sum below is left unclamped because TSF leaves it unclamped too. Clamping once
+ * at the end instead would be a different function — an instrument fc of 16000 with a preset offset
+ * of -3000 resolves two octaves apart. Be precise about what the low bound buys, though: 1500 cents
+ * is 19.4Hz, so it is parity, not a guard against silence, and the lowest resolved cutoff in either
+ * committed pack today is 388Hz.
  *
  * DELIBERATE DIVERGENCE, the only one, and narrower than it first read: TSF's test is
  * `fres <= 13500`, so at EXACTLY the default it still builds a 19913Hz lowpass. We skip that —
@@ -536,9 +548,6 @@ function centsToHertz(cents: number): number {
  * carries no filter fields, and must keep playing exactly as it did rather than silently
  * filtering at 0Hz.
  */
-/** TSF's generator limits for gens 8 and 9 (GEN_INT_LIMITFC / GEN_INT_LIMITQ). */
-const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960;
-
 /**
  * How fast a modulation envelope must reach its sustain for one static biquad to stand in for it.
  *
@@ -557,10 +566,11 @@ function zoneFilter(zone: { filterFc?: number; filterQ?: number; filterModEnv?: 
                             modEnvSustain?: number; modEnvSettle?: number; modEnvDecay?: number },
                     sampleRate: number): { hz: number; qDb: number } | null {
   if (zone.filterFc == null) return null;                       // old pack: no filter data at all
-  const base = Math.max(FILTER_FC_MIN, Math.min(FILTER_FC_OPEN, zone.filterFc));
+  // Re-clamped because a zone can also arrive hand-built or from a pack, not only from parseSf2.
+  const base = clampFc(zone.filterFc);
   // Web Audio's lowpass Q is a resonance in DECIBELS (not the cookbook's dimensionless Q), which
   // is exactly SF2's centibels / 10 — so this lands in the destination unit with no conversion.
-  const q = Math.max(0, Math.min(FILTER_Q_MAX, zone.filterQ || 0));
+  const q = clampQ(zone.filterQ || 0);
   const modEnv = zone.filterModEnv || 0;
   let cents = base;
   if (modEnv) {

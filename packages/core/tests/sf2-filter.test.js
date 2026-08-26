@@ -23,11 +23,14 @@ describe('zoneFilter — the rule', () => {
     // build a filter there; we skip it, because at Q=0 the only thing it does is a ~2dB shelf
     // between 19.9kHz and Nyquist, and it would cost a biquad on 40% of every score's voices.
     expect(zoneFilter({ filterFc: 13500, filterQ: 0 }, RATE)).toBeNull();
-    expect(zoneFilter({ filterFc: 14400 }, RATE)).toBeNull();   // one drum zone really is above it
+    // 14400 clamps to 13500 and is then skipped as flat. The committed drum pack used to carry
+    // exactly one such zone; since the per-merge clamp landed, parseSf2 bounds it and the
+    // extractor omits it — so this is now a pure unit case, not a golden.
+    expect(zoneFilter({ filterFc: 14400 }, RATE)).toBeNull();
     // A RESONANT zone at 13500 is a different thing and review round 2 caught it: the resonance is
     // a top-octave LIFT, which desktop has and dropping it is an audible divergence. 96 zones in
     // the committed packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum,
-    // the closed and pedal hi-hat at 10dB. (Round 4 corrected this from "186", which had counted
+    // the closed, pedal AND open hi-hat at 10dB. (Round 4 corrected this from "186", which had counted
     // all 180 of program 27's BUILT zones — the very conflation this file warns about below.)
     const hat = zoneFilter({ filterFc: 13500, filterQ: 100 }, RATE);
     expect(hat).not.toBeNull();
@@ -169,6 +172,18 @@ const melodicPath = fileURLToPath(new URL('../../../assets/instruments-gm/gm-mel
 const drumPath = fileURLToPath(new URL('../../../assets/drumkits/gm-standard.json', import.meta.url));
 
 describe('the committed packs carry the filter', () => {
+  // Loaded from the built runtime so the version assertion below has something real to compare to.
+  let runtimePackVersion;
+  beforeAll(async () => {
+    const fs = await import('node:fs/promises');
+    const win = {}; win.window = win;
+    for (const m of ['timebase', 'fx', 'sf2', 'sfz', 'packcache', 'webaudio']) {
+      const src = await fs.readFile(new URL(`../dist/core/${m}.js`, import.meta.url), 'utf8');
+      new Function('window', 'module', src)(win, { exports: {} });
+    }
+    runtimePackVersion = win.GomidasWebAudio.PACK_VERSION;
+  });
+
   // Not skipIf: both files are committed. A suite that vanishes when an asset moves reports
   // success having checked nothing — see the drum pack tests.
   it('has both packs to check', () => {
@@ -176,14 +191,19 @@ describe('the committed packs carry the filter', () => {
     expect(existsSync(drumPath)).toBe(true);
   });
 
-  it('declares a schema version the player will accept', () => {
+  it('declares the schema version the RUNTIME expects, not a literal repeated here', () => {
     // GMD-80 added six fields whose ABSENCE is meaningful ("old pack, do not filter"), and the
     // packs are served max-age=2592000 while the JS is content-hashed — so a returning visitor
     // pairs new JS with a stale manifest and silently gets the +6dB guitars back. The version is
-    // what lets webaudio.ts see that and refetch. Pinned here so a re-extract cannot drop it.
-    const PACK_VERSION = 2;
-    expect(JSON.parse(readFileSync(melodicPath, 'utf8')).version).toBe(PACK_VERSION);
-    expect(JSON.parse(readFileSync(drumPath, 'utf8')).version).toBe(PACK_VERSION);
+    // what lets webaudio.ts see that and refetch.
+    //
+    // Asserted against webaudio's own PACK_VERSION, not against a `2` written here: two literals
+    // agreeing proves nothing. Bump the runtime, forget to commit the regenerated packs, and every
+    // production visitor burns a second cache-bypassing fetch of the 517KB manifest on every
+    // session — while a test comparing 2 to 2 stays green. Assert the positive (GMD-68).
+    expect(runtimePackVersion, 'webaudio must export PACK_VERSION').toBeTypeOf('number');
+    expect(JSON.parse(readFileSync(melodicPath, 'utf8')).version).toBe(runtimePackVersion);
+    expect(JSON.parse(readFileSync(drumPath, 'utf8')).version).toBe(runtimePackVersion);
   });
 
   const melodic = () => JSON.parse(readFileSync(melodicPath, 'utf8'));
@@ -258,7 +278,8 @@ describe('the committed packs carry the filter', () => {
     const dz = drums().kits[0].zones;
     expect(dz.length).toBe(149);
     expect(dz.filter(built).length).toBe(62);
-    // 6 of those are the resonant-at-13500 case: closed and pedal hi-hat, 10dB of top-octave lift.
+    // 6 of those are the resonant-at-13500 case: closed, pedal and open hi-hat (keys 42/44/46,
+    // a stereo pair each), 10dB of top-octave lift.
     expect(dz.filter(z => z.filterFc === 13500 && built(z)).length).toBe(6);
   });
 });
@@ -278,7 +299,10 @@ describe('the committed packs carry the filter', () => {
 describe('preset generators fold onto the instrument value', () => {
   const enc = (name) => { const b = new Uint8Array(20); for (let i = 0; i < name.length && i < 19; i++) b[i] = name.charCodeAt(i); return b; };
 
-  function buildSf2() {
+  function buildSf2(opts) {
+    const instFc = opts && opts.instFc != null ? opts.instFc : 10361;
+    const instQ = opts && opts.instQ != null ? opts.instQ : 40;
+    const presetFc = opts && opts.presetFc != null ? opts.presetFc : -2786;
     const parts = [];
     const chunk = (id, body) => {
       const head = new Uint8Array(8);
@@ -309,7 +333,7 @@ describe('preset generators fold onto the instrument value', () => {
     ]);
     const pgen = concat([
       gen(44, 0, 64),        // velRange 0-64: the soft layer, and the one carrying offsets
-      gen(8, -2786),         // initialFilterFc  -2786 cents
+      gen(8, presetFc),      // initialFilterFc  -2786 cents by default
       gen(48, 20),           // initialAttenuation +2.0 dB
       gen(9, -15),           // initialFilterQ   -1.5 dB
       gen(41, 0),            // instrument (terminal generator)
@@ -326,8 +350,8 @@ describe('preset generators fold onto the instrument value', () => {
     const ibag = concat([rec(4, (v) => v.setUint16(0, 0, true)), rec(4, (v) => v.setUint16(0, 8, true))]);
     const igen = concat([
       gen(43, 0, 127),       // keyRange
-      gen(8, 10361),         // initialFilterFc: the zone's ABSOLUTE cutoff (3248 Hz)
-      gen(9, 40),            // initialFilterQ 4.0 dB
+      gen(8, instFc),        // initialFilterFc: the zone's ABSOLUTE cutoff (3248 Hz by default)
+      gen(9, instQ),         // initialFilterQ 4.0 dB by default
       gen(48, 50),           // initialAttenuation 5.0 dB
       gen(51, 1),            // coarseTune +1 semitone
       gen(11, 2000),         // modEnvToFilterFc: the envelope moves the cutoff
@@ -350,13 +374,35 @@ describe('preset generators fold onto the instrument value', () => {
     return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
   }
 
-  const zoneAt = (vel) => {
-    const bank = parseSf2(buildSf2());
+  const zoneAt = (vel, opts) => {
+    const bank = parseSf2(buildSf2(opts));
     const p = bank.findPreset(0, 24);
     const zs = p.zones.filter(z => vel >= z.velLo && vel <= z.velHi);
     expect(zs.length, 'the fixture must resolve to exactly one zone at velocity ' + vel).toBe(1);
     return zs[0];
   };
+
+  it('clamps at EVERY merge, as TSF does — not once at the end', () => {
+    // TSF bounds gen 8 into [1500, 13500] on the instrument merge AND again after the preset
+    // offset (tsf_region_operator / GEN_INT_LIMITFC). Summing raw and clamping once is a different
+    // function whenever the instrument value is itself out of range:
+    //
+    //   per-merge (TSF, and us):  clamp(16000) = 13500, then 13500 - 2786 = 10714 cents ~ 4.2kHz
+    //   clamp-once:               16000 - 2786 = 13214 cents ~ 14.5kHz
+    //
+    // Nearly two octaves apart. Measured on FluidR3, 64 preset zones diverge under clamp-once
+    // (worst 8 cents, none of them packed) — small today, unbounded in principle, free to fix.
+    const z = zoneAt(30, { instFc: 16000, instQ: 1200 });
+    expect(z.filterFc, 'clamp to 13500 BEFORE the -2786 preset offset').toBe(10714);
+    expect(z.filterQ, 'clamp to 960 before the -15 offset').toBe(945);
+    // And the SECOND clamp is real too: a preset offset that pushes the sum back out of range must
+    // be bounded again, or the extractor writes 16500 into the pack. zoneFilter re-clamps on read,
+    // so this is only visible on the parsed field — which is exactly what gets committed.
+    const up = zoneAt(30, { instFc: 13500, presetFc: 3000 });
+    expect(up.filterFc, 'the sum is clamped as well as each input').toBe(13500);
+    const down = zoneAt(30, { instFc: 1500, presetFc: -3000 });
+    expect(down.filterFc).toBe(1500);
+  });
 
   it('counts delayModEnv, which is a whole second the cutoff has not moved yet', () => {
     // The gap review round 2 found in the SETTLE COMPOSITION, which the zoneFilter-level tests

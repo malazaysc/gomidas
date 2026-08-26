@@ -1117,8 +1117,7 @@
      "hold": 0.13806,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 1.29984,
-     "filterFc": 14400
+     "release": 1.29984
     },
     {
      "keyLo": 85,

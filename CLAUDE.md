@@ -650,14 +650,18 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
 - ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
   bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we
   apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed program.
-- Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 — applied
-  where TSF applies them: gen 8 clamps BEFORE the envelope is added, and the resolved sum is tested
-  unclamped, because TSF does not clamp it either. Be precise about what the low bound buys:
-  1500 cents is **19.4Hz**, so it is parity, not a guard against silence.
+- ⚠️ Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 — at
+  **every merge TSF clamps at**: the instrument zone, and again after the preset offset. Clamping
+  once at the end is a *different function* whenever the instrument value is itself out of range
+  (fc 16000 with a −3000 preset offset resolves 10500 vs 13000 cents — two octaves). The
+  envelope-resolved sum is then left unclamped, because TSF leaves it unclamped too. Be precise
+  about what the low bound buys: 1500 cents is **19.4Hz**, so it is parity, not a guard against
+  silence.
 - ⚠️ **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
   LIFT, not a cut, so skipping it throws away something desktop has. **96** zones in the committed
   packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum, **closed and pedal
-  hi-hat at 10 centibels-per-dB**; restoring them measured **+0.86 / +0.81 dB** of hat peak. Flat zones at 13500 are still skipped: there the filter
+  hi-hat at 10 centibels-per-dB** (keys 42/44/46, a stereo pair each — the OPEN hat is in the set
+  too); restoring them measured **+0.86 / +0.81 / +0.66 dB** of hat peak. Flat zones at 13500 are still skipped: there the filter
   is a ~2dB shelf between 19.9kHz and Nyquist, and skipping saves a biquad on 40% of every score's
   voices. That, and the settle rule, are the only two deliberate divergences from TSF.
 - Coverage: **764 of 1275** packed melodic zones BUILD a filter and **674 of those actually

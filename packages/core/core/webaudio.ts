@@ -903,6 +903,18 @@ interface ChannelStrip {
   percussion: boolean;
 }
 
+/**
+ * The pack schema this runtime expects. Bumped whenever a pack gains a field the player READS,
+ * because the two are cached on completely different terms: the JS is content-hashed and
+ * immutable, while `/drumkits/*` and `/instruments-gm/*` are served `max-age=2592000` and fetched
+ * by name (apps/web/build.mjs). GMD-80 is the case that makes this load-bearing — it added
+ * `filterFc`, whose ABSENCE legitimately means "old pack, do not filter", so a returning visitor
+ * pairing new JS with a 30-day-cached manifest would get two dry guitar layers at +6dB again,
+ * silently, still logging "FluidR3 pack". The `.bin`s are byte-identical, so GMD-58's blobBytes
+ * check cannot see it either.
+ */
+const PACK_VERSION = 2;
+
 function createWebAudioBackend(BackendLib: any): any {
   const TB = typeof GomidasTimebase !== 'undefined' ? GomidasTimebase : (window as any).GomidasTimebase;
   const bus = BackendLib.createEventBus();
@@ -1109,26 +1121,6 @@ function createWebAudioBackend(BackendLib: any): any {
         }));
   }
 
-  /**
-   * The real drum kit (GMD-50): FluidR3's bank 128, extracted to assets/drumkits/ by
-   * tools/extract-sf2-pack.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
-   * it is the fallback, not the plan.
-   *
-   * Fetched lazily on the first percussion note — 5.4MB must not land on someone who opened a
-   * guitar tab — and, like the GM bank, it swaps itself in by dropping the instruments built
-   * before it arrived. Until then drums play from sonivox rather than silence.
-   */
-  /**
-   * The pack schema this runtime expects. Bumped whenever a pack gains a field the player READS,
-   * because the two are cached on completely different terms: the JS is content-hashed and
-   * immutable, while `/drumkits/*` and `/instruments-gm/*` are served `max-age=2592000` and fetched
-   * by name (apps/web/build.mjs). GMD-80 is the case that makes this load-bearing — it added
-   * `filterFc`, whose ABSENCE legitimately means "old pack, do not filter", so a returning visitor
-   * pairing new JS with a 30-day-cached manifest would get two dry guitar layers at +6dB again,
-   * silently, still logging "FluidR3 pack". The `.bin`s are byte-identical, so GMD-58's blobBytes
-   * check cannot see it either.
-   */
-  const PACK_VERSION = 2;
 
   /**
    * Fetch a pack head, and if it predates what this build reads, go around the HTTP cache once.
@@ -1156,6 +1148,15 @@ function createWebAudioBackend(BackendLib: any): any {
     });
   }
 
+  /**
+   * The real drum kit (GMD-50): FluidR3's bank 128, extracted to assets/drumkits/ by
+   * tools/extract-sf2-pack.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
+   * it is the fallback, not the plan.
+   *
+   * Fetched lazily on the first percussion note — 5.4MB must not land on someone who opened a
+   * guitar tab — and, like the GM bank, it swaps itself in by dropping the instruments built
+   * before it arrived. Until then drums play from sonivox rather than silence.
+   */
   const DRUMKIT_URL = 'drumkits/gm-standard';
   let drumKit: any = null;
   let drumKitLoading: Promise<any> | null = null;
@@ -1878,7 +1879,11 @@ function createWebAudioBackend(BackendLib: any): any {
   // it builds is only observable from outside. tests/sf2-filter.test.js drives it with a fake
   // context to prove the zone's lowpass is actually WIRED — the parser tests alone would stay
   // green if the biquad were deleted from this file.
-  const api = { createWebAudioBackend, createToneInstrument, createSf2Instrument,
+  // PACK_VERSION is exported so a test can assert the COMMITTED PACKS against the runtime's own
+  // number rather than against a literal it repeats. Two literals agreeing proves nothing: bump
+  // the runtime, forget to commit the regenerated packs, and every visitor burns a second
+  // cache-bypassing fetch of a 517KB manifest on every session while the suite stays green.
+  const api = { createWebAudioBackend, createToneInstrument, createSf2Instrument, PACK_VERSION,
                 envelopeLevelAt, voicesToRelease,
                 ceilingCurve, HEADROOM_GAIN, HEADROOM_DB, CEILING_KNEE, CEILING_RANGE,
                 LOOKAHEAD_S, TICK_INTERVAL_MS };
