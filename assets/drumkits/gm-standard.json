@@ -1,6 +1,6 @@
 {
  "format": "gomidas-drumkit",
- "version": 1,
+ "version": 2,
  "source": "FluidR3_GM.sf2",
  "codec": "flac",
  "mime": "audio/flac",

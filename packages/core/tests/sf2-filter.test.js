@@ -166,6 +166,16 @@ describe('the committed packs carry the filter', () => {
     expect(existsSync(drumPath)).toBe(true);
   });
 
+  it('declares a schema version the player will accept', () => {
+    // GMD-80 added six fields whose ABSENCE is meaningful ("old pack, do not filter"), and the
+    // packs are served max-age=2592000 while the JS is content-hashed — so a returning visitor
+    // pairs new JS with a stale manifest and silently gets the +6dB guitars back. The version is
+    // what lets webaudio.ts see that and refetch. Pinned here so a re-extract cannot drop it.
+    const PACK_VERSION = 2;
+    expect(JSON.parse(readFileSync(melodicPath, 'utf8')).version).toBe(PACK_VERSION);
+    expect(JSON.parse(readFileSync(drumPath, 'utf8')).version).toBe(PACK_VERSION);
+  });
+
   const melodic = () => JSON.parse(readFileSync(melodicPath, 'utf8'));
   const drums = () => JSON.parse(readFileSync(drumPath, 'utf8'));
 

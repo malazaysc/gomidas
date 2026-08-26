@@ -289,7 +289,10 @@ function parseSf2(buffer: ArrayBuffer): {
         zones.push({ ...z, keyLo, keyHi, velLo, velHi,
                      attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune,
                      filterFc: z.filterFc + pFc, filterQ: z.filterQ + pQ,
-                     filterModEnv: z.filterModEnv + pMe,
+                     // Clamped like gens 8 and 9 beside it — TSF puts gen 11 under
+                     // GEN_INT_LIMIT12K on the same merge, and an unclamped sum would resolve a
+                     // different cutoff on web than on desktop.
+                     filterModEnv: Math.max(-12000, Math.min(12000, z.filterModEnv + pMe)),
                      // Preset-level modEnv TIMING offsets are not folded — the same gap GMD-82
                      // tracks for the volume envelope. No bank we ship uses them.
                      modEnvSustain: Math.max(0, Math.min(1, z.modEnvSustain - pMeSus / 1000)) });

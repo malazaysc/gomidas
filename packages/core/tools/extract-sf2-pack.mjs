@@ -223,7 +223,9 @@ if (!split) {
   const { blob, samples } = encodeSamples(sampleIds, 'k');
   const header = {
     format: 'gomidas-drumkit',
-    version: 1,
+    // v2 (GMD-80) added filterFc/filterQ/filterModEnv/modEnvSustain/modEnvSettle/modEnvDecay.
+    // Bump this with any field the PLAYER reads — webaudio.ts PACK_VERSION explains why.
+    version: 2,
     source: path.basename(sf2Path),
     codec, mime: CODECS[codec].mime,
     blob: name + '.bin',
@@ -258,7 +260,9 @@ if (!split) {
 
   const header = {
     format: 'gomidas-sf2-pack',
-    version: 1,
+    // v2 (GMD-80) added filterFc/filterQ/filterModEnv/modEnvSustain/modEnvSettle/modEnvDecay.
+    // Bump this with any field the PLAYER reads — webaudio.ts PACK_VERSION explains why.
+    version: 2,
     source: path.basename(sf2Path),
     bank: bankNo,
     codec, mime: CODECS[codec].mime,

@@ -16,7 +16,9 @@ const head = havePack ? JSON.parse(readFileSync(jsonPath, 'utf8')) : null;
 describe.skipIf(!havePack)('gm-standard drum pack', () => {
   it('declares the format the loader expects', () => {
     expect(head.format).toBe('gomidas-drumkit');
-    expect(head.version).toBe(1);
+    // v2 (GMD-80) added the six filter fields. Bumped in step with webaudio.ts PACK_VERSION,
+    // which is what lets a returning visitor detect a cached pre-GMD-80 pack and refetch it.
+    expect(head.version).toBe(2);
     expect(head.codec).toBeTruthy();
     expect(head.blob).toBe('gm-standard.bin');
   });

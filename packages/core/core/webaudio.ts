@@ -1118,6 +1118,44 @@ function createWebAudioBackend(BackendLib: any): any {
    * guitar tab — and, like the GM bank, it swaps itself in by dropping the instruments built
    * before it arrived. Until then drums play from sonivox rather than silence.
    */
+  /**
+   * The pack schema this runtime expects. Bumped whenever a pack gains a field the player READS,
+   * because the two are cached on completely different terms: the JS is content-hashed and
+   * immutable, while `/drumkits/*` and `/instruments-gm/*` are served `max-age=2592000` and fetched
+   * by name (apps/web/build.mjs). GMD-80 is the case that makes this load-bearing — it added
+   * `filterFc`, whose ABSENCE legitimately means "old pack, do not filter", so a returning visitor
+   * pairing new JS with a 30-day-cached manifest would get two dry guitar layers at +6dB again,
+   * silently, still logging "FluidR3 pack". The `.bin`s are byte-identical, so GMD-58's blobBytes
+   * check cannot see it either.
+   */
+  const PACK_VERSION = 2;
+
+  /**
+   * Fetch a pack head, and if it predates what this build reads, go around the HTTP cache once.
+   * Cheap: the common case is one ordinary (cached) fetch, and the reload only ever happens to a
+   * visitor holding a stale copy.
+   */
+  function fetchPackHead(url: string, what: string): Promise<any> {
+    const parse = (r: Response) => {
+      if (!r.ok) throw new Error(what + ' ' + r.status);
+      return r.json();
+    };
+    return fetch(url).then(parse).then(head => {
+      if ((head.version | 0) >= PACK_VERSION) return head;
+      console.warn('[Gomidas] ' + what + ' is v' + head.version + ', this build reads v' +
+                   PACK_VERSION + ' — refetching past the cache');
+      return fetch(url, { cache: 'reload' }).then(parse).then(fresh => {
+        if ((fresh.version | 0) < PACK_VERSION) {
+          // The SERVER is old, not the cache. Say so: the alternative is playing a pack whose
+          // missing fields read as deliberate defaults.
+          console.warn('[Gomidas] ' + what + ' is still v' + fresh.version +
+                       ' after a reload — the deployed pack predates this build');
+        }
+        return fresh;
+      });
+    });
+  }
+
   const DRUMKIT_URL = 'drumkits/gm-standard';
   let drumKit: any = null;
   let drumKitLoading: Promise<any> | null = null;
@@ -1127,8 +1165,7 @@ function createWebAudioBackend(BackendLib: any): any {
     if (drumKit) return Promise.resolve(drumKit);
     if (drumKitLoading) return drumKitLoading;
     const c: any = packContext();
-    drumKitLoading = fetch(DRUMKIT_URL + '.json')
-      .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
+    drumKitLoading = fetchPackHead(DRUMKIT_URL + '.json', 'drum kit')
       .then(head => packFetch(DRUMKIT_URL + '.bin', head.blobBytes)
         .then(blob => decodePackBlob(c, head, blob, drumKitBuffers, 0, 'kit'))
         .then((samples: any[]) => {
@@ -1189,8 +1226,7 @@ function createWebAudioBackend(BackendLib: any): any {
   function loadMelodicManifest(): Promise<any> {
     if (melodicManifest) return Promise.resolve(melodicManifest);
     if (melodicManifestLoading) return melodicManifestLoading;
-    melodicManifestLoading = fetch(MELODIC_URL + '.json')
-      .then(r => { if (!r.ok) throw new Error('manifest ' + r.status); return r.json(); })
+    melodicManifestLoading = fetchPackHead(MELODIC_URL + '.json', 'melodic manifest')
       .then(m => { melodicManifest = m; return m; })
       .catch((e) => {
         console.warn('[Gomidas] melodic pack manifest unavailable, staying on the sonivox bank:', e);
