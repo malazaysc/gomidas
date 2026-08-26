@@ -645,9 +645,9 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   TSF applies them — gen 8 clamps BEFORE the envelope is added, and the sum is tested unclamped.
   Unclamped, FluidR3's Chiffer Lead sums to 1139 cents = **15.7Hz**, i.e. silence.
 - Coverage: **674 of 1275** packed melodic zones filter, and **56 of 149** drum zones.
-- Measured through the offline bounce, single note vel 0.8, before → after: Clean +2.11 → −0.80 dB
-  (**−2.92**), Overdrive +2.12 → −3.44 (**−5.56**); Nylon, Jazz, Fretless, Synth Bass 1 and
-  Fingered Bass all within 0.20 dB. **This is most of GMD-42's headline** ("a single note peaks at
+- Measured through the offline bounce, single note vel 0.8, before → after: Clean +2.11 → −0.79 dB
+  (**−2.90**), Overdrive +2.12 → −3.44 (**−5.56**); Nylon, Jazz, Fretless, Synth Bass 1 and
+  Fingered Bass all within 0.20 dB. Full mix of the sample score −1.07 → −3.15 dBFS, 0 clipped. **This is most of GMD-42's headline** ("a single note peaks at
   +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
 - ⚠️ **Distortion Guitar stays hot on purpose** (+1.98 → +1.81 dB, only −0.17). Its two layers
   resolve to 3619Hz and — because 11108 + 2468 clears the open threshold — **dry**. So prog 30 really
