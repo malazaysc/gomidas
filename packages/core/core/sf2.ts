@@ -14,8 +14,14 @@
 // golden-testable against the bundled sonivox.sf2.
 //
 // DELIBERATELY NOT IMPLEMENTED: modulators (SF2 §8.4 default modulators, velocity->filter etc.),
-// the low-pass filter generators, LFOs, vibrato, chorus/reverb sends. A GM bank still plays
-// recognisably without them; adding them silently and wrongly would be worse.
+// LFOs, vibrato, chorus/reverb sends. A GM bank still plays recognisably without them; adding
+// them silently and wrongly would be worse.
+//
+// The low-pass filter (gens 8/9) IS implemented, as of GMD-80/81 — it had to be. FluidR3 voices
+// its guitars as a dry copy plus a low-passed copy of the SAME sample layered under it; unparsed,
+// the two read as identical zones and sum to +6dB of broadband guitar. It is applied STATICALLY:
+// modEnvToFilterFc / modLfoToFilterFc (gens 11/10) sweep the cutoff in TinySoundFont and we hold
+// it at its initial value. 4 of the 17 packed presets use them (30, 35, 38, the drum kit).
 
 // SCOPE NOTE: body wrapped in an IIFE — these emit as plain <script> files sharing one global scope.
 (function () {
@@ -29,6 +35,9 @@ const GEN = {
   pan: 17,
   delayVolEnv: 33, attackVolEnv: 34, holdVolEnv: 35, decayVolEnv: 36,
   sustainVolEnv: 37, releaseVolEnv: 38,
+  initialFilterFc: 8, initialFilterQ: 9,
+  modLfoToFilterFc: 10, modEnvToFilterFc: 11,
+  delayModEnv: 25, attackModEnv: 26, holdModEnv: 27, decayModEnv: 28, sustainModEnv: 29,
   instrument: 41, keyRange: 43, velRange: 44,
   initialAttenuation: 48, coarseTune: 51, fineTune: 52,
   sampleID: 53, sampleModes: 54, scaleTuning: 56, exclusiveClass: 57,
@@ -72,6 +81,22 @@ interface Sf2Zone {
   /** SF2 gen 57: >0 means "cut every sounding voice of this class" (closed hat chokes open hat). */
   exclusiveClass: number;
   attenuationDb: number;
+  /** SF2 gen 8: lowpass cutoff in ABSOLUTE cents. 13500 (~20kHz) is the spec default = open. */
+  filterFc: number;
+  /** SF2 gen 9: lowpass resonance in centibels. 0 = no resonant peak. */
+  filterQ: number;
+  /** SF2 gen 11: cents the MODULATION envelope adds to the cutoff at its full level. */
+  filterModEnv: number;
+  /** SF2 gen 29 as a fraction: where that envelope SETTLES. 1 = it holds its full level. */
+  modEnvSustain: number;
+  /**
+   * Seconds before that envelope starts to fall: delay + attack + hold. The DECAY is kept separate
+   * in `modEnvDecay` because whether it counts depends on `modEnvSustain`, which a preset zone can
+   * still change after this is computed. Folding them here would understate a slow sweep.
+   */
+  modEnvSettle: number;
+  /** Seconds of that envelope's decay, added to the settle only when it actually decays. */
+  modEnvDecay: number;
   pan: number;
   loopMode: number;
   attack: number; hold: number; decay: number; sustain: number; release: number;
@@ -80,9 +105,44 @@ interface Sf2Zone {
 
 interface Sf2Preset { bank: number; program: number; name: string; zones: Sf2Zone[] }
 
+/**
+ * TSF's generator limits for the filter gens (GEN_INT_LIMITFC / LIMITQ / LIMIT12K).
+ *
+ * ⚠️ Applied ONCE, to the instrument+preset SUM — never to the instrument value on its own.
+ * `tsf_region_operator` has two paths: with a generator amount it is a plain unclamped assignment
+ * (tsf.h:625, and that is how both the instrument gens at :841 and the preset gens at :853 are
+ * applied), and only the merge call at :813 — `tsf_region_operator(&zoneRegion, 0, TSF_NULL,
+ * &presetRegion)`, invoked exactly once per zone — adds and then clamps.
+ *
+ * The difference is not cosmetic. Instrument fc 16000 with a −3000 preset offset:
+ *     clamp the sum (TSF, and us):   16000 − 3000 = 13000 cents  ~ 15.7kHz
+ *     clamp each input:              13500 − 3000 = 10500 cents  ~  3.9kHz
+ * Two octaves, and it is baked into the committed packs. A previous revision of this file did the
+ * second one, on a review note that misread the call sites; 64 FluidR3 preset zones diverged.
+ */
+const FILTER_FC_MIN = 1500, FILTER_FC_OPEN = 13500, FILTER_Q_MAX = 960, MOD_ENV_MAX = 12000;
+const clampFc = (v: number) => Math.max(FILTER_FC_MIN, Math.min(FILTER_FC_OPEN, v));
+const clampQ = (v: number) => Math.max(0, Math.min(FILTER_Q_MAX, v));
+const clampModEnv = (v: number) => Math.max(-MOD_ENV_MAX, Math.min(MOD_ENV_MAX, v));
+
 /** timecents -> seconds (SF2's logarithmic time unit). -12000 tc = 1ms, 0 tc = 1s. */
 function timecentsToSeconds(tc: number): number {
   return Math.pow(2, tc / 1200);
+}
+
+/**
+ * The same conversion, but with TSF's floor: anything below -11950 timecents is ZERO, not 0.977ms
+ * ("timecents don't get to zero, and our EG is happier with zero values" — tsf_region_envtosecs).
+ * It matters because an UNSET generator defaults to -12000, so summing four of them for the
+ * modulation-envelope settle time accrues ~3.9ms of envelope that does not exist — a fifth of the
+ * 20ms budget zoneFilter decides on.
+ *
+ * Deliberately used ONLY for the mod-env terms this ticket introduced. The volume envelope's
+ * attack/hold/decay/release predate GMD-80 and are floored downstream by the player; moving them
+ * would change how every note sounds, which is a separate change with its own measurements.
+ */
+function envSeconds(tc: number): number {
+  return tc < -11950 ? 0 : timecentsToSeconds(tc);
 }
 
 function parseSf2(buffer: ArrayBuffer): {
@@ -195,6 +255,17 @@ function parseSf2(buffer: ArrayBuffer): {
         rootKey: merged[GEN.overridingRootKey] != null ? num(GEN.overridingRootKey, 60) : null,
         tuneCents: num(GEN.coarseTune, 0) * 100 + num(GEN.fineTune, 0),
         attenuationDb: num(GEN.initialAttenuation, 0) / 10,   // stored in centibels
+        // Deliberately UNCLAMPED here: TSF assigns instrument generators raw and clamps only the
+        // instrument+preset sum. See the clampFc/clampQ block above for why the order matters.
+        filterFc: num(GEN.initialFilterFc, 13500),
+        filterQ: num(GEN.initialFilterQ, 0),
+        filterModEnv: num(GEN.modEnvToFilterFc, 0),
+        // Same 0.1%-decrease encoding as sustainVolEnv below, and likewise clamped on the sum.
+        modEnvSustain: 1 - num(GEN.sustainModEnv, 0) / 1000,
+        modEnvSettle: envSeconds(num(GEN.delayModEnv, -12000))
+                    + envSeconds(num(GEN.attackModEnv, -12000))
+                    + envSeconds(num(GEN.holdModEnv, -12000)),
+        modEnvDecay: envSeconds(num(GEN.decayModEnv, -12000)),
         pan: num(GEN.pan, 0) / 1000,                          // -500..500 -> -0.5..0.5
         loopMode: num(GEN.sampleModes, 0),
         exclusiveClass: num(GEN.exclusiveClass, 0),
@@ -237,6 +308,14 @@ function parseSf2(buffer: ArrayBuffer): {
       const pAtten = merged[GEN.initialAttenuation] != null ? valueOf(pgen, merged[GEN.initialAttenuation]) / 10 : 0;
       const pTune = (merged[GEN.coarseTune] != null ? valueOf(pgen, merged[GEN.coarseTune]) * 100 : 0)
                   + (merged[GEN.fineTune] != null ? valueOf(pgen, merged[GEN.fineTune]) : 0);
+      // Filter generators are ADDITIVE offsets onto the instrument's absolute value, like tuning
+      // and attenuation. This is not a detail: FluidR3 puts Nylon Guitar's per-velocity brightness
+      // ONLY here (bags 121-127 -> +0, 113-120 -> -182 ... 0-64 -> -2786 cents), so a reader that
+      // takes the instrument value alone plays every dynamic at the same timbre (GMD-81).
+      const pFc = merged[GEN.initialFilterFc] != null ? valueOf(pgen, merged[GEN.initialFilterFc]) : 0;
+      const pQ = merged[GEN.initialFilterQ] != null ? valueOf(pgen, merged[GEN.initialFilterQ]) : 0;
+      const pMe = merged[GEN.modEnvToFilterFc] != null ? valueOf(pgen, merged[GEN.modEnvToFilterFc]) : 0;
+      const pMeSus = merged[GEN.sustainModEnv] != null ? valueOf(pgen, merged[GEN.sustainModEnv]) : 0;
 
       for (const z of instrumentZones(instIndex)) {
         // Preset ranges INTERSECT instrument ranges; a zone outside the preset's window is
@@ -245,7 +324,15 @@ function parseSf2(buffer: ArrayBuffer): {
         const velLo = Math.max(z.velLo, pVel.lo), velHi = Math.min(z.velHi, pVel.hi);
         if (keyLo > keyHi || velLo > velHi) continue;
         zones.push({ ...z, keyLo, keyHi, velLo, velHi,
-                     attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune });
+                     attenuationDb: z.attenuationDb + pAtten, tuneCents: z.tuneCents + pTune,
+                     // THE clamp point, matching TSF's single merge.
+                     filterFc: clampFc(z.filterFc + pFc), filterQ: clampQ(z.filterQ + pQ),
+                     filterModEnv: clampModEnv(z.filterModEnv + pMe),
+                     // Preset-level modEnv TIMING offsets are not folded — the same gap GMD-82
+                     // tracks for the volume envelope. No bank we ship uses them.
+                     modEnvSustain: Math.max(0, Math.min(1, z.modEnvSustain - pMeSus / 1000)) });
+                     // ^ gen 29 is GEN_FLOAT_MAX1000, so clamping the FRACTION after folding is
+                     //   the same thing as clamping the centibel sum to [0, 1000].
       }
     }
     presets.push({ bank: phdr[pi].bank, program: phdr[pi].program, name: phdr[pi].name, zones });
@@ -425,8 +512,124 @@ function rateFor(zone: Sf2Zone, sample: Sf2Sample, key: number, outputRate: numb
   return Math.pow(2, cents / 1200) * (sample.sampleRate / outputRate);
 }
 
+/** SF2 absolute cents -> Hz. The same curve as TinySoundFont's tsf_cents2Hertz. */
+function centsToHertz(cents: number): number {
+  return 8.176 * Math.pow(2, cents / 1200);
+}
+
+/**
+ * The zone's lowpass, or null if it has none. THE one place that decision is made.
+ *
+ * WHY IT EXISTS (GMD-80): FluidR3's Clean/Overdrive/Distortion Guitar presets layer two copies of
+ * every sample — one dry, one low-passed — to give the guitar body. Ignore gens 8/9 and the two
+ * layers are indistinguishable, so both play dry and sum coherently: +6.05dB against every
+ * single-layer program, measured. The zones were never duplicates.
+ *
+ * THE CUTOFF IS NOT gen 8 ALONE. TinySoundFont renders
+ *     fres = initialFilterFc + modEnvToFilterFc x modEnv + modLfoToFilterFc x lfo
+ * and for a great many zones gen 8 is only where that sweep STARTS. Reading gen 8 as the final
+ * answer would have shipped Synth Bass 1 through a fixed 120Hz low-pass — darker than anything
+ * the bank asks for, and a NEW bug on a program that had none.
+ *
+ * We render one static biquad, so we take the level the envelope SETTLES at, and ONLY where it
+ * settles fast enough for that to be indistinguishable. The measured settle times separate the
+ * two cases with nothing in between:
+ *
+ *   FluidR3 prog 30 Distortion   2ms   870Hz + 2468c at sustain 1.00 -> 3619Hz   static: EXACT
+ *   FluidR3 prog 35 Fretless     2ms                                             static: EXACT
+ *   FluidR3 prog 38 SynthBass1 203ms   120Hz + 6723c at sustain 0.19 ->  251Hz   a real sweep
+ *   FluidR3 drum kit          <=9.5s   14 zones                                  a real sweep
+ *   sonivox bank 0       median 1.45s  268 zones (pianos, pads, most of the bank) a real sweep
+ *
+ * ⚠️ Rejecting a sweep means the zone plays OPEN, and for Synth Bass 1 that is further from the
+ * bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and
+ * we apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed
+ * program — the price of not freezing a sweep at an arbitrary point, and what GMD-83 settles.
+ *
+ * Above the threshold we return NULL — the zone plays unfiltered, exactly as it did before any of
+ * this, and GMD-83 is what earns it a moving cutoff. Guessing a point on a one-second sweep would
+ * make a piano dark from its first sample; that is the "adding them silently and wrongly would be
+ * worse" rule at the top of this file, applied.
+ *
+ * The LFO term is left out on purpose: it oscillates about zero, so its steady state IS zero.
+ *
+ * ⚠️ The settle time is also VELOCITY-INDEPENDENT here and is not in TSF: the mod envelope's attack
+ * scales by `(145 - velocity) / 144` (tsf.h:1032, amp envelope excluded), so a hard-struck note
+ * reaches its cutoff in an eighth of the stored duration. The error is one-directional — we can
+ * only decline a filter desktop applies, never impose one it does not — and small on shipped
+ * content: 3 more sonivox zones would qualify at velocity 127 (28 -> 31), and no packed FluidR3
+ * program moves at all, because 30/35 settle at 0 and 38's 203ms comes from decay, not attack. So
+ * the pinned count of 28 is a velocity-0 figure. Folded into GMD-83, which needs the envelope
+ * anyway; `zoneFilter` has no velocity parameter today and giving it one would make the biquad
+ * per-note rather than per-zone.
+ *
+ * Clamped to TSF's generator limits exactly where TSF clamps: once, on the instrument+preset SUM
+ * (see clampFc/clampQ/clampModEnv). The ENVELOPE-resolved sum below is then left unclamped, because
+ * TSF leaves that unclamped too. The re-clamp of `zone.filterFc` here is a read-side guard for
+ * hand-built and pack-supplied zones, not a second merge. Be precise about what the low bound buys:
+ * 1500 cents is 19.4Hz, so it is parity, not a guard against silence, and the lowest resolved
+ * cutoff in either committed pack today is 388Hz.
+ *
+ * DELIBERATE DIVERGENCE, the only one, and narrower than it first read: TSF's test is
+ * `fres <= 13500`, so at EXACTLY the default it still builds a 19913Hz lowpass. We skip that —
+ * but only when gen 9 is 0, where the claim "it removes nothing audible" actually holds. Review
+ * round 2 found the hole: 180 melodic and 6 drum zones sit at 13500 with a NON-ZERO resonance, up
+ * to 10 centibels-per-dB on the closed and pedal hi-hat, and dropping those threw away a top-octave
+ * lift that desktop has. Those now build the filter. The residual gap is a ~2dB shelf between
+ * 19.9kHz and Nyquist on flat zones, and it buys skipping a biquad on 40% of every score's voices.
+ *
+ * `filterFc == null` is the OLD-PACK path, not an error: a pack extracted before this shipped
+ * carries no filter fields, and must keep playing exactly as it did rather than silently
+ * filtering at 0Hz.
+ */
+/**
+ * How fast a modulation envelope must reach its sustain for one static biquad to stand in for it.
+ *
+ * 20ms sits an order of magnitude above the 2ms cluster it admits (FluidR3's guitars) and an order
+ * below the 252ms one it rejects (Synth Bass 1). ⚠️ But do NOT read that as a clean separation —
+ * an earlier version of this comment claimed one and review round 4 disproved it. Across sonivox's
+ * 268 modulated zones the settle times are continuous: **minimum 14.1ms**, six milliseconds
+ * inside this threshold, and **15 more between 20ms and 200ms**. Moving the constant to 0.2 would
+ * flip those 15 from "plays open" to "plays at its settled cutoff". The median is 1.45s, so the
+ * bulk is nowhere near the boundary — but the boundary itself is a real judgement call, not a gap
+ * in the data, and anyone changing it should measure what moves.
+ */
+const MODENV_STATIC_S = 0.02;
+
+function zoneFilter(zone: { filterFc?: number; filterQ?: number; filterModEnv?: number;
+                            modEnvSustain?: number; modEnvSettle?: number; modEnvDecay?: number },
+                    sampleRate: number): { hz: number; qDb: number } | null {
+  if (zone.filterFc == null) return null;                       // old pack: no filter data at all
+  // Re-clamped because a zone can also arrive hand-built or from a pack, not only from parseSf2.
+  const base = clampFc(zone.filterFc);
+  // Web Audio's lowpass Q is a resonance in DECIBELS (not the cookbook's dimensionless Q), which
+  // is exactly SF2's centibels / 10 — so this lands in the destination unit with no conversion.
+  const q = clampQ(zone.filterQ || 0);
+  const modEnv = zone.filterModEnv || 0;
+  let cents = base;
+  if (modEnv) {
+    // The decay is scaled by how far the envelope actually falls — TSF's non-amp branch is
+    // `decay * (1 - sustain)`, not the whole decay (tsf.h, tsf_voice_envelope_nextsegment). At full
+    // sustain the term vanishes on its own. `modEnvSustain` may also have been moved by a preset
+    // offset AFTER modEnvSettle was computed, which is why the two are stored apart.
+    const sustain = Math.max(0, Math.min(1, zone.modEnvSustain != null ? zone.modEnvSustain : 1));
+    const settle = (zone.modEnvSettle != null ? zone.modEnvSettle : Infinity)
+                 + (1 - sustain) * (zone.modEnvDecay || 0);
+    // Written so that a MISSING settle time fails the test rather than passing it.
+    if (!(settle <= MODENV_STATIC_S)) return null;
+    cents = base + sustain * modEnv;
+  }
+  // `>` not `>=` when the zone is resonant: see the divergence note above.
+  if (q ? cents > FILTER_FC_OPEN : cents >= FILTER_FC_OPEN) return null;
+  const hz = centsToHertz(cents);
+  if (!(hz > 0) || hz >= 0.499 * sampleRate) return null;
+  return { hz, qDb: q / 10 };
+}
+
   const api = { parseSf2, zonesFor, rateFor, timecentsToSeconds, velocityGain, attenuationGain,
-                percussionMakeupGain, PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB, GEN };
+                percussionMakeupGain, PERCUSSION_FLOOR_DB, MAKEUP_MAX_DB,
+                zoneFilter, centsToHertz, FILTER_FC_MIN, FILTER_FC_OPEN, FILTER_Q_MAX,
+                MODENV_STATIC_S, GEN };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasSf2 = api;
 }());
