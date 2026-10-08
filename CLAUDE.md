@@ -557,19 +557,22 @@ deliberate and tracked, not an oversight.
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
 - ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
-  velocity trim bends the dynamic curve instead of setting a level. (Correction, GMD-81: kick/snare
-  *declare* 7 velocity layers — 0-80, 81-88, … 121-127 — but in the committed pack all seven point at
-  the **same sample with the same attenuation and envelope**, so switching layer changes nothing.
-  `sf2.ts` does not parse the SF2 filter generators, which is what would differentiate them. The
-  squared curve alone is reason enough for the rule.) `gomidasDrumGains` (the kit MIXER tab, GMD-72)
-  stays as the **user's** trim *on top of* the preset.
+  velocity trim bends the dynamic curve instead of setting a level. (Twice-corrected: kick/snare
+  declare 7 velocity layers — 0-80, 81-88, … 121-127 — whose sample, attenuation and envelope are
+  all identical, which is why GMD-81 read them as inert. They differ by **filter cutoff**, and as of
+  GMD-80 that is parsed: the kick sweeps **5.0kHz → 8.0kHz** across its layers and the snare
+  **7.0kHz → 10.0kHz**, so drum velocity now changes timbre and barely changes level — measured
+  ≤0.15dB of peak on kick and snare. The squared curve alone is still reason enough for the rule.)
+  `gomidasDrumGains` (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
 - ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
   read as a drum.
 - **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
   (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
   articulation — swirls, not filtered stick hits), and convincingly **Room / Power** (real room mics
-  + gated tails). Hats/crash are **single-layer** — and per GMD-81 the kick/snare layers are
-  currently indistinguishable too — so compression cannot add dynamics that aren't there. Name them for what they are: Dry / Rock / Vintage / Compressed / Lo-fi.
+  + gated tails). Hats/crash are **single-layer**, so compression cannot add dynamics that are not
+  there — but kick and snare now DO get brighter with velocity (GMD-80 parsed the filter), so a
+  preset is shaping something real on those two. Name presets for what they are: Dry / Rock /
+  Vintage / Compressed / Lo-fi.
 - ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
   the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
   GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
@@ -587,7 +590,7 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   instead of the 5.89MB family. (Drums are the opposite — a kit is one unit — so they stay
   single-blob.) Guitars+basses total **9.09MB FLAC** from 19.99MB PCM; biggest single program is
   Overdrive Guitar at 1.81MB, most are under 1MB.
-- **The manifest is 482KB raw but 7.5KB brotli**, so it is one cheap fetch that also says *which*
+- **The manifest is 517KB raw but 9.1KB brotli**, so it is one cheap fetch that also says *which*
   programs are packed — that's how we avoid firing a 404 per note for the ~100 unpacked programs.
   `melodicPacks` stores **null** for a known-unpacked program; `|| gmBank` is then the intended
   path, not a fallback.
@@ -608,16 +611,115 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
 - ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
   scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
 
+### The SF2 low-pass filter — gens 8/9, and why a "duplicate zone" was never one (GMD-80/81, 2026-08-26)
+- ⚠️ **FluidR3 voices its guitars as a DRY copy plus a LOW-PASSED copy of the same sample**, layered.
+  `instrument 63 "Clean Guitar"` is 10 key ranges x 2 bags: bags 973-982 carry no gen 8, bags 983-992
+  carry the identical samples and key ranges with `initialFilterFc = 7935` (800Hz). Read without
+  gens 8/9 the two are **indistinguishable**, so both play dry and sum coherently: **+6.05dB** of
+  broadband guitar over every single-layer program, measured. It looks exactly like a parser
+  double-counting the preset x instrument expansion and it is not — **the expansion was correct**.
+  Same shape on 29 (1kHz) and 30. Before "fixing" a duplicated zone, print gens 8/9.
+- ⚠️ **Web Audio's lowpass `Q` is a resonance in DECIBELS**, not the cookbook's dimensionless Q —
+  which is SF2 centibels / 10, so `filterQ / 10` lands in the destination unit with no conversion.
+  Off by 10x and every resonant zone either rings or goes flat.
+- **`SF2.zoneFilter(zone, sampleRate)` is THE ONE PLACE** the "is there a filter, at what frequency"
+  decision is made, and it borrows TSF's audibility test (`hz < 0.499 * rate`, 13500 cents = open).
+  ⚠️ **That does NOT mean the two products filter the same zones.** Web skips a FLAT zone at exactly
+  13500 and rejects every slow modulation sweep — **119 of sonivox's 147 gen-8 zones plus 14 drum
+  zones** — where TSF filters and sweeps. Parity holds for zones whose cutoff is *static*.
+  `filterFc == null` means an OLD PACK and must stay a no-op — reading a missing field as 0 filters
+  every note at 8Hz, i.e. silence.
+- **Preset gens 8/9 are ADDITIVE offsets**, and that is where FluidR3 keeps a velocity layer's
+  *timbre*: Nylon's preset bags run +0 cents at vel 121-127 down to −2786 at 0-64. Correcting the
+  GMD-81 note above — with these parsed, a velocity layer now changes brightness and not just level,
+  on the drum kit as well as on Nylon (see the twice-corrected note in the drum-kit section).
+  The **volume**-envelope offsets are still dropped (GMD-82), and the cutoff is **static** (GMD-83).
+- ⚠️ **gen 8 is where the cutoff STARTS, not where it lands.** TSF renders
+  `fres = initialFilterFc + modEnvToFilterFc x modEnv + modLfoToFilterFc x lfo`. Taking gen 8 as the
+  answer shipped **Synth Bass 1 through a fixed 120Hz low-pass** — the bank sweeps it to 251Hz and
+  it had no filter at all before. `zoneFilter` therefore resolves the **steady state**
+  (`fc + modEnvSustain x modEnvToFilterFc`) and applies it **only when the envelope settles within
+  20ms**; above that it returns null and the zone plays unfiltered until GMD-83. The measured
+  settle times: FluidR3 prog 30/35 **2ms** (so the static value is exact), prog 38 **203ms**, the
+  drum kit up to **9.5s**, sonivox a median **1.45s**. That last one is why the fallback bank barely
+  moves — 28 of its 653 zones qualify, where gen 8 alone would have filtered 147 and the steady
+  state 295, turning every piano dark from its first sample. ⚠️ **The 20ms boundary is a judgement
+  call, not a gap in the data** — an earlier version of this note claimed the two cases separate
+  cleanly and they do not. sonivox's minimum settle is **14.1ms**, 6ms inside the threshold, with
+  **15 more between 20 and 200ms**. Measure what moves before changing the constant.
+- ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
+  bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we
+  apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed program.
+- ⚠️ Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 —
+  **ONCE, on the instrument+preset SUM**, never on either input alone. `tsf_region_operator`
+  assigns a single generator *unclamped* (tsf.h:625, used for both the instrument gens at :841 and
+  the preset gens at :853); only the merge call at :813 adds the regions and then clamps, and it
+  runs exactly once per zone. Clamping each input instead is a *different function* whenever the
+  instrument value is out of range — fc 16000 with a −3000 preset offset gives **13000** cents the
+  right way and **10500** the wrong way, two octaves apart, and it bakes into the packs.
+  This was gotten backwards once already: **review round 5 asserted per-merge clamping, I adopted
+  it without checking the call sites, and round 7 caught it.** The envelope-resolved sum is then
+  left unclamped, because TSF leaves it unclamped too. Be precise about what the low bound buys:
+  1500 cents is **19.4Hz**, so it is parity, not a guard against silence.
+- ⚠️ The settle time is **velocity-independent here and is not in TSF** — the mod envelope's attack
+  scales by `(145 − velocity) / 144` (tsf.h:1032). One-directional (we can only decline a filter
+  desktop applies), and worth 3 sonivox zones at velocity 127; no packed program moves. So the
+  pinned "28 zones" is a velocity-0 figure. GMD-83 territory.
+- ⚠️ **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
+  LIFT, not a cut, so skipping it throws away something desktop has. **96** zones in the committed
+  packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum, **closed and pedal
+  hi-hat at 10 centibels-per-dB** (keys 42/44/46, a stereo pair each — the OPEN hat is in the set
+  too); restoring them measured **+0.86 / +0.81 / +0.66 dB** of hat peak. Flat zones at 13500 are still skipped: there the filter
+  is a ~2dB shelf between 19.9kHz and Nyquist, and skipping saves a biquad on 40% of every score's
+  voices. That, and the settle rule, are the only two deliberate divergences from TSF.
+- Coverage: **764 of 1275** packed melodic zones BUILD a filter and **674 of those actually
+  low-pass**; the rest are resonance at the open default. Drums: **62 of 149** built, 6 resonant.
+  Count the two separately — conflating them misreads program 27, whose 180 filtered zones are 90
+  low-passed layers plus 90 dry ones carrying 3dB of resonance.
+- Measured through the offline bounce, single note vel 0.8, before → after: Clean +2.11 → −0.79 dB
+  (**−2.90**), Overdrive +2.12 → −3.44 (**−5.56**); Nylon, Jazz, Fretless, Synth Bass 1 and
+  Fingered Bass all within 0.20 dB. Full mix of the sample score −1.07 → −3.15 dBFS, 0 clipped. **This is most of GMD-42's headline** ("a single note peaks at
+  +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
+- ⚠️ **Distortion Guitar stays hot on purpose** (+1.98 → +1.81 dB, only −0.17). Its two layers
+  resolve to 3619Hz and — because 11108 + 2468 clears the open threshold — **dry**. So prog 30 really
+  does sum two voices, TSF plays it the same way, and GMD-80's title is wrong about that one program.
+  Do not "finish the job" by filtering layer B at gen 8's 5001Hz; that is reading half the
+  instruction.
+- ⚠️ **Two drum pieces moved, in opposite directions, and neither is a reason to re-tune GMD-73.**
+  Kick, snare, crash and ride are within 0.15dB across all 47 GM drum keys. **Toms 41/43/45/47/48/50
+  drop 0.56–2.25dB of PEAK at unchanged RMS (±0.03dB)** — the filter takes the stick spike off the
+  transient and leaves the body; FluidR3 gives them *asymmetric* cutoffs per stereo half (L 7999Hz,
+  R 4500Hz), which is the bank's own data, not a bug. **Hats gain 0.66–0.86dB** from the resonance.
+- ⚠️ GMD-73's floor was derived as `raw sample peak x zone attenuation`, which is no longer a
+  complete description of a drum's peak now that a zone can be filtered or resonant. It stands as
+  measured, but **GMD-77/78 must build its preset gain column from a RENDERED peak**, not by
+  re-deriving that formula.
+- ⚠️ **A pack's `version` must be bumped whenever it gains a field the PLAYER reads**, and
+  `webaudio.ts PACK_VERSION` must match. The two are cached on opposite terms — the JS is
+  content-hashed and immutable, the packs are `max-age=2592000` and fetched by name — so a returning
+  visitor otherwise pairs NEW JS with a 30-day-old manifest. For GMD-80 that is silent and total:
+  absence of `filterFc` legitimately means "old pack, do not filter", so the guitars go back to two
+  dry layers at +6dB while the loader still logs "FluidR3 pack". GMD-58's `blobBytes` check cannot
+  catch it — the `.bin`s are byte-identical. `fetchPackHead` refetches with `cache: 'reload'` on a
+  version behind, and warns if the SERVER is the stale one.
+- ⚠️ **A pack re-extract only changes the `.json`.** The `.bin` blobs came out byte-identical, which
+  is the extractor's determinism claim holding. **If a `.bin` shows as modified, stop** — that means
+  the local ffmpeg differs from the one that built the committed pack, and you are about to commit
+  9MB of re-encoded audio for a metadata change.
+
 ### Web pack cache — IndexedDB, so a repeat visit is shell-only (GMD-58, 2026-08-15)
 `core/packcache.ts` (`GomidasPackCache`) caches every lazily-fetched **binary** payload — sonivox,
 the drum `.bin`, the per-program melodic `.bin`s, SFZ definitions + samples. One helper,
 `packFetch(url, expectedBytes)` in `webaudio.ts`, is the only fetch path for all of them.
 Measured: cold visit 3 misses / 2.2MB; **warm visit 3 hits / 0 bytes**, with only the manifest on
 the wire. The 5.4MB drum blob round-trips exactly, 8ms warm.
-- **The JSON heads are deliberately NOT cached.** The manifest is 482KB raw but 7.5KB brotli, and
+- **The JSON heads are deliberately NOT cached.** The manifest is 517KB raw but 9.1KB brotli, and
   it is what declares each blob's `blobBytes` — so reading every blob back against a
-  freshly-fetched head gives invalidation for free. A re-extract invalidates automatically; there
-  is no version to forget to bump. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
+  freshly-fetched head gives invalidation for free. A re-extract of the SAMPLES invalidates
+  automatically. ⚠️ **That stopped being the whole story with GMD-80**: a pack can gain metadata the
+  player reads while every `.bin` stays byte-identical, and then `blobBytes` sees nothing. That case
+  is covered by the pack's `version` against `webaudio.ts PACK_VERSION` — a number that DOES have to
+  be bumped by hand. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
 - ⚠️ **`indexedDB.open()` can hang with NO event** — not success, not error, not blocked — when a
   `deleteDatabase` from another tab is pending. It froze the renderer because every `fetchBuffer`
   awaited forever. Hence the 3s open / 4s read timeouts. **Nothing on this path may stall a pack

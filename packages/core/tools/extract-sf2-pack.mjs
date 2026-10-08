@@ -113,7 +113,7 @@ function zonesOf(preset, localOf, sampleIds) {
     if (!localOf.has(z.sampleIndex)) { localOf.set(z.sampleIndex, sampleIds.length); sampleIds.push(z.sampleIndex); }
     // Deliberately the same field set core/sf2.ts emits, so the runtime reuses zonesFor/rateFor
     // unchanged — a pack is a bank, not a second format with a second interpreter.
-    return {
+    const out = {
       keyLo: z.keyLo, keyHi: z.keyHi, velLo: z.velLo, velHi: z.velHi,
       sampleIndex: localOf.get(z.sampleIndex),
       rootKey: z.rootKey, tuneCents: z.tuneCents,
@@ -122,6 +122,30 @@ function zonesOf(preset, localOf, sampleIds) {
       attack: round(z.attack, 5), hold: round(z.hold, 5), decay: round(z.decay, 5),
       sustain: round(z.sustain, 5), release: round(z.release, 5)
     };
+    // The lowpass (gens 8/9, GMD-80) is emitted only when the zone actually has one — 13500 cents
+    // is "open" and 0 centibels is "no resonance", so writing the defaults would add two numbers
+    // to all 1275 zones to say nothing. Absence is also what an OLDER runtime reads as "no
+    // filter", which is the behaviour it had before this field existed.
+    // Emitted whenever the zone can filter AT ALL, which is not the same as "gen 8 is not the
+    // default". A zone at 13500 with a NEGATIVE modEnv still lands under the open threshold
+    // (FluidR3's Fretless Bass does, at 18795Hz), and a RESONANT zone at 13500 filters too
+    // (zoneFilter's divergence note). Omitting it in either case would make a pack quietly play a
+    // zone that a direct .sf2 parse filters, and absence has to keep meaning exactly one thing —
+    // an old pack with no filter data.
+    if (z.filterFc !== 13500 || z.filterModEnv || z.filterQ) out.filterFc = z.filterFc;
+    if (z.filterQ) out.filterQ = z.filterQ;
+    // The modulation envelope's contribution to the cutoff. Only emitted where the bank uses it,
+    // but where it does it is not a refinement: prog 38's gen 8 is 120Hz and the envelope is what
+    // carries it to 251Hz. Without these two, a reader takes gen 8 for the whole answer.
+    // Both only matter when the modulation envelope actually moves the cutoff, so they ride along
+    // with filterModEnv rather than being emitted 1275 times to say "no".
+    if (z.filterModEnv) {
+      out.filterModEnv = z.filterModEnv;
+      out.modEnvSustain = round(z.modEnvSustain, 5);
+      out.modEnvSettle = round(z.modEnvSettle, 5);
+      out.modEnvDecay = round(z.modEnvDecay, 5);
+    }
+    return out;
   });
 }
 
@@ -199,7 +223,9 @@ if (!split) {
   const { blob, samples } = encodeSamples(sampleIds, 'k');
   const header = {
     format: 'gomidas-drumkit',
-    version: 1,
+    // v2 (GMD-80) added filterFc/filterQ/filterModEnv/modEnvSustain/modEnvSettle/modEnvDecay.
+    // Bump this with any field the PLAYER reads — webaudio.ts PACK_VERSION explains why.
+    version: 2,
     source: path.basename(sf2Path),
     codec, mime: CODECS[codec].mime,
     blob: name + '.bin',
@@ -234,7 +260,9 @@ if (!split) {
 
   const header = {
     format: 'gomidas-sf2-pack',
-    version: 1,
+    // v2 (GMD-80) added filterFc/filterQ/filterModEnv/modEnvSustain/modEnvSettle/modEnvDecay.
+    // Bump this with any field the PLAYER reads — webaudio.ts PACK_VERSION explains why.
+    version: 2,
     source: path.basename(sf2Path),
     bank: bankNo,
     codec, mime: CODECS[codec].mime,

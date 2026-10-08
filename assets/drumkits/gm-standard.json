@@ -1,6 +1,6 @@
 {
  "format": "gomidas-drumkit",
- "version": 1,
+ "version": 2,
  "source": "FluidR3_GM.sf2",
  "codec": "flac",
  "mime": "audio/flac",
@@ -477,7 +477,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11690
     },
     {
      "keyLo": 38,
@@ -495,7 +496,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11690
     },
     {
      "keyLo": 38,
@@ -513,7 +515,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11810
     },
     {
      "keyLo": 38,
@@ -531,7 +534,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11810
     },
     {
      "keyLo": 38,
@@ -549,7 +553,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11921
     },
     {
      "keyLo": 38,
@@ -567,7 +572,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11921
     },
     {
      "keyLo": 38,
@@ -585,7 +591,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 12026
     },
     {
      "keyLo": 38,
@@ -603,7 +610,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 12026
     },
     {
      "keyLo": 38,
@@ -621,7 +629,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 12125
     },
     {
      "keyLo": 38,
@@ -639,7 +648,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 12125
     },
     {
      "keyLo": 38,
@@ -657,7 +667,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 12219
     },
     {
      "keyLo": 38,
@@ -675,7 +686,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 12219
     },
     {
      "keyLo": 38,
@@ -693,7 +705,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 12308
     },
     {
      "keyLo": 38,
@@ -711,7 +724,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 12308
     },
     {
      "keyLo": 40,
@@ -729,7 +743,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11690
     },
     {
      "keyLo": 40,
@@ -747,7 +762,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11690
     },
     {
      "keyLo": 40,
@@ -765,7 +781,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11810
     },
     {
      "keyLo": 40,
@@ -783,7 +800,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11810
     },
     {
      "keyLo": 40,
@@ -801,7 +819,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11921
     },
     {
      "keyLo": 40,
@@ -819,7 +838,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11921
     },
     {
      "keyLo": 40,
@@ -837,7 +857,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 12026
     },
     {
      "keyLo": 40,
@@ -855,7 +876,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 12026
     },
     {
      "keyLo": 40,
@@ -873,7 +895,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 12125
     },
     {
      "keyLo": 40,
@@ -891,7 +914,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 12125
     },
     {
      "keyLo": 40,
@@ -909,7 +933,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 12219
     },
     {
      "keyLo": 40,
@@ -927,7 +952,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 12219
     },
     {
      "keyLo": 40,
@@ -945,7 +971,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 12308
     },
     {
      "keyLo": 40,
@@ -963,7 +990,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 12308
     },
     {
      "keyLo": 71,
@@ -1125,7 +1153,8 @@
      "hold": 0.00098,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 11149
     },
     {
      "keyLo": 87,
@@ -1143,7 +1172,8 @@
      "hold": 0.00098,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 11149
     },
     {
      "keyLo": 69,
@@ -1629,7 +1659,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 29.99534
+     "release": 29.99534,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 49,
@@ -1647,7 +1682,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 29.99534
+     "release": 29.99534,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 57,
@@ -1665,7 +1705,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 29.99534
+     "release": 29.99534,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 57,
@@ -1683,7 +1728,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 29.99534
+     "release": 29.99534,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 53,
@@ -1737,7 +1787,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 25.00538
+     "release": 25.00538,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 59,
@@ -1755,7 +1810,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 25.00538
+     "release": 25.00538,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 51,
@@ -1773,7 +1833,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 51,
@@ -1791,7 +1856,12 @@
      "hold": 7.80375,
      "decay": 44.99419,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 52,
@@ -1809,7 +1879,12 @@
      "hold": 7.80375,
      "decay": 39.99275,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 52,
@@ -1827,7 +1902,12 @@
      "hold": 7.80375,
      "decay": 39.99275,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 55,
@@ -1845,7 +1925,12 @@
      "hold": 7.80375,
      "decay": 39.99275,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 55,
@@ -1863,7 +1948,12 @@
      "hold": 7.80375,
      "decay": 39.99275,
      "sustain": 1,
-     "release": 19.99638
+     "release": 19.99638,
+     "filterFc": 13500,
+     "filterModEnv": 12000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 0,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 60,
@@ -2097,7 +2187,12 @@
      "hold": 0.00098,
      "decay": 9.99819,
      "sustain": 1,
-     "release": 9.99819
+     "release": 9.99819,
+     "filterFc": 13500,
+     "filterModEnv": -6000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 9.60269,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 66,
@@ -2115,7 +2210,12 @@
      "hold": 0.00098,
      "decay": 9.99819,
      "sustain": 1,
-     "release": 9.99819
+     "release": 9.99819,
+     "filterFc": 13500,
+     "filterModEnv": -6000,
+     "modEnvSustain": 1,
+     "modEnvSettle": 9.60269,
+     "modEnvDecay": 0
     },
     {
      "keyLo": 35,
@@ -2133,7 +2233,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11108
     },
     {
      "keyLo": 35,
@@ -2151,7 +2252,8 @@
      "hold": 0.00098,
      "decay": 3.00008,
      "sustain": 0,
-     "release": 3.00008
+     "release": 3.00008,
+     "filterFc": 11108
     },
     {
      "keyLo": 35,
@@ -2169,7 +2271,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11273
     },
     {
      "keyLo": 35,
@@ -2187,7 +2290,8 @@
      "hold": 0.00098,
      "decay": 4.99909,
      "sustain": 0,
-     "release": 4.99909
+     "release": 4.99909,
+     "filterFc": 11273
     },
     {
      "keyLo": 35,
@@ -2205,7 +2309,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11423
     },
     {
      "keyLo": 35,
@@ -2223,7 +2328,8 @@
      "hold": 0.00098,
      "decay": 7.0007,
      "sustain": 0,
-     "release": 7.0007
+     "release": 7.0007,
+     "filterFc": 11423
     },
     {
      "keyLo": 35,
@@ -2241,7 +2347,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 11562
     },
     {
      "keyLo": 35,
@@ -2259,7 +2366,8 @@
      "hold": 0.00098,
      "decay": 9.00047,
      "sustain": 0,
-     "release": 9.00047
+     "release": 9.00047,
+     "filterFc": 11562
     },
     {
      "keyLo": 35,
@@ -2277,7 +2385,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 11690
     },
     {
      "keyLo": 35,
@@ -2295,7 +2404,8 @@
      "hold": 0.00098,
      "decay": 10.99798,
      "sustain": 0,
-     "release": 10.99798
+     "release": 10.99798,
+     "filterFc": 11690
     },
     {
      "keyLo": 35,
@@ -2313,7 +2423,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 11809
     },
     {
      "keyLo": 35,
@@ -2331,7 +2442,8 @@
      "hold": 0.00098,
      "decay": 13.00355,
      "sustain": 0,
-     "release": 13.00355
+     "release": 13.00355,
+     "filterFc": 11809
     },
     {
      "keyLo": 35,
@@ -2349,7 +2461,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 11921
     },
     {
      "keyLo": 35,
@@ -2367,7 +2480,8 @@
      "hold": 0.00098,
      "decay": 14.99767,
      "sustain": 0,
-     "release": 14.99767
+     "release": 14.99767,
+     "filterFc": 11921
     },
     {
      "keyLo": 43,
@@ -2385,7 +2499,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 43,
@@ -2403,7 +2518,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 50,
@@ -2421,7 +2537,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 50,
@@ -2439,7 +2556,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 41,
@@ -2457,7 +2575,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 41,
@@ -2475,7 +2594,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 48,
@@ -2493,7 +2613,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 48,
@@ -2511,7 +2632,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 45,
@@ -2529,7 +2651,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 45,
@@ -2547,7 +2670,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 47,
@@ -2565,7 +2689,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 11921
     },
     {
      "keyLo": 47,
@@ -2583,7 +2708,8 @@
      "hold": 9.92913,
      "decay": 0.00098,
      "sustain": 0,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 10925
     },
     {
      "keyLo": 42,
@@ -2601,7 +2727,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     },
     {
      "keyLo": 42,
@@ -2619,7 +2747,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     },
     {
      "keyLo": 44,
@@ -2637,7 +2767,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     },
     {
      "keyLo": 44,
@@ -2655,7 +2787,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     },
     {
      "keyLo": 46,
@@ -2673,7 +2807,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     },
     {
      "keyLo": 46,
@@ -2691,7 +2827,9 @@
      "hold": 4.99909,
      "decay": 0.00098,
      "sustain": 1,
-     "release": 29.00708
+     "release": 29.00708,
+     "filterFc": 13500,
+     "filterQ": 100
     }
    ]
   }

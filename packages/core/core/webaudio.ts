@@ -702,7 +702,22 @@ function createSf2Instrument(ctx: AudioContext, bank: any, program: number, perc
         pan.pan.value = Math.max(-1, Math.min(1, z.pan * 2));
         gain.connect(pan); node = pan;
       }
-      src.connect(gain); node.connect(output);
+      // The zone's own lowpass (SF2 gens 8/9), between the sample and its envelope so the filter
+      // shapes the source and the envelope still owns the level. Most zones have none and get the
+      // direct connection they always had. See SF2.zoneFilter: without this, FluidR3's guitars —
+      // a dry layer plus a low-passed layer of the same sample — play as two dry copies, +6dB
+      // (GMD-80). Static: the cutoff never moves after note-on (GMD-81).
+      const filt = SF2.zoneFilter(z, ctx.sampleRate);
+      if (filt) {
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = filt.hz;
+        lp.Q.value = filt.qDb;
+        src.connect(lp); lp.connect(gain);
+      } else {
+        src.connect(gain);
+      }
+      node.connect(output);
       src.start(when);
       // A percussion sample that does not loop is a ONE-SHOT: it has no sustain to hold, so a
       // note-off must not touch it. Gating a crash with the 16th note it was written on is what
@@ -887,6 +902,18 @@ interface ChannelStrip {
   program: number;
   percussion: boolean;
 }
+
+/**
+ * The pack schema this runtime expects. Bumped whenever a pack gains a field the player READS,
+ * because the two are cached on completely different terms: the JS is content-hashed and
+ * immutable, while `/drumkits/*` and `/instruments-gm/*` are served `max-age=2592000` and fetched
+ * by name (apps/web/build.mjs). GMD-80 is the case that makes this load-bearing — it added
+ * `filterFc`, whose ABSENCE legitimately means "old pack, do not filter", so a returning visitor
+ * pairing new JS with a 30-day-cached manifest would get two dry guitar layers at +6dB again,
+ * silently, still logging "FluidR3 pack". The `.bin`s are byte-identical, so GMD-58's blobBytes
+ * check cannot see it either.
+ */
+const PACK_VERSION = 2;
 
 function createWebAudioBackend(BackendLib: any): any {
   const TB = typeof GomidasTimebase !== 'undefined' ? GomidasTimebase : (window as any).GomidasTimebase;
@@ -1094,6 +1121,40 @@ function createWebAudioBackend(BackendLib: any): any {
         }));
   }
 
+
+  /**
+   * Fetch a pack head, and if it predates what this build reads, go around the HTTP cache once.
+   * Cheap: the common case is one ordinary (cached) fetch, and the reload only ever happens to a
+   * visitor holding a stale copy.
+   */
+  function fetchPackHead(url: string, what: string): Promise<any> {
+    const parse = (r: Response) => {
+      if (!r.ok) throw new Error(what + ' ' + r.status);
+      return r.json();
+    };
+    return fetch(url).then(parse).then(head => {
+      if ((head.version | 0) >= PACK_VERSION) return head;
+      console.warn('[Gomidas] ' + what + ' is v' + head.version + ', this build reads v' +
+                   PACK_VERSION + ' — refetching past the cache');
+      return fetch(url, { cache: 'reload' }).then(parse).then(fresh => {
+        if ((fresh.version | 0) < PACK_VERSION) {
+          // The SERVER is old, not the cache. Say so: the alternative is playing a pack whose
+          // missing fields read as deliberate defaults.
+          console.warn('[Gomidas] ' + what + ' is still v' + fresh.version +
+                       ' after a reload — the deployed pack predates this build');
+        }
+        return fresh;
+      }, (e: any) => {
+        // The forced-network refetch failed — offline, or a flaky host. Keep the stale head we
+        // already have: an out-of-date pack still plays FluidR3, while rejecting here drops all
+        // the way to sonivox's 20ms kick. Never let a cache-freshness check cost the good samples.
+        console.warn('[Gomidas] ' + what + ' refetch failed, using the cached v' + head.version +
+                     ' pack:', e);
+        return head;
+      });
+    });
+  }
+
   /**
    * The real drum kit (GMD-50): FluidR3's bank 128, extracted to assets/drumkits/ by
    * tools/extract-sf2-pack.mjs. sonivox's kit is a 20ms kick at 20kHz with one velocity layer, so
@@ -1112,8 +1173,7 @@ function createWebAudioBackend(BackendLib: any): any {
     if (drumKit) return Promise.resolve(drumKit);
     if (drumKitLoading) return drumKitLoading;
     const c: any = packContext();
-    drumKitLoading = fetch(DRUMKIT_URL + '.json')
-      .then(r => { if (!r.ok) throw new Error('kit json ' + r.status); return r.json(); })
+    drumKitLoading = fetchPackHead(DRUMKIT_URL + '.json', 'drum kit')
       .then(head => packFetch(DRUMKIT_URL + '.bin', head.blobBytes)
         .then(blob => decodePackBlob(c, head, blob, drumKitBuffers, 0, 'kit'))
         .then((samples: any[]) => {
@@ -1174,8 +1234,7 @@ function createWebAudioBackend(BackendLib: any): any {
   function loadMelodicManifest(): Promise<any> {
     if (melodicManifest) return Promise.resolve(melodicManifest);
     if (melodicManifestLoading) return melodicManifestLoading;
-    melodicManifestLoading = fetch(MELODIC_URL + '.json')
-      .then(r => { if (!r.ok) throw new Error('manifest ' + r.status); return r.json(); })
+    melodicManifestLoading = fetchPackHead(MELODIC_URL + '.json', 'melodic manifest')
       .then(m => { melodicManifest = m; return m; })
       .catch((e) => {
         console.warn('[Gomidas] melodic pack manifest unavailable, staying on the sonivox bank:', e);
@@ -1823,7 +1882,16 @@ function createWebAudioBackend(BackendLib: any): any {
   return backend;
 }
 
-  const api = { createWebAudioBackend, createToneInstrument, envelopeLevelAt, voicesToRelease,
+  // createSf2Instrument is exported for the same reason createToneInstrument is: the voice graph
+  // it builds is only observable from outside. tests/sf2-filter.test.js drives it with a fake
+  // context to prove the zone's lowpass is actually WIRED — the parser tests alone would stay
+  // green if the biquad were deleted from this file.
+  // PACK_VERSION is exported so a test can assert the COMMITTED PACKS against the runtime's own
+  // number rather than against a literal it repeats. Two literals agreeing proves nothing: bump
+  // the runtime, forget to commit the regenerated packs, and every visitor burns a second
+  // cache-bypassing fetch of a 517KB manifest on every session while the suite stays green.
+  const api = { createWebAudioBackend, createToneInstrument, createSf2Instrument, PACK_VERSION,
+                envelopeLevelAt, voicesToRelease,
                 ceilingCurve, HEADROOM_GAIN, HEADROOM_DB, CEILING_KNEE, CEILING_RANGE,
                 LOOKAHEAD_S, TICK_INTERVAL_MS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
