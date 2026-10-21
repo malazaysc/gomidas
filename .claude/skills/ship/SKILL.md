@@ -1,6 +1,6 @@
 ---
 name: ship
-description: The end-to-end ticket workflow for gomidas — claim a Samu ticket, plan it, implement on a branch, pass the four verification gates, open a PR, review it, and merge with the user's approval. Use whenever picking up or finishing a GMD ticket, or when asked to "work on GMD-<n>", "ship this ticket", "what's next". One ticket, one branch, one PR.
+description: The end-to-end ticket workflow for gomidas — claim a Samu ticket, plan it, implement on a branch, pass the four verification gates, open a PR, review it, and merge with the user's approval. Use whenever picking up or finishing a GOM ticket, or when asked to "work on GOM-<n>", "ship this ticket", "what's next". One ticket, one branch, one PR.
 ---
 
 # ship — one ticket, one branch, one PR
@@ -21,27 +21,24 @@ Everything else you drive yourself.
 ## When this workflow does NOT apply
 
 **Meta-work on the tooling itself — skills, `CLAUDE.md`, `.gitignore`, harness config — goes
-straight to `main` when the user asks for it.** No branch, no PR, no review. It isn't a GMD
+straight to `main` when the user asks for it.** No branch, no PR, no review. It isn't a GOM
 ticket, the verification gates have no code to check, and a PR round-trip on a workflow file
 buys nothing. This is the user's standing call (2026-08-17); it is not a licence to skip the
 loop for anything that touches `src/`, `packages/`, or `apps/`.
 
-Still log it to Samu (`samu status log`) — the board should show the tooling changing too.
+Still log it to Samu (a status update) — the board should show the tooling changing too.
 
-Everything else — every GMD ticket, every code change — goes through all nine stages.
+Everything else — every GOM ticket, every code change — goes through all nine stages.
 
 ---
 
 ## 1. CLAIM
 
-```bash
-samu ticket ls                    # what's open
-samu ticket show GMD-70           # the one you're taking
-samu ticket move GMD-70 "In Progress"
-```
+List what's open, read the ticket you're taking, and move it to `In Progress`.
 
 If the user named a ticket, take it. If they said "what's next", propose one from `Todo` by
-priority and let them confirm before claiming. Follow the **`samu` skill** for tracker rules.
+priority and let them confirm before claiming. Tracker rules are in `CLAUDE.md` → **Project
+tracking**.
 
 Start from a clean, current base:
 
@@ -76,7 +73,7 @@ through ("TS2552 is zero, so it can't matter") was the one the review overturned
 ## 3. BRANCH
 
 ```bash
-git checkout -b gmd-70-title-overprint       # gmd-<n>-<short-slug>, lowercase
+git checkout -b gom-70-title-overprint       # gom-<n>-<short-slug>, lowercase
 ```
 
 ## 4. IMPLEMENT
@@ -84,10 +81,10 @@ git checkout -b gmd-70-title-overprint       # gmd-<n>-<short-slug>, lowercase
 Normal work. Commit in logical chunks, and **put the ticket key in every commit subject**:
 
 ```
-GMD-70: serialize addTrack and selectTrack so their renders don't overlap
+GOM-70: serialize addTrack and selectTrack so their renders don't overlap
 ```
 
-If you discover a bug that isn't this ticket, **file it** (`samu ticket create …`) and keep
+If you discover a bug that isn't this ticket, **file it** in Samu and keep
 going. Don't widen the branch — one ticket, one PR.
 
 ## 5. VERIFY — all four gates, before the PR exists
@@ -120,7 +117,7 @@ pnpm sweep   # 0 = clean · 1 = you referenced something that doesn't exist · 2
 plain-JS file the build compiles that nobody added to it, tsc killed, tsc missing. Treat 2 as
 harder than 1: on a 1 you have one bug; on a 2 you have no coverage.
 
-No counting by eye any more (GMD-68): the two real globals are declared in
+The two real globals are declared in
 `packages/core/types/globals.d.ts`, so **any** surviving `TS2304`/`TS2552` is a real bug and the
 script fails on it. Runs in ~0.3s and **also runs in CI**, first in the `web-tests` job. If it
 names a legitimate new global from another `<script>` tag, declare it in `globals.d.ts` — never
@@ -156,17 +153,17 @@ that needs the same fix (the three instrument factories, `bankFor`, `snapshotMix
 ## 6. PR
 
 ```bash
-git push -u origin gmd-70-title-overprint
-gh pr create --base main --title "GMD-70: <what changed>" --body "$(cat <<'EOF'
+git push -u origin gom-70-title-overprint
+gh pr create --base main --title "GOM-70: <what changed>" --body "$(cat <<'EOF'
 ## Ticket
-GMD-70 — <title>
+GOM-70 — <title>
 
 ## What changed
 <2-4 bullets, mechanism not narration>
 
 ## Verification
 - Gate A: typecheck / vitest / cmake / ctest — green
-- Gate B: sweep clean (only the 2 known globals)
+- Gate B: sweep clean — <N> files checked
 - Gate C: <what you actually ran, and what you observed — numbers if measurable>
 - Gate D: <web + desktop, or "core untouched">
 
@@ -235,10 +232,8 @@ git checkout main && git pull
 
 Only after the merge is actually on `main`:
 
-```bash
-samu ticket move GMD-70 "Done"
-samu status log --project GMD --health on_track -m "GMD-70: <what landed>, verified by <how>."
-```
+Move the ticket to `Done` and log an `on_track` status update: "GOM-70: <what landed>,
+verified by <how>."
 
 **Done means it works**, not that it compiled. If it merged but is unverified, leave it In
 Progress and say why — `at_risk`/`off_track` with the reason.

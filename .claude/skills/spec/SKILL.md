@@ -29,7 +29,7 @@ In order:
    already written down (bank selection, the three instrument factories, `snapshotMix`, the
    alphaTab rAF bootstrap, `AudioParam.value` on web, percussion channel detection). If a trap
    applies, it belongs in the ticket.
-2. **The board** — `samu ticket ls`, and `samu ticket show` on anything that looks adjacent. If
+2. **The board** — list and search Samu, and read anything that looks adjacent. If
    a matching ticket exists, **update it instead of filing a duplicate.** Related-but-distinct
    tickets get cross-referenced by key.
 3. **The code** — for anything non-trivial, **fan out read-only `Explore` subagents in parallel**
@@ -85,19 +85,10 @@ tickets**, referenced from the first. Never widen a ticket to absorb them.
 Once stage 3 has an agreed decision, **file the tickets** — no second approval round. Then show
 the user the keys and titles so they can see what landed.
 
-```bash
-samu ticket create --project GMD --type bug --priority high --severity s2 \
-  --repro-steps "1. … 2. … Expected: … Actual: …" \
-  "Percussion was decided by MIDI channel, so a drum track off channel 10 played melodic garbage" \
-  --body "$(cat <<'EOF'
-…body per the template below…
-EOF
-)"
-```
-
-Flags worth using — `--type` (feature|bug|task|chore) · `--priority` (none|low|medium|high|urgent)
-· `--severity` (s1–s4, **bugs only**) · `--repro-steps` (bugs only) · `--found-in-version` (bugs
-only) · `--estimate` (integer points). See the **`samu` skill** for the tracker rules.
+File with `create_ticket` in project `GOM`. Fields worth using — type (feature|bug|task|chore) ·
+priority (none|low|medium|high|urgent) · severity (s1–s4, **bugs only**) · repro steps (bugs
+only) · found-in-version (bugs only) · estimate (integer points). Tracker rules are in
+`CLAUDE.md` → **Project tracking**.
 
 ### Title: state the mechanism, not the symptom
 
@@ -145,7 +136,7 @@ is why GMD-44 and GMD-62 had to be reopened.>
 
 ## Scope
 Touches `packages/core` → verify web **and** desktop. / Core untouched.
-Out of scope: <…> — filed separately as GMD-<n>.
+Out of scope: <…> — filed separately as GOM-<n>.
 
 ## Open questions
 <only if genuinely unresolved. Empty is the goal — an open question here means stage 2

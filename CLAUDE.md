@@ -21,26 +21,27 @@ via MIDI/SoundFont — then (later) play on top with your own instrument through
 6. Post-MVP: sync real recordings to tabs via stem separation, syncing to the drum track
    (reuse Conduit's `build-stems` / `StemSeparationService`).
 
-**First deliverable the user asked for: a tab editor with MIDI playback.**
-
 ## Project tracking — use Samu (not GitHub Issues)
 
-All open work is tracked in **Samu**, a local issue tracker (workspace `gomidas`, project
-`GMD`). **Samu now supersedes GitHub Issues** — do not file or update GitHub issues.
+All open work is tracked in **Samu** (workspace `malazay-audio`, project `GOM`), reached through
+the `samu` MCP server. Do not file or update GitHub issues.
 `docs/BACKLOG.md`, `STATUS.md`, and `FEATURES.md` remain as **design/spec docs**, not the work list.
 
-⚠️ **The board was rebuilt 2026-08-13.** The `GMD` project had vanished from the Samu server, so
-the original `GMD-1…GMD-23` (migrated from GitHub Issues) are **lost and the keys were reused**.
-It was reseeded from `BACKLOG.md`/`STATUS.md` as `GMD-1…GMD-29`, plus `GMD-30…GMD-39` for the web
-port. **Any `GMD-<n>` reference in a commit before 2026-08-13 now points at an unrelated ticket** —
-don't trust it.
+Ticket keys were `GMD-<n>` before the move to `GOM`; the numbers are unchanged, so `GMD-73` in a
+commit or below is `GOM-73` on the board. **Exception: a `GMD-<n>` in a commit dated before
+2026-08-13 points at an unrelated ticket** — that board was lost and its keys reused.
 
-Follow the **`samu` skill** (`.claude/skills/samu/`): before starting, `samu ticket ls` and
-claim a ticket (`samu ticket move <KEY> "In Progress"`); file anything you discover
-(`samu ticket create …`); on finishing a verified chunk, move it to `Done` and
-`samu status log …`. You're pre-authenticated as the coding-agent (via `SAMU_CONFIG`). Never
-mark a ticket Done until the change is actually built and exercised. Reference the ticket key
-in commits (e.g. `GMD-8: …`). The board is at http://127.0.0.1:8080 (workspace `gomidas`).
+A human watches the board, so keep it current as you work:
+- Before starting, list the open tickets and claim one by moving it to `In Progress`. Prefer
+  `list_tickets` with filters — `get_project_context` returns the whole project (~150KB).
+- **Never move a ticket to Done until the change is built and exercised** — Done reads as "it works".
+- File what you discover the moment you see it, after searching for an existing ticket to update
+  instead. Bigger than a one-line finding → `/spec`. On a bug, put the repro in the repro-steps
+  field, not the body.
+- On finishing a chunk, changing plan or hitting a blocker, log a status update; a blocker is
+  `at_risk`/`off_track` and says why.
+- Reference the ticket key in commits (e.g. `GOM-8: …`).
+- An MCP auth error means the login expired — ask the user to re-authenticate via `/mcp`.
 
 ## How work lands — the `spec` → `ship` pipeline (2026-08-17)
 
@@ -55,7 +56,7 @@ re-deriving what was already decided — title states the *mechanism* not the sy
 carries Why / Mechanism / Where (`file:line`) / Acceptance / How to verify / **Traps** (every
 parallel code path that must change together — the reason GMD-44 and GMD-62 got reopened).
 
-**`/ship GMD-<n>`** is the exit. One ticket, one branch, one PR — no more batched local merges
+**`/ship GOM-<n>`** is the exit. One ticket, one branch, one PR — no more batched local merges
 straight into `main`.
 
 ```
@@ -68,7 +69,7 @@ drive. Failures go *backwards* — never a PR on a red gate, never a merge on a 
 
 **One exception (user's standing call, 2026-08-17):** meta-work on the tooling itself — skills,
 `CLAUDE.md`, `.gitignore`, harness config — **goes straight to `main` on request**, no branch/PR/
-review, since there's no code for the gates to check. Still `samu status log` it. Anything
+review, since there's no code for the gates to check. Still log it to Samu. Anything
 touching `src/`, `packages/` or `apps/` takes the full loop.
 
 **The four verification gates, all before the PR exists:**
@@ -291,7 +292,7 @@ Key facts learned (don't relearn):
   `.gomidas` save/load and undo snapshots). `Gp7Exporter` exists → real `.gp` export is possible.
 - Keyboard goes to the WebView; it must hold focus (native `grabKeyboardFocus` on load +
   focus-on-click). Real-key delivery unverified in the sandbox (synthetic keys blocked).
-- ⚠️ **The `AlphaTabApi` constructor defers its own bootstrap behind a `requestAnimationFrame`**
+- **The `AlphaTabApi` constructor defers its own bootstrap behind a `requestAnimationFrame`**
   (`beginInvoke` *is* rAF), and that bootstrap — `initialRender()` — is what registers the handler
   resetting alphaTab's render-result counter on each `preRender`. **Any render that happens before
   it appends partials to `.at-surface` with no counter to trim against**, so the surface grows by 4
@@ -301,7 +302,7 @@ Key facts learned (don't relearn):
   `initDrawers`) interleave their rAF-deferred appends and defeat the counter even after bootstrap.
   Still reachable from a **second** trigger: `addTrack` followed by `selectTrack` with no wait
   overlaps two renders and the title doubles again (GMD-70, open).
-- ⚠️ **`editor.js`/`app.js`/`fretboard.js`/`grooves.js`/`core/gomidas-core.js` are plain `<script>`
+- **`editor.js`/`app.js`/`fretboard.js`/`grooves.js`/`core/gomidas-core.js` are plain `<script>`
   globals with NO typecheck** (the main tsconfig sets `checkJs: false` deliberately — on, it buries
   the build in ~1400 inference diagnostics from 5,700 un-migrated lines), so a dangling reference is
   invisible until that line happens to run. **`pnpm sweep` is the gate** (GMD-68): the
@@ -315,7 +316,7 @@ Key facts learned (don't relearn):
   inference noise and must not gate. The classifier is unit-tested (`tests/checkjs-sweep.test.js`)
   precisely because a misclassification is indistinguishable from "clean". A legitimate new global
   goes in `types/globals.d.ts`; **never** delete the check.
-- ⚠️ **A gate must never infer success from the absence of a bad diagnostic** — two review rounds
+- **A gate must never infer success from the absence of a bad diagnostic** — two review rounds
   found four ways `pnpm sweep` printed "clean" while checking *nothing* (stale `files` entry,
   **empty** `files` list → TS18002, a 5-digit code no pattern matched, syntax error, SIGKILLed
   tsc). So it now asserts the **positive**: `--listFiles` makes tsc name every file it processed,
@@ -323,7 +324,7 @@ Key facts learned (don't relearn):
   supplies the file list, because the config is JSONC (block comments, trailing commas) and
   **TypeScript 7's package exposes no compiler API to parse it** — only `version`, so
   `ts.readConfigFile` does not exist. A hand-rolled stripper was tried and broke twice.
-- ⚠️ **A green sweep ≠ every reference resolves.** It sees **bare identifiers** only; cross-file
+- **A green sweep ≠ every reference resolves.** It sees **bare identifiers** only; cross-file
   calls go through `window.<name>`, and a missing `window` property is TS2339 — noise, ungateable.
   Renaming a `window.gomidas*` entry point passes a green sweep. GMD-67 was found by it because
   GMD-54 removed a `const pb = t.playbackInfo` and left `pb.program` two lines below, so **every
@@ -349,7 +350,7 @@ avoid alphaTab coalescing). Definitive findings on the **2-bar sample**:
 - Native message-thread work is **trivial** — `previewNotes`/`setSequence` only stash state under a
   SpinLock; all synth work is on the audio thread. NOT the freeze.
 - Idle **rAF = 60/s** (window composites fine). An **isolated** edit renders in **~26ms**.
-- ⚠️ Measurement trap: alphaTab **coalesces rapid `renderTracks` calls**, so a naive harness
+- Measurement trap: alphaTab **coalesces rapid `renderTracks` calls**, so a naive harness
   misattributes the *gap between edits* as render time (saw bogus "700ms/1400ms" that tracked the test's
   timer spacing exactly). `enableLazyLoading=true` was a red herring (deferred renders) — set to **false**.
 **Conclusion:** the small-score edit path is fast (~26ms), not a freeze. The user's "~1s freeze per note"
@@ -370,12 +371,12 @@ and/or a bar-window render (`settings.display.startBar`/`barCount`) around the c
 
 ### ⭐ Current top priority (user, 2026-08-13): the **web app**
 The browser build now **outranks every other line of work**, including the desktop verification debt
-and per-track VST instruments. Spec + decisions: **`docs/WEB_PORT.md`**. Tracked as `GMD-30…GMD-39`
-under the **Web port v1** milestone (label `web-port`); start at **`GMD-30`** (Phase 0) and go in order.
+and per-track VST instruments. Spec + decisions: **`docs/WEB_PORT.md`**. The port itself
+(`GOM-30…GOM-39`, **Web port v1** milestone) is done; open web work is on the board.
 
 It is a **second product built from one shared core**, not a replacement — desktop keeps VST/AU
-hosting and low-latency live input, which cannot exist in a browser. Work happens **in this repo on a
-branch** (`feat/web-app`); the hard rule is that **every commit leaves `cmake --build build` green and
+hosting and low-latency live input, which cannot exist in a browser. Work lands through `/ship`, one PR per
+ticket; the hard rule is that **every commit leaves `cmake --build build` green and
 the macOS app behaving identically**. Decided 2026-08-13: full editor parity for v1 · pure
 client-side, no server · effects web-only but with a backend-agnostic schema · **TypeScript**
 (cheap here — `index.html` loads plain `<script>` globals, so `tsc` per-file emit needs no bundler;
@@ -389,7 +390,7 @@ client-side, no server · effects web-only but with a backend-agnostic schema ·
 - **Phase 2 — play on top: DONE except the depth items.** per-track mixer (vol/pan/mute/solo, persisted),
   A/B loop, metronome, count-in, tempo slow-down (pitch-independent), **live input + AU/VST3 plugin insert +
   plugin editor window**, input gain, output VU meter, WAV recording, panic. `MICROPHONE_PERMISSION_ENABLED`
-  re-enabled. ⚠️ **The live-input/plugin/recording stack builds + links but is UNVERIFIED at runtime — verify
+  re-enabled. **The live-input/plugin/recording stack builds + links but is UNVERIFIED at runtime — verify
   before extending.** **TODO:** per-track VST *instruments* (priority #2), per-track plugin chains, plugin
   state-save, loop/overdub recording.
 - **Phase 3:** `.gp` export (Gp7Exporter) **DONE**; **TODO:** stem-sync (reuse Conduit `build-stems`).
@@ -436,7 +437,7 @@ taken **after** the only early-return so it can't leak.
   before the note end** so it sorts before the next note-on and never leaves the channel detuned. Bend is
   per-channel (a bent note bends the whole channel in a chord — fine for lead bends). Imported GP bends
   play too. _Still deferred:_ pitch-bend *slides* (legato vs shift nuance) + CC emission.
-- ⚠️ **`buildSequence` must return the event list TICK-SORTED (stable)** — every consumer assumes it:
+- **`buildSequence` must return the event list TICK-SORTED (stable)** — every consumer assumes it:
   the web scheduler walks it with a running cursor (`selectWindow`) and seeks with a **binary search**
   (`indexAtOrAfter`), and `applyEvent` runs in array order. Emission order is per note (`[on, off,
   bend…]`) and per track, so the raw list is not ascending — a chord alone breaks it. Only the desktop
@@ -445,7 +446,7 @@ taken **after** the only early-return so it can't leak.
   from the instrument's voice map — *before* that note's own bend events, so `pitchBend` had no voice to
   ramp. Fixed by sorting in `buildSequence` itself; native now `stable_sort`s to preserve equal-tick
   order (note-on before its bend points; note-off at T before the next note-on at T).
-- ⚠️ **On web, never read `AudioParam.value` for a scheduled note** — the lookahead scheduler runs
+- **On web, never read `AudioParam.value` for a scheduled note** — the lookahead scheduler runs
   100ms–2s ahead, so the automation usually has not run and `.value` returns the node default (1.0
   for a GainNode), not the note's level. This has now caused two shipped bugs: bends (GMD-43) and
   **palm mutes releasing from FULL GAIN** (GMD-44/GMD-48 — every note ended with a re-attack louder
@@ -453,7 +454,7 @@ taken **after** the only early-return so it can't leak.
   **records the envelope it scheduled** and asks `envelopeLevelAt(points, t)` for the level at the
   release time (`webaudio.ts`; unit-tested in `tests/envelope-level.test.js`). `cancelAndHoldAtTime`
   would do it natively but Firefox lacks it, and one path keeps the offline bounce deterministic.
-  ⚠️ There are **three near-identical instrument factories** (SF2 / SFZ / tone placeholder) — GMD-44
+  There are **three near-identical instrument factories** (SF2 / SFZ / tone placeholder) — GMD-44
   was closed after fixing only one of them, so the default instrument kept the bug. Change all three.
 
 - **Build:** sfizz 1.2.3 via FetchContent (static; built as **C++17** — app stays C++20).
@@ -475,7 +476,7 @@ stereo and its snare has **seven** velocity layers.
   Chrome: 105/105 decode, frame-exact (12462 declared = 12462 decoded), 213 ms to fetch+decode.
   Fetched lazily on the first percussion note; **sonivox stays the fallback** (verified by
   blocking the fetch). FLAC over Opus (1.6 MB) on purpose: no priming eating the transient.
-- ⚠️ **initialAttenuation is NOT literal centibels.** Read as spec (`10^(-cB/200)`), FluidR3 plays
+- **initialAttenuation is NOT literal centibels.** Read as spec (`10^(-cB/200)`), FluidR3 plays
   its kick 10 dB and its closed hat 21 dB below its snare — a snare with faint company, and the
   "drums are very low" report. fluidsynth divides by **531.509** ("by the standard this should be
   -200.0") because the EMU hardware banks were authored against did not follow the spec. Same
@@ -492,19 +493,19 @@ stereo and its snare has **seven** velocity layers.
   `allNotesOff` fades over 80 ms rather than the zone release, or Stop leaves a 9 s crash ringing.
 - **Kit selection:** use `bank.findDrumPreset(program)`, never `findPreset(128, program)` — the
   latter falls back to "same program in bank 0", so sonivox answers program 16 with **Organ 1**.
-- ⚠️ **The committed pack contains exactly ONE kit** (`program 0, Standard`), and the pack's own
-  `findDrumPreset` ends in `|| presets[0]` (`webaudio.ts:1118`) — so **every** GM kit (Room, Power,
+- **The committed pack contains exactly ONE kit** (`program 0, Standard`), and the pack's own
+  `findDrumPreset` ends in `|| presets[0]` (`webaudio.ts`) — so **every** GM kit (Room, Power,
   Electronic, 808, Jazz, Brush, Orchestra) silently resolves to Standard, with no warning (GMD-74).
   The extractor already supports several kits deduped into one blob (`--programs 0,8,16,…`); it was
   simply run with its default `--programs 0`. Kit variety is now planned as **processing**, not more
   samples — see "Drum kit character" below.
-- ⚠️ **Never write `percussion = (channel === 9)`** (GMD-54). Four call sites did, so a file whose
+- **Never write `percussion = (channel === 9)`** (GMD-54). Four call sites did, so a file whose
   drum track sits on any other channel took the melodic branch, where a drum note's key becomes
   `note.realValue` on a melodic program — soft wooden thuds at arbitrary pitches. Ask
   **`GomidasCore.trackChannelInfo(track)`**: percussion comes from `staff.isPercussion` (or the
   articulations, or channel 9) and percussion tracks are forced onto channel 9, which is what
   selects bank 128 in both engines. Shared core → both products.
-- ⚠️ **An imported GP3–5 drum track has an EMPTY `percussionArticulations`.** `buildSequence`'s
+- **An imported GP3–5 drum track has an EMPTY `percussionArticulations`.** `buildSequence`'s
   `note.realValue` fallback is what carries it, and that is correct for those files: alphaTab's
   GP5 importer puts real GM numbers in `percussionArticulation`/`realValue` (measured on a Pantera
   .gp5: 35 ac-kick, 40 e-snare, 46 open hat, 53 ride bell). Don't "fix" the fallback away.
@@ -527,16 +528,16 @@ deliberate and tracked, not an oversight.
   `applyFx(target, ch, spec)` builds one. `fretboard.js:323 PIECE_KEYS` (+ `pieceMixKeys`, GMD-72) is
   the piece→GM-key-group map — **the routing key**. Import it into core; do not copy it.
 - **The seam:** today `s.instrument.output.connect(s.input)` is a SINGLE output per instrument
-  (`webaudio.ts:1274`). Percussion voices must instead reach a per-group bus → its chain → the channel
+  (`webaudio.ts`). Percussion voices must instead reach a per-group bus → its chain → the channel
   input. Must be a **no-op for every melodic track**.
-- ⚠️ **FluidR3's kit is an ACOUSTIC balance, not a produced one** — measured from the committed pack
+- **FluidR3's kit is an ACOUSTIC balance, not a produced one** — measured from the committed pack
   (raw sample peak × zone attenuation, vel 102): **snare −0.07 dB (the 0 dB reference), kick −3.88,
   open hat −4.60, crash −6.02, closed hat −8.42**. So drums are **not** globally quiet — the snare
   sits level with a guitar note. (Precisely: with an **unattenuated** melodic zone. Every guitar and
   ordinary bass is 0.0 dB, but 233 of the 1275 melodic-pack zones are not — 26 Jazz Guitar −1.51,
   35 Fretless Bass −3.39, 39 Synth Bass 2 −3.01, **38 Synth Bass 1 −6.40**.)
   The kick and hat, which carry the groove, are the buried ones.
-- ⚠️ **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
+- **GMD-73 has SHIPPED that normalisation, so the table above is no longer what drums play at.**
   `core/sf2.ts` `PERCUSSION_FLOOR_DB` → `percussionMakeupGain(key, attenuationDb)`, applied at the SF2
   voice's peak in `webaudio.ts createSf2Instrument` (**web only**; desktop is GMD-79, gated by
   GMD-53). It is a **floor, boost-only** — kick 35/36 raised to **0**, side stick 37 to **−2**, open
@@ -553,18 +554,18 @@ deliberate and tracked, not an oversight.
   the bank has **no preset-level attenuation** — `parseSf2` folds that into `z.attenuationDb`, so a
   kit with a global offset would lift the thirteen targeted keys and leave snare/toms low, putting the
   kick above the snare. Unreachable on today's banks; reachable via GMD-74.
-- ⚠️ **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
+- **Don't compare a guitar CHORD peak to a drum hit.** That error produced a bogus "drums are
   8.25 dB down" reading. Single-voice arithmetic reproduces the bounce exactly: snare 0.9923 ×
   vel² (0.8²) × the −6 dB output headroom = 0.317 vs 0.325 measured. Compare **single voices**.
-- ⚠️ **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
-  velocity trim bends the dynamic curve instead of setting a level. (Twice-corrected: kick/snare
+- **Balance belongs in the bus GAIN, never in velocity.** On web velocity lands **squared**, so a
+  velocity trim bends the dynamic curve instead of setting a level. (Kick/snare
   declare 7 velocity layers — 0-80, 81-88, … 121-127 — whose sample, attenuation and envelope are
-  all identical, which is why GMD-81 read them as inert. They differ by **filter cutoff**, and as of
-  GMD-80 that is parsed: the kick sweeps **5.0kHz → 8.0kHz** across its layers and the snare
+  all identical. They differ only by **filter cutoff**, which is parsed: the kick sweeps
+  **5.0kHz → 8.0kHz** across its layers and the snare
   **7.0kHz → 10.0kHz**, so drum velocity now changes timbre and barely changes level — measured
   ≤0.15dB of peak on kick and snare. The squared curve alone is still reason enough for the rule.)
   `gomidasDrumGains` (the kit MIXER tab, GMD-72) stays as the **user's** trim *on top of* the preset.
-- ⚠️ **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
+- **Drive must be PARALLEL.** A waveshaper in series flattens the transient that makes a drum
   read as a drum.
 - **What processing CANNOT reach** — so don't name presets after GM kits: **Electronic / TR-808**
   (a synth sub with a click is not an EQ'd acoustic kick), **Jazz / Brush** (a different
@@ -573,10 +574,10 @@ deliberate and tracked, not an oversight.
   there — but kick and snare now DO get brighter with velocity (GMD-80 parsed the filter), so a
   preset is shaping something real on those two. Name presets for what they are: Dry / Rock /
   Vintage / Compressed / Lo-fi.
-- ⚠️ **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
+- **`snapshotMix()` must enumerate the piece buses** or the bounce records unprocessed drums —
   the FOURTH instance of this exact failure (GMD-57 `bankFor`, GMD-44's three instrument factories,
   GMD-62/66's whole master section). `tests/mixsnapshot.test.js` pins the field list.
-- ⚠️ **GMD-53 gates the desktop half.** TSF uses the literal −200 attenuation divisor and a LINEAR
+- **GMD-53 gates the desktop half.** TSF uses the literal −200 attenuation divisor and a LINEAR
   velocity curve, so desktop's starting balance differs from web's *before* any preset applies.
   Settle GMD-53 first or the preset gains get tuned against the wrong baseline.
 
@@ -600,7 +601,7 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
 - **FLAC, never Opus — and the melodic reason is stronger than the drum one.** These zones *loop*,
   the runtime derives loop points as `(startLoop - start) / rate` in frames, and Opus adds priming
   delay and forces 48kHz, so every sustained note would click at each loop boundary.
-- ⚠️ **`bankFor(program, perc)` is THE ONE PLACE a bank is chosen.** `renderOffline` used to carry
+- **`bankFor(program, perc)` is THE ONE PLACE a bank is chosen.** `renderOffline` used to carry
   its own copy of that expression, commented "Same bank choice as live playback", which silently
   stopped being true the moment packs existed — the bounce measured *byte-identical* with packs
   present and packs 404ing. Same failure shape as GMD-44's three instrument factories. If you add
@@ -608,33 +609,32 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
 - Logs `[Gomidas] instrument 27: Clean Guitar (10 samples) — FluidR3 pack` per program, and warns
   with the reason on fallback. Verified A/B on the sample score: brightness (first-difference
   energy ratio) **0.0367 sonivox → 0.1604 packs**, RMS 0.128 → 0.178.
-- ⚠️ FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
+- FluidR3 is ~1.2dB hotter than sonivox, which **exposes GMD-42**: the bounce now pins at full
   scale (410/529200 samples, 52 runs, longest 0.41ms). Gain staging needs headroom before master.
 
 ### The SF2 low-pass filter — gens 8/9, and why a "duplicate zone" was never one (GMD-80/81, 2026-08-26)
-- ⚠️ **FluidR3 voices its guitars as a DRY copy plus a LOW-PASSED copy of the same sample**, layered.
+- **FluidR3 voices its guitars as a DRY copy plus a LOW-PASSED copy of the same sample**, layered.
   `instrument 63 "Clean Guitar"` is 10 key ranges x 2 bags: bags 973-982 carry no gen 8, bags 983-992
   carry the identical samples and key ranges with `initialFilterFc = 7935` (800Hz). Read without
   gens 8/9 the two are **indistinguishable**, so both play dry and sum coherently: **+6.05dB** of
   broadband guitar over every single-layer program, measured. It looks exactly like a parser
   double-counting the preset x instrument expansion and it is not — **the expansion was correct**.
   Same shape on 29 (1kHz) and 30. Before "fixing" a duplicated zone, print gens 8/9.
-- ⚠️ **Web Audio's lowpass `Q` is a resonance in DECIBELS**, not the cookbook's dimensionless Q —
+- **Web Audio's lowpass `Q` is a resonance in DECIBELS**, not the cookbook's dimensionless Q —
   which is SF2 centibels / 10, so `filterQ / 10` lands in the destination unit with no conversion.
   Off by 10x and every resonant zone either rings or goes flat.
 - **`SF2.zoneFilter(zone, sampleRate)` is THE ONE PLACE** the "is there a filter, at what frequency"
   decision is made, and it borrows TSF's audibility test (`hz < 0.499 * rate`, 13500 cents = open).
-  ⚠️ **That does NOT mean the two products filter the same zones.** Web skips a FLAT zone at exactly
+  **That does NOT mean the two products filter the same zones.** Web skips a FLAT zone at exactly
   13500 and rejects every slow modulation sweep — **119 of sonivox's 147 gen-8 zones plus 14 drum
   zones** — where TSF filters and sweeps. Parity holds for zones whose cutoff is *static*.
   `filterFc == null` means an OLD PACK and must stay a no-op — reading a missing field as 0 filters
   every note at 8Hz, i.e. silence.
 - **Preset gens 8/9 are ADDITIVE offsets**, and that is where FluidR3 keeps a velocity layer's
-  *timbre*: Nylon's preset bags run +0 cents at vel 121-127 down to −2786 at 0-64. Correcting the
-  GMD-81 note above — with these parsed, a velocity layer now changes brightness and not just level,
-  on the drum kit as well as on Nylon (see the twice-corrected note in the drum-kit section).
+  *timbre*: Nylon's preset bags run +0 cents at vel 121-127 down to −2786 at 0-64. So a velocity
+  layer changes brightness, not just level, on the drum kit as well as on Nylon.
   The **volume**-envelope offsets are still dropped (GMD-82), and the cutoff is **static** (GMD-83).
-- ⚠️ **gen 8 is where the cutoff STARTS, not where it lands.** TSF renders
+- **gen 8 is where the cutoff STARTS, not where it lands.** TSF renders
   `fres = initialFilterFc + modEnvToFilterFc x modEnv + modLfoToFilterFc x lfo`. Taking gen 8 as the
   answer shipped **Synth Bass 1 through a fixed 120Hz low-pass** — the bank sweeps it to 251Hz and
   it had no filter at all before. `zoneFilter` therefore resolves the **steady state**
@@ -643,29 +643,28 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   settle times: FluidR3 prog 30/35 **2ms** (so the static value is exact), prog 38 **203ms**, the
   drum kit up to **9.5s**, sonivox a median **1.45s**. That last one is why the fallback bank barely
   moves — 28 of its 653 zones qualify, where gen 8 alone would have filtered 147 and the steady
-  state 295, turning every piano dark from its first sample. ⚠️ **The 20ms boundary is a judgement
-  call, not a gap in the data** — an earlier version of this note claimed the two cases separate
-  cleanly and they do not. sonivox's minimum settle is **14.1ms**, 6ms inside the threshold, with
+  state 295, turning every piano dark from its first sample. **The 20ms boundary is a judgement
+  call, not a gap in the data** — the two cases do not separate cleanly. sonivox's minimum
+  settle is **14.1ms**, 6ms inside the threshold, with
   **15 more between 20 and 200ms**. Measure what moves before changing the constant.
-- ⚠️ **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
+- **Rejecting a sweep means the zone plays OPEN**, which for **Synth Bass 1** is further from the
   bank than either end of its sweep: desktop holds it at or below 251Hz for the whole sustain and we
   apply no filter at all. A knowingly audible web/desktop divergence on a shipped, packed program.
-- ⚠️ Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 —
+- Clamped to TSF's generator limits — [1500, 13500] gen 8, [0, 960] gen 9, ±12000 gen 11 —
   **ONCE, on the instrument+preset SUM**, never on either input alone. `tsf_region_operator`
   assigns a single generator *unclamped* (tsf.h:625, used for both the instrument gens at :841 and
   the preset gens at :853); only the merge call at :813 adds the regions and then clamps, and it
   runs exactly once per zone. Clamping each input instead is a *different function* whenever the
   instrument value is out of range — fc 16000 with a −3000 preset offset gives **13000** cents the
   right way and **10500** the wrong way, two octaves apart, and it bakes into the packs.
-  This was gotten backwards once already: **review round 5 asserted per-merge clamping, I adopted
-  it without checking the call sites, and round 7 caught it.** The envelope-resolved sum is then
+  Check the call sites before accepting a claim otherwise. The envelope-resolved sum is then
   left unclamped, because TSF leaves it unclamped too. Be precise about what the low bound buys:
   1500 cents is **19.4Hz**, so it is parity, not a guard against silence.
-- ⚠️ The settle time is **velocity-independent here and is not in TSF** — the mod envelope's attack
+- The settle time is **velocity-independent here and is not in TSF** — the mod envelope's attack
   scales by `(145 − velocity) / 144` (tsf.h:1032). One-directional (we can only decline a filter
   desktop applies), and worth 3 sonivox zones at velocity 127; no packed program moves. So the
   pinned "28 zones" is a velocity-0 figure. GMD-83 territory.
-- ⚠️ **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
+- **A zone open at 13500 with a non-zero gen 9 still filters** — the resonance is a top-octave
   LIFT, not a cut, so skipping it throws away something desktop has. **96** zones in the committed
   packs are like this — 90 melodic (all of program 27's dry layer) and 6 drum, **closed and pedal
   hi-hat at 10 centibels-per-dB** (keys 42/44/46, a stereo pair each — the OPEN hat is in the set
@@ -680,21 +679,21 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   (**−2.90**), Overdrive +2.12 → −3.44 (**−5.56**); Nylon, Jazz, Fretless, Synth Bass 1 and
   Fingered Bass all within 0.20 dB. Full mix of the sample score −1.07 → −3.15 dBFS, 0 clipped. **This is most of GMD-42's headline** ("a single note peaks at
   +2.88 dBFS") — it was a *doubled* program that did, not an ordinary one.
-- ⚠️ **Distortion Guitar stays hot on purpose** (+1.98 → +1.81 dB, only −0.17). Its two layers
+- **Distortion Guitar stays hot on purpose** (+1.98 → +1.81 dB, only −0.17). Its two layers
   resolve to 3619Hz and — because 11108 + 2468 clears the open threshold — **dry**. So prog 30 really
   does sum two voices, TSF plays it the same way, and GMD-80's title is wrong about that one program.
   Do not "finish the job" by filtering layer B at gen 8's 5001Hz; that is reading half the
   instruction.
-- ⚠️ **Two drum pieces moved, in opposite directions, and neither is a reason to re-tune GMD-73.**
+- **Two drum pieces moved, in opposite directions, and neither is a reason to re-tune GMD-73.**
   Kick, snare, crash and ride are within 0.15dB across all 47 GM drum keys. **Toms 41/43/45/47/48/50
   drop 0.56–2.25dB of PEAK at unchanged RMS (±0.03dB)** — the filter takes the stick spike off the
   transient and leaves the body; FluidR3 gives them *asymmetric* cutoffs per stereo half (L 7999Hz,
   R 4500Hz), which is the bank's own data, not a bug. **Hats gain 0.66–0.86dB** from the resonance.
-- ⚠️ GMD-73's floor was derived as `raw sample peak x zone attenuation`, which is no longer a
+- GMD-73's floor was derived as `raw sample peak x zone attenuation`, which is no longer a
   complete description of a drum's peak now that a zone can be filtered or resonant. It stands as
   measured, but **GMD-77/78 must build its preset gain column from a RENDERED peak**, not by
   re-deriving that formula.
-- ⚠️ **A pack's `version` must be bumped whenever it gains a field the PLAYER reads**, and
+- **A pack's `version` must be bumped whenever it gains a field the PLAYER reads**, and
   `webaudio.ts PACK_VERSION` must match. The two are cached on opposite terms — the JS is
   content-hashed and immutable, the packs are `max-age=2592000` and fetched by name — so a returning
   visitor otherwise pairs NEW JS with a 30-day-old manifest. For GMD-80 that is silent and total:
@@ -702,7 +701,7 @@ new mode: `extract-sf2-pack.mjs --bank 0 --split` writes `assets/instruments-gm/
   dry layers at +6dB while the loader still logs "FluidR3 pack". GMD-58's `blobBytes` check cannot
   catch it — the `.bin`s are byte-identical. `fetchPackHead` refetches with `cache: 'reload'` on a
   version behind, and warns if the SERVER is the stale one.
-- ⚠️ **A pack re-extract only changes the `.json`.** The `.bin` blobs came out byte-identical, which
+- **A pack re-extract only changes the `.json`.** The `.bin` blobs came out byte-identical, which
   is the extractor's determinism claim holding. **If a `.bin` shows as modified, stop** — that means
   the local ffmpeg differs from the one that built the committed pack, and you are about to commit
   9MB of re-encoded audio for a metadata change.
@@ -716,15 +715,15 @@ the wire. The 5.4MB drum blob round-trips exactly, 8ms warm.
 - **The JSON heads are deliberately NOT cached.** The manifest is 517KB raw but 9.1KB brotli, and
   it is what declares each blob's `blobBytes` — so reading every blob back against a
   freshly-fetched head gives invalidation for free. A re-extract of the SAMPLES invalidates
-  automatically. ⚠️ **That stopped being the whole story with GMD-80**: a pack can gain metadata the
+  automatically. **That stopped being the whole story with GMD-80**: a pack can gain metadata the
   player reads while every `.bin` stays byte-identical, and then `blobBytes` sees nothing. That case
   is covered by the pack's `version` against `webaudio.ts PACK_VERSION` — a number that DOES have to
   be bumped by hand. `CACHE_VERSION` covers only headless payloads (sonivox, SFZ).
-- ⚠️ **`indexedDB.open()` can hang with NO event** — not success, not error, not blocked — when a
+- **`indexedDB.open()` can hang with NO event** — not success, not error, not blocked — when a
   `deleteDatabase` from another tab is pending. It froze the renderer because every `fetchBuffer`
   awaited forever. Hence the 3s open / 4s read timeouts. **Nothing on this path may stall a pack
   load**: every failure falls through to the network, and the network to sonivox.
-- ⚠️ **A host with an SPA fallback answers a missing pack with 200 `index.html`** — cached, that
+- **A host with an SPA fallback answers a missing pack with 200 `index.html`** — cached, that
   would keep "succeeding" with HTML forever for the payloads with no `blobBytes` to check. Rejected
   on content-type. Remember this when configuring the host in GMD-60.
 - Stores a **copy** of the buffer: callers hand these to `decodeAudioData`, which *detaches* its
@@ -745,7 +744,7 @@ normalised near full scale. Nothing in the chain budgeted for a second voice.
   to pump or smear a transient, and bit-identical live vs offline. Below the knee the curve is
   exactly `y = x` so ordinary material is untouched, and `oversample = 'none'` keeps that literally
   true (any oversampling runs it through resampling filters first).
-- ⚠️ Two traps the unit tests caught and an ear would not. tanh saturates fast enough that
+- Two traps the unit tests caught and an ear would not. tanh saturates fast enough that
   `knee + (1-knee)*tanh(…)` **rounds to exactly 1.0 in float32** well inside the curve's range,
   which the int16 encode turns straight back into the clipped sample the stage exists to prevent —
   hence `CEILING_MAX = 0.998`. And a WaveShaper **clamps out-of-range input to its end entries**, so
@@ -768,7 +767,7 @@ branch at all, so a track with an SFZ preset **recorded as GM**.
   can.
 - The snapshot's field list is pinned by `tests/mixsnapshot.test.js`, so a new control cannot
   quietly skip the recording.
-- ⚠️ **SF2 note-off is FIFO by note INSTANCE, not by key** (GMD-49). One note-on spawns several
+- **SF2 note-off is FIFO by note INSTANCE, not by key** (GMD-49). One note-on spawns several
   voices for a layered preset and those must release together, but a key retriggered while an
   earlier instance still rings (ties, let ring, repeated notes on one string) must **not** be killed
   by the older note's note-off. Voices from one note-on share a `noteId`; `voicesToRelease` picks the
