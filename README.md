@@ -27,13 +27,27 @@ See **[`docs/FEATURES.md`](docs/FEATURES.md)** for the full implemented-feature 
 
 ## Build
 
-Requires CMake ≥ 3.22 and a C++20 toolchain (Xcode on macOS). The first configure fetches JUCE 8.0.13.
+Requires CMake ≥ 3.22, a C++20 toolchain (Xcode on macOS, GCC or Clang on Linux), Node and pnpm. The
+first configure fetches JUCE 8.0.13 and sfizz 1.2.3.
 
 ```bash
+pnpm install                              # required before configuring (CMake runs `pnpm exec tsc`)
 cmake -B build -DCMAKE_BUILD_TYPE=Debug   # first run fetches JUCE 8.0.13
 cmake --build build
-open "build/Gomidas_artefacts/Debug/Gomidas.app"
+open "build/Gomidas_artefacts/Debug/Gomidas.app"   # macOS
+./build/Gomidas_artefacts/Debug/Gomidas            # Linux
 ```
+
+### Linux
+
+Tested on Arch (Omarchy, Hyprland). System packages:
+
+```bash
+sudo pacman -S --needed base-devel cmake pkgconf python webkit2gtk-4.1 gtk3 alsa-lib freetype2 fontconfig
+```
+
+Audio goes through ALSA, so on PipeWire you also need `pipewire-alsa` (or `pipewire-jack`). JUCE has no
+Wayland backend: the app runs under XWayland, which a Wayland desktop needs to have enabled.
 
 The web front-end (`packages/core/`) and the GM SoundFont (`assets/`) are embedded into the binary via
 `juce_add_binary_data`, so there are no runtime asset paths to manage — editing a file under `packages/core/`

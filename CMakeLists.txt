@@ -54,6 +54,9 @@ juce_add_gui_app(Gomidas
   PRODUCT_NAME  "Gomidas"
   COMPANY_NAME  "Alesi"
   BUNDLE_ID     "com.alesi.gomidas"
+  # On Linux this is what links WebKitGTK + GTK (via pkg-config) for the WebBrowserComponent;
+  # on macOS WKWebView is a system framework either way.
+  NEEDS_WEB_BROWSER TRUE
   # Live input (Phase 2): the entitlement + Info.plist usage string must exist for the
   # audio input device to open. The device is still launched output-only, so no mic
   # prompt appears until the user enables live-input monitoring (AudioEngine::setLiveInput).
@@ -201,6 +204,8 @@ if(GOMIDAS_BUILD_TESTS)
   target_link_libraries(sf_smoketest PRIVATE
     juce::juce_audio_basics
     juce::juce_recommended_config_flags)
+  # Same as the app: no networking. On Linux JUCE otherwise expects libcurl to be linked.
+  target_compile_definitions(sf_smoketest PRIVATE JUCE_USE_CURL=0)
   set_target_properties(sf_smoketest PROPERTIES CXX_STANDARD 20)
 
   # Assert each bundled CC0 SFZ instrument loads (incl. FLAC decode) and renders audio.

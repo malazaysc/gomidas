@@ -15,6 +15,8 @@ Fixes:
      `do_push_any(...)` are used WITHOUT a template argument list, which recent clang
      rejects as a hard error (-Wmissing-template-arg-list-after-template-kw). The
      `template` disambiguator is unnecessary here; remove it.
+  3. abseil missing <cstdint>: container_memory.h uses uintptr_t but only got <cstdint>
+     transitively, which GCC 16's libstdc++ no longer provides (first Linux build, GOM-84).
 """
 import pathlib
 
@@ -46,3 +48,9 @@ patch("external/atomic_queue/include/atomic_queue/atomic_queue.h", [
     ("Base::template do_pop_any(",  "Base::do_pop_any("),
     ("Base::template do_push_any(", "Base::do_push_any("),
 ])
+
+# 3. abseil header that relies on a transitive <cstdint> (GCC 16 libstdc++)
+patch("external/abseil-cpp/absl/container/internal/container_memory.h", [(
+    "#include <cstddef>\n#include <cstring>\n",
+    "#include <cstddef>\n#include <cstdint>\n#include <cstring>\n",
+)])

@@ -450,7 +450,9 @@ MainComponent::MainComponent()
 
     loadRecentList();
     buildMenus();
-    juce::MenuBarModel::setMacMainMenu (this);
+   #if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu (this);   // no global menu elsewhere (Linux menu: GOM-86)
+   #endif
 
     setSize (1280, 820);
     startTimerHz (30);
@@ -458,7 +460,9 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+   #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
+   #endif
     closePluginEditor();   // destroy the editor before the engine frees the plugin
     stopTimer();
     engine.shutdown();
