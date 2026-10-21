@@ -2333,11 +2333,7 @@
     wahOpen: () => setWah(false),
     wahClose: () => setWah(true)
   };
-  let keyPlatformCache = null;
-  function keyPlatform() {
-    if (!keyPlatformCache && window.GomidasKeymap) keyPlatformCache = window.GomidasKeymap.platformOf(window);
-    return keyPlatformCache || 'mac';
-  }
+  function keyPlatform() { return window.GomidasKeymap ? window.GomidasKeymap.platform() : 'mac'; }
 
   // Shared key logic — used by the JS keydown listener AND native key forwarding
   // (MainComponent::keyPressed → window.gomidasNativeKey). Returns true if handled.
@@ -2394,7 +2390,9 @@
     if (k === '/') { toggleTriplet(); return true; }                    // GP: Triolet (triplet)
     if (k === 'p' || k === 'P') { (shift || k === 'P') ? palmMuteBeat() : palmMuteNote(); return true; } // GP: Palm Mute (P / ⇧P)
     if (k === 'x' || k === 'X') { deadNote(); return true; }            // GP: Dead Note
-    if (k === 'i' || k === 'I' || k === 'Insert') { letRing(); return true; } // GP: Let Ring
+    // GP: Let Ring is I. Insert as an alias is macOS-only: on PC, Ins is GP8's Insert Bar and
+    // Shift+Ins the platform's paste — neither may fall through to an effect (GOM-87).
+    if (k === 'i' || k === 'I' || (k === 'Insert' && keyPlatform() === 'mac')) { letRing(); return true; }
     if (k === 'l' || k === 'L') { (shift || k === 'L') ? tieBeat() : tieNote(); return true; } // GP: Tie Note / Tie Beat
     if (k === 'h' || k === 'H') { hammerPull(); return true; }          // GP: Hammer On / Pull Off
     if (k === 's' || k === 'S') { slideNote(false); return true; }      // GP: Legato Slide

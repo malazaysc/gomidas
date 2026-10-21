@@ -1329,7 +1329,7 @@ onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(
 (function labelUndoRedo() {
   const K = window.GomidasKeymap;
   if (!K) return;
-  const p = K.platformOf(window);
+  const p = K.platform();
   const set = (id, name, action) => { const b = document.getElementById(id); if (b) b.title = name + ' (' + K.label(action, p) + ')'; };
   set('undo-btn', 'Undo', 'undo');
   set('redo-btn', 'Redo', 'redo');

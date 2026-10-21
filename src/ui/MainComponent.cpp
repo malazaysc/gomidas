@@ -997,32 +997,35 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         return false;
 
     // Map the JUCE key to the JS key name the editor expects.
+    // Compare KEY CODES: KeyPress::operator==(int) only matches with no modifier held, which
+    // dropped every Ctrl/Alt + named-key shortcut (Ctrl+Ins, Ctrl+Del, Alt+arrows) on this path.
+    const int code = key.getKeyCode();
     juce::String jsKey;
-    if (key == juce::KeyPress::leftKey)        jsKey = "ArrowLeft";
-    else if (key == juce::KeyPress::rightKey)  jsKey = "ArrowRight";
-    else if (key == juce::KeyPress::upKey)     jsKey = "ArrowUp";
-    else if (key == juce::KeyPress::downKey)   jsKey = "ArrowDown";
-    else if (key == juce::KeyPress::pageUpKey) jsKey = "PageUp";
-    else if (key == juce::KeyPress::pageDownKey) jsKey = "PageDown";
-    else if (key == juce::KeyPress::returnKey) jsKey = "Enter";
-    else if (key == juce::KeyPress::backspaceKey) jsKey = "Backspace";
-    else if (key == juce::KeyPress::deleteKey) jsKey = "Delete";
-    else if (key == juce::KeyPress::homeKey)   jsKey = "Home";
-    else if (key == juce::KeyPress::endKey)    jsKey = "End";
-    else if (key == juce::KeyPress::tabKey)    jsKey = "Tab";
-    else if (key == juce::KeyPress::F3Key)     jsKey = "F3";
-    else if (key == juce::KeyPress::spaceKey)  jsKey = " ";
-    else if (key == juce::KeyPress::insertKey) jsKey = "Insert";   // GP8 Windows: Ins = Insert Bar
+    if (code == juce::KeyPress::leftKey)          jsKey = "ArrowLeft";
+    else if (code == juce::KeyPress::rightKey)    jsKey = "ArrowRight";
+    else if (code == juce::KeyPress::upKey)       jsKey = "ArrowUp";
+    else if (code == juce::KeyPress::downKey)     jsKey = "ArrowDown";
+    else if (code == juce::KeyPress::pageUpKey)   jsKey = "PageUp";
+    else if (code == juce::KeyPress::pageDownKey) jsKey = "PageDown";
+    else if (code == juce::KeyPress::returnKey)   jsKey = "Enter";
+    else if (code == juce::KeyPress::backspaceKey) jsKey = "Backspace";
+    else if (code == juce::KeyPress::deleteKey)   jsKey = "Delete";
+    else if (code == juce::KeyPress::homeKey)     jsKey = "Home";
+    else if (code == juce::KeyPress::endKey)      jsKey = "End";
+    else if (code == juce::KeyPress::tabKey)      jsKey = "Tab";
+    else if (code == juce::KeyPress::F3Key)       jsKey = "F3";
+    else if (code == juce::KeyPress::spaceKey)    jsKey = " ";
+    else if (code == juce::KeyPress::insertKey)   jsKey = "Insert";   // GP8 Windows: Ins = Insert Bar
     else
     {
         auto c = key.getTextCharacter();
         // Ctrl/Alt turn a letter into a control character (Ctrl+Z -> 0x1A on X11) or into nothing
         // (Windows); the key code still names the key, so use it for a printable one (GOM-87).
-        if (c < 0x20)
-        {
-            const int code = key.getKeyCode();
-            c = (code >= 0x20 && code < 0x7f) ? (juce::juce_wchar) code : 0;
-        }
+        // Only under Ctrl/Alt: a key that genuinely types a control character (Escape) is forwarded
+        // as before.
+        const auto& m = key.getModifiers();
+        if (c < 0x20 && (m.isCtrlDown() || m.isAltDown()) && code >= 0x20 && code < 0x7f)
+            c = (juce::juce_wchar) code;
         if (c == 0) return false;
         jsKey = juce::String::charToString (c);
     }

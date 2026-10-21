@@ -170,7 +170,7 @@
   // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
   function sc(action) {
     const K = window.GomidasKeymap;
-    const l = K ? K.label(action, K.platformOf(window)) : '';
+    const l = K ? K.label(action, K.platform()) : '';
     return l ? ' (' + l + ')' : '';
   }
   function mkBtn(label, title, fn) {

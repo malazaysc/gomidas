@@ -63,6 +63,13 @@ describe('PC keymap (GP8 Windows column) — Linux and Windows', () => {
     expect(pc('Delete', { shift: true })).toBe('deleteBeats');
   });
 
+  it('matches shift exactly on named keys: Shift+Ins (paste) and Ctrl+Shift+Del are not bar edits', () => {
+    expect(pc('Insert', { shift: true })).toBe(null);
+    expect(pc('Delete', { ctrl: true, shift: true })).toBe(null);
+    expect(pc('Delete', { shift: true })).toBe('deleteBeats');
+    expect(pc('ArrowUp', { ctrl: true, shift: true })).toBe(null);
+  });
+
   it('deviates on plain Del (user decision): it stays Delete Note, never Delete Track', () => {
     expect(pc('Delete')).toBe(null);          // falls through to the editor's deleteNote
     expect(pc('Backspace')).toBe(null);
@@ -121,7 +128,7 @@ describe('platform detection', () => {
 describe('the editor implements every bound action', () => {
   it('SHORTCUT_ACTIONS in editor.js has an entry for each table action', () => {
     const src = readFileSync(fileURLToPath(new URL('../editor.js', import.meta.url)), 'utf8');
-    const block = src.slice(src.indexOf('const SHORTCUT_ACTIONS = {'), src.indexOf('let keyPlatformCache'));
+    const block = src.slice(src.indexOf('const SHORTCUT_ACTIONS = {'), src.indexOf('function keyPlatform()'));
     const defined = new Set([...block.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]));
     expect(defined.size).toBeGreaterThan(30);    // the slice found the table, not nothing
     for (const p of ['mac', 'pc']) {

@@ -18,12 +18,14 @@
 
 type Platform = 'mac' | 'pc';
 interface KeyMods { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; }
-interface Binding { action: string; combo: string; label?: string; }
+interface Binding { action: string; combo: string; }
 
 // A combo is "mod+mod+key". Modifiers: cmd (meta), ctrl, alt, shift. The key is the KeyboardEvent
-// `key` (letters lower-case). cmd/ctrl/alt must match EXACTLY; shift must match when written and
-// is ignored when not — so list a shift variant before its plain form. `label` is what tooltips
-// show when it differs from the combo's own rendering.
+// `key` (letters lower-case). cmd/ctrl/alt must match EXACTLY. Shift:
+//  - NAMED keys (Insert, Delete, arrows, Home/End) match shift exactly — Shift+Ins is the
+//    platform's paste and Ctrl+Shift+Del is not Ctrl+Del;
+//  - single characters ignore shift when the combo doesn't name it, because shift is often what
+//    TYPES the character ("+", ">", "Z" with Caps Lock) — list a shift variant before its plain form.
 const BINDINGS: Record<Platform, Binding[]> = {
   mac: [
     { action: 'deleteTrack',     combo: 'cmd+alt+r' },
@@ -35,9 +37,9 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'cut',             combo: 'cmd+x' },
     { action: 'paste',           combo: 'cmd+v' },
     { action: 'doubleDot',       combo: 'cmd+.' },
-    { action: 'insertBar',       combo: 'cmd++', label: '⌘+' },
+    { action: 'insertBar',       combo: 'cmd++' },
     { action: 'insertBar',       combo: 'cmd+=' },
-    { action: 'deleteBeats',     combo: 'cmd+-', label: '⌘-' },
+    { action: 'deleteBeats',     combo: 'cmd+-' },
     { action: 'deleteBeats',     combo: 'cmd+_' },
     { action: 'prevTrack',       combo: 'cmd+ArrowUp' },
     { action: 'nextTrack',       combo: 'cmd+ArrowDown' },
@@ -59,9 +61,9 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'voice3',          combo: 'cmd+3' },
     { action: 'voice4',          combo: 'cmd+4' },
     { action: 'toggleLoop',      combo: 'cmd+l' },
-    { action: 'insertBeat',      combo: 'ctrl++', label: '⌃+' },
+    { action: 'insertBeat',      combo: 'ctrl++' },
     { action: 'insertBeat',      combo: 'ctrl+=' },
-    { action: 'deleteBar',       combo: 'ctrl+-', label: '⌃-' },
+    { action: 'deleteBar',       combo: 'ctrl+-' },
     { action: 'deleteBar',       combo: 'ctrl+_' },
     { action: 'semitoneUp',      combo: 'alt+shift+ArrowUp' },
     { action: 'octaveUp',        combo: 'alt+ArrowUp' },
@@ -86,7 +88,7 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'paste',           combo: 'ctrl+v' },
     { action: 'doubleDot',       combo: 'ctrl+.' },
     { action: 'insertBeat',      combo: 'ctrl+Insert' },
-    { action: 'insertBar',       combo: 'Insert', label: 'Ins' },
+    { action: 'insertBar',       combo: 'Insert' },
     { action: 'deleteBar',       combo: 'ctrl+Delete' },
     { action: 'deleteBeats',     combo: 'shift+Delete' },
     { action: 'prevTrack',       combo: 'ctrl+ArrowUp' },
@@ -101,9 +103,9 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'brushUp',         combo: 'ctrl+u' },
     { action: 'arpeggioDown',    combo: 'ctrl+shift+d' },
     { action: 'brushDown',       combo: 'ctrl+d' },
-    { action: 'zoomIn',          combo: 'ctrl++', label: 'Ctrl++' },
+    { action: 'zoomIn',          combo: 'ctrl++' },
     { action: 'zoomIn',          combo: 'ctrl+=' },
-    { action: 'zoomOut',         combo: 'ctrl+-', label: 'Ctrl+-' },
+    { action: 'zoomOut',         combo: 'ctrl+-' },
     { action: 'zoomOut',         combo: 'ctrl+_' },
     { action: 'tripletFeel',     combo: 'ctrl+/' },
     { action: 'voice1',          combo: 'ctrl+1' },
@@ -147,6 +149,7 @@ function resolve(key: string, mods: KeyMods, platform: Platform): string | null 
     const c = b.c;
     if (c.key !== k || c.cmd !== m.cmd || c.ctrl !== m.ctrl || c.alt !== m.alt) continue;
     if (c.shift && !m.shift) continue;
+    if (!c.shift && m.shift && c.key.length > 1) continue;   // named key: shift is exact
     return b.action;
   }
   return null;
@@ -172,8 +175,7 @@ function renderCombo(c: Combo, platform: Platform): string {
 /** The shortcut to show for an action on this platform ('⌘Z' / 'Ctrl+Z'), or '' if unbound. */
 function label(action: string, platform: Platform): string {
   const b = (PARSED[platform] || PARSED.pc).find((x) => x.action === action);
-  if (!b) return '';
-  return b.label || renderCombo(b.c, platform);
+  return b ? renderCombo(b.c, platform) : '';
 }
 
 /** Which keymap this host gets. The desktop asks JUCE (initialisationData.__juce__platform, set
@@ -189,7 +191,14 @@ function platformOf(win?: any): Platform {
   return /mac|iphone|ipad/i.test(hint) ? 'mac' : 'pc';
 }
 
-  const api = { resolve, label, platformOf, BINDINGS };
+let cachedPlatform: Platform | null = null;
+/** This page's platform, worked out once — the keys and the tooltips must read the same table. */
+function platform(): Platform {
+  if (!cachedPlatform) cachedPlatform = platformOf();
+  return cachedPlatform;
+}
+
+  const api = { resolve, label, platformOf, platform, BINDINGS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasKeymap = api;
 }());

@@ -76,9 +76,9 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Tuplets 5 / 6 / 7 / 9 | Note menu | same | ✅ `setTuplet(n)`; denom = nearest lower power of two; applies across the beat selection (spanning groups), toggles off when all selected already have it |
 | Rest | `R` / toolbar `R` | same | ✅ clears beat to a timed rest |
 | Insert beat after cursor | `⌃+` (Linux/Windows: `Ctrl+Ins`), toolbar `＋beat`, or `→` at end | `⌃+` / `Ctrl+Ins` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
-| Delete the beats | `⌘-` / toolbar `－beat` | `⌘-` | ✅ |
-| Insert bar (to all tracks) | `⌘+` / toolbar `＋bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
-| Delete bar (from all tracks) | `⌃-` / toolbar `－bar` | `⌃-` | ✅ JSON round-trip rebuild; keeps ≥1 bar |
+| Delete the beats | `⌘-` (Linux/Windows: `Shift+Del`) / toolbar `－beat` | `⌘-` / `Shift+Del` | ✅ |
+| Insert bar (to all tracks) | `⌘+` (Linux/Windows: `Ins`) / toolbar `＋bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
+| Delete bar (from all tracks) | `⌃-` (Linux/Windows: `Ctrl+Del`) / toolbar `－bar` | `⌃-` / `Ctrl+Del` | ✅ JSON round-trip rebuild; keeps ≥1 bar |
 | Time signature | `⌘T` / **click the time sig in the transport chip** / palette `4/4` / menu Bar→Time Signature | same | ✅ modal (beats / note value, incl. custom e.g. 3/4, 6/8); applies from the current bar to the end. The transport chip shows the current bar's time signature live |
 | Key signature | `⌘K` / menu Bar→Key Signature | same | ✅ modal (−7..+7 accidentals + major/minor); applies from the current bar to the end |
 | Open / close repeat | `[` / `]` / menu Bar | same | ✅ notation barline + **playback loops** (repeats unrolled into the event list; play cursor jumps back). Alternate endings → backlog |
