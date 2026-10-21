@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "GomidasAssets.h"
+#include "AssetBytes.h"
 
 namespace gomidas
 {
@@ -829,9 +830,9 @@ MainComponent::serveResource (const juce::String& url)
             int size = 0;
             if (const char* data = GomidasAssets::getNamedResource (a.resource, size))
             {
-                std::vector<std::byte> bytes ((size_t) size);
-                std::memcpy (bytes.data(), data, (size_t) size);
-                return juce::WebBrowserComponent::Resource { std::move (bytes), juce::String (a.mime) };
+                // WebKitGTK needs a BOM on UTF-8 text assets — see AssetBytes.h (GOM-90).
+                return juce::WebBrowserComponent::Resource { assetBytes (data, (size_t) size, a.mime, kWebViewNeedsUtf8Bom),
+                                                             juce::String (a.mime) };
             }
         }
     }

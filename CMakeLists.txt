@@ -225,9 +225,15 @@ if(GOMIDAS_BUILD_TESTS)
   add_test(NAME sf_gm_note
            COMMAND sf_smoketest "${CMAKE_SOURCE_DIR}/assets/soundfont/sonivox.sf2")
 
+  # The BOM rule for embedded web assets on WebKitGTK (GOM-90). Header-only, no JUCE.
+  add_executable(asset_bytes_test tests/asset_bytes_test.cpp)
+  target_include_directories(asset_bytes_test PRIVATE src)
+  set_target_properties(asset_bytes_test PROPERTIES CXX_STANDARD 20)
+  add_test(NAME asset_bytes COMMAND asset_bytes_test)
+
   # Aggregate target so CI (and `cmake --build build --target gomidas_tests`) builds every
   # test executable at once — adding a new test target here needs no CI change.
-  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest)
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test)
 endif()
 
 target_link_libraries(Gomidas PRIVATE
