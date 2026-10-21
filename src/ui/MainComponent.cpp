@@ -1021,10 +1021,9 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         auto c = key.getTextCharacter();
         // Ctrl/Alt turn a letter into a control character (Ctrl+Z -> 0x1A on X11) or into nothing
         // (Windows); the key code still names the key, so use it for a printable one (GOM-87).
-        // Only under Ctrl/Alt: a key that genuinely types a control character (Escape) is forwarded
-        // as before.
-        const auto& m = key.getModifiers();
-        if (c < 0x20 && (m.isCtrlDown() || m.isAltDown()) && code >= 0x20 && code < 0x7f)
+        // Only under Ctrl: a key that genuinely types a control character (Escape) is forwarded as
+        // before, and a macOS ⌥ dead key (⌥E -> no character) is not turned into a letter.
+        if (c < 0x20 && key.getModifiers().isCtrlDown() && code >= 0x20 && code < 0x7f)
             c = (juce::juce_wchar) code;
         if (c == 0) return false;
         jsKey = juce::String::charToString (c);

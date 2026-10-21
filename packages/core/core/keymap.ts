@@ -32,6 +32,7 @@ interface Binding { action: string; combo: string; }
 const BINDINGS: Record<Platform, Binding[]> = {
   mac: [
     { action: 'deleteTrack',     combo: 'cmd+alt+r' },
+    { action: 'deleteTrack',     combo: 'cmd+alt+®' },   // ⌥R composes to ® on a US Mac
     { action: 'redo',            combo: 'cmd+shift+z' },
     { action: 'undo',            combo: 'cmd+z' },
     { action: 'redo',            combo: 'cmd+y' },
@@ -84,9 +85,9 @@ const BINDINGS: Record<Platform, Binding[]> = {
   // GP8's Windows column. Ctrl+Alt+letter is GP's own choice for the ⌥ effects (AltGr on some
   // layouts produces a character instead — the Effects menu is the dependable path there).
   pc: [
+    { action: 'redo',            combo: 'ctrl+y' },        // first: GP8's Windows Redo, so the tooltip shows it
     { action: 'redo',            combo: 'ctrl+shift+z' },
     { action: 'undo',            combo: 'ctrl+z' },
-    { action: 'redo',            combo: 'ctrl+y' },
     { action: 'selectAll',       combo: 'ctrl+a' },
     { action: 'tremoloBar',      combo: 'ctrl+alt+v' },
     { action: 'wahOpen',         combo: 'ctrl+alt+o' },

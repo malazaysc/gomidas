@@ -29,6 +29,7 @@ describe('macOS keymap (the pre-GOM-87 bindings; cmd/ctrl/alt now match exactly)
     expect(mac('U', { meta: true, shift: true })).toBe('arpeggioUp');
     expect(mac('3', { meta: true })).toBe('voice3');
     expect(mac('r', { meta: true, alt: true })).toBe('deleteTrack');
+    expect(mac('®', { meta: true, alt: true })).toBe('deleteTrack');   // what a US Mac sends
   });
 
   it('ignores shift on macOS named keys, as before (⇧⌘↑ still moves track)', () => {
@@ -122,7 +123,7 @@ describe('labels', () => {
     expect(label('undo', 'mac')).toBe('⌘Z');
     expect(label('redo', 'mac')).toBe('⇧⌘Z');
     expect(label('undo', 'pc')).toBe('Ctrl+Z');
-    expect(label('redo', 'pc')).toBe('Ctrl+Shift+Z');
+    expect(label('redo', 'pc')).toBe('Ctrl+Y');
     expect(label('insertBeat', 'mac')).toBe('⌃+');
     expect(label('insertBeat', 'pc')).toBe('Ctrl+Ins');
     expect(label('insertBar', 'pc')).toBe('Ins');
@@ -143,6 +144,16 @@ describe('platform detection', () => {
     expect(platformOf({ navigator: { platform: 'MacIntel' } })).toBe('mac');
     expect(platformOf({ navigator: { userAgentData: { platform: 'Linux' } } })).toBe('pc');
     expect(platformOf({ navigator: { platform: 'Win32' } })).toBe('pc');
+  });
+});
+
+describe('the two tables bind the same actions', () => {
+  it('differs only by the declared exceptions (Del deviation; Insert alias)', () => {
+    const acts = (p) => new Set(BINDINGS[p].map((b) => b.action));
+    const onlyMac = [...acts('mac')].filter((a) => !acts('pc').has(a)).sort();
+    const onlyPc = [...acts('pc')].filter((a) => !acts('mac').has(a)).sort();
+    expect(onlyMac).toEqual(['deleteTrack', 'letRing']);
+    expect(onlyPc).toEqual([]);
   });
 });
 

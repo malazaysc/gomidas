@@ -2334,11 +2334,11 @@
     wahClose: () => setWah(true),
     letRing
   };
+  function keyPlatform() { return window.GomidasKeymap.platform(); }
   let warnedNoKeymap = false;
-  function keyPlatform() {
-    if (window.GomidasKeymap) return window.GomidasKeymap.platform();
+  function noKeymap() {
     if (!warnedNoKeymap) { warnedNoKeymap = true; console.warn('[Gomidas] keymap.js not loaded: no modified shortcuts'); }
-    return 'pc';   // keymap.ts's own default
+    return null;
   }
 
   // Shared key logic — used by the JS keydown listener AND native key forwarding
@@ -2354,7 +2354,7 @@
     // ---- shortcuts: per-platform table (core/keymap.ts, GOM-87) ----
     // GP8 has a macOS keymap and a Windows one, and they are not a modifier swap, so the
     // resolver answers "which action is this here"; an unmatched chord does nothing.
-    const action = window.GomidasKeymap ? window.GomidasKeymap.resolve(k, mods, keyPlatform()) : null;
+    const action = window.GomidasKeymap ? window.GomidasKeymap.resolve(k, mods, keyPlatform()) : noKeymap();
     if (action && SHORTCUT_ACTIONS[action]) { SHORTCUT_ACTIONS[action](); return true; }
     if (meta || ctrl || alt) return false; // leave other chords to the system
 
@@ -2444,12 +2444,13 @@
   // The one "may the editor take keys now?" rule, for BOTH entry points: the browser keydown
   // below and native forwarding (app.js gomidasNativeKey) — a shortcut must not edit the score
   // behind an open dialog or steal a key from a text field.
-  // `fromNative`: the key came through MainComponent, i.e. the WebView does NOT hold keyboard
-  // focus, so the DOM's focused element is stale and must not swallow the key — only the open
-  // dialog counts there.
+  // `fromNative`: the key came through MainComponent. That happens two ways: the WebView lost
+  // keyboard focus (then the DOM's focused element is stale and must not swallow the key), or it
+  // still has focus and passed up a key it didn't handle (macOS WKWebView does this — then a
+  // focused text field still owns the key). document.hasFocus() tells the two apart.
   function acceptsKeys(target, fromNative) {
     if (modalIsOpen()) return false;
-    if (fromNative) return true;
+    if (fromNative && !document.hasFocus()) return true;
     return !(isTypingTarget(target) || isTypingTarget(document.activeElement));
   }
   function onKey(e) {
