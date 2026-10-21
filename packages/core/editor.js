@@ -2291,10 +2291,10 @@
   // Every action a shortcut can name (core/keymap.ts BINDINGS). Kept beside handleKey so the
   // table and the editor can't drift: keymap.test.js checks every bound action exists here.
   const SHORTCUT_ACTIONS = {
-    deleteTrack: () => deleteTrack(),
-    undo: () => undo(),
-    redo: () => redo(),
-    selectAll: () => selectAll(),
+    deleteTrack,
+    undo,
+    redo,
+    selectAll,
     copy: () => copySelection(),
     cut: () => cutSelection(),
     paste: () => pasteClipboard(),
@@ -2302,12 +2302,12 @@
     insertBar: () => addBar(),
     deleteBeats: () => removeBeat(),
     insertBeat: () => insertBeatAfter(),
-    deleteBar: () => deleteBar(),
+    deleteBar,
     prevTrack: () => moveTrack(-1),
     nextTrack: () => moveTrack(1),
     firstBar: () => moveToScoreEdge(false),
     lastBar: () => moveToScoreEdge(true),
-    toggleBeatGrid: () => toggleBeatGrid(),
+    toggleBeatGrid,
     goTo: () => { if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); },
     timeSignature: () => { if (window.gomidasOpenTimeSig) window.gomidasOpenTimeSig(); },
     keySignature: () => { if (window.gomidasOpenKeySig) window.gomidasOpenKeySig(); },
@@ -2322,16 +2322,17 @@
     voice2: () => selectVoice(1),
     voice3: () => selectVoice(2),
     voice4: () => selectVoice(3),
-    toggleLoop: () => toggleLoop(),
+    toggleLoop,
     semitoneUp: () => transposeNote(1),
     octaveUp: () => transposeNote(12),
     semitoneDown: () => transposeNote(-1),
     octaveDown: () => transposeNote(-12),
     // ⌥-letter on macOS usually arrives composed (√, ø, ç), so these mirror the Effects menu,
     // which is the dependable path.
-    tremoloBar: () => tremoloBar(),
+    tremoloBar,
     wahOpen: () => setWah(false),
-    wahClose: () => setWah(true)
+    wahClose: () => setWah(true),
+    letRing
   };
   let warnedNoKeymap = false;
   function keyPlatform() {
@@ -2395,9 +2396,7 @@
     if (k === '/') { toggleTriplet(); return true; }                    // GP: Triolet (triplet)
     if (k === 'p' || k === 'P') { (shift || k === 'P') ? palmMuteBeat() : palmMuteNote(); return true; } // GP: Palm Mute (P / ⇧P)
     if (k === 'x' || k === 'X') { deadNote(); return true; }            // GP: Dead Note
-    // GP: Let Ring is I. Insert as an alias is macOS-only: on PC, Ins is GP8's Insert Bar and
-    // Shift+Ins the platform's paste — neither may fall through to an effect (GOM-87).
-    if (k === 'i' || k === 'I' || (k === 'Insert' && keyPlatform() === 'mac')) { letRing(); return true; }
+    if (k === 'i' || k === 'I') { letRing(); return true; }   // GP: Let Ring (macOS Insert alias: keymap.ts)
     if (k === 'l' || k === 'L') { (shift || k === 'L') ? tieBeat() : tieNote(); return true; } // GP: Tie Note / Tie Beat
     if (k === 'h' || k === 'H') { hammerPull(); return true; }          // GP: Hammer On / Pull Off
     if (k === 's' || k === 'S') { slideNote(false); return true; }      // GP: Legato Slide
@@ -2445,8 +2444,13 @@
   // The one "may the editor take keys now?" rule, for BOTH entry points: the browser keydown
   // below and native forwarding (app.js gomidasNativeKey) — a shortcut must not edit the score
   // behind an open dialog or steal a key from a text field.
-  function acceptsKeys(target) {
-    return !(modalIsOpen() || isTypingTarget(target) || isTypingTarget(document.activeElement));
+  // `fromNative`: the key came through MainComponent, i.e. the WebView does NOT hold keyboard
+  // focus, so the DOM's focused element is stale and must not swallow the key — only the open
+  // dialog counts there.
+  function acceptsKeys(target, fromNative) {
+    if (modalIsOpen()) return false;
+    if (fromNative) return true;
+    return !(isTypingTarget(target) || isTypingTarget(document.activeElement));
   }
   function onKey(e) {
     if (!acceptsKeys(e.target)) return;

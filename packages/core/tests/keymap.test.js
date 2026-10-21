@@ -11,7 +11,7 @@ const { resolve, label, platformOf, BINDINGS } = K;
 const mac = (key, mods = {}) => resolve(key, mods, 'mac');
 const pc = (key, mods = {}) => resolve(key, mods, 'pc');
 
-describe('macOS keymap (unchanged from before GOM-87)', () => {
+describe('macOS keymap (the pre-GOM-87 bindings; cmd/ctrl/alt now match exactly)', () => {
   it('keeps ⌘ and ⌃ distinct: ⌘+ inserts a bar, ⌃+ a beat; ⌘- deletes beats, ⌃- the bar', () => {
     expect(mac('+', { meta: true, shift: true })).toBe('insertBar');
     expect(mac('=', { meta: true })).toBe('insertBar');
@@ -43,8 +43,9 @@ describe('macOS keymap (unchanged from before GOM-87)', () => {
     expect(mac('ArrowUp', { alt: true, shift: true })).toBe('semitoneUp');
   });
 
-  it('leaves plain keys to the editor (Insert is Let Ring there, not a bar)', () => {
-    expect(mac('Insert')).toBe(null);
+  it('keeps Insert as the Let Ring alias on macOS only; other plain keys go to the editor', () => {
+    expect(mac('Insert')).toBe('letRing');
+    expect(pc('Insert')).toBe('insertBar');
     expect(mac('Delete')).toBe(null);
     expect(mac('p')).toBe(null);
   });
@@ -80,6 +81,7 @@ describe('PC keymap (GP8 Windows column) — Linux and Windows', () => {
     expect(pc('V', { ctrl: true, shift: true })).toBe(null);
     expect(pc('Z', { ctrl: true, shift: true })).toBe('redo');     // named in the table
     expect(pc('+', { ctrl: true, shift: true })).toBe('zoomIn');   // a symbol: shift types it
+    expect(pc('1', { ctrl: true, shift: true })).toBe('voice1');   // AZERTY types digits with shift
   });
 
   it('has GP8\'s shifted variants: Ctrl+* double dot, Ctrl+? (Ctrl+Shift+/) triplet feel', () => {
@@ -148,7 +150,7 @@ describe('the editor implements every bound action', () => {
   it('SHORTCUT_ACTIONS in editor.js has an entry for each table action', () => {
     const src = readFileSync(fileURLToPath(new URL('../editor.js', import.meta.url)), 'utf8');
     const block = src.slice(src.indexOf('const SHORTCUT_ACTIONS = {'), src.indexOf('function keyPlatform()'));
-    const defined = new Set([...block.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]));
+    const defined = new Set([...block.matchAll(/^\s{4}(\w+)(?::|,|$)/gm)].map((m) => m[1]));
     expect(defined.size).toBeGreaterThan(30);    // the slice found the table, not nothing
     for (const p of ['mac', 'pc']) {
       for (const b of BINDINGS[p]) expect(defined.has(b.action), `${p}: ${b.action}`).toBe(true);

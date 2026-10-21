@@ -1206,7 +1206,7 @@ window.gomidasConfirmOpenRecent = function (path) {
 // WebView doesn't hold first-responder focus.
 window.gomidasNativeKey = function (key, cmd, ctrl, shift, alt) {
   const E = window.GomidasEditor;
-  if (E && (!E.acceptsKeys || E.acceptsKeys(null))) E.handleKey(key, { meta: !!cmd, ctrl: !!ctrl, shift: !!shift, alt: !!alt });
+  if (E && (!E.acceptsKeys || E.acceptsKeys(null, true))) E.handleKey(key, { meta: !!cmd, ctrl: !!ctrl, shift: !!shift, alt: !!alt });
 };
 
 // Dispatch a native menu-bar action (MainComponent menuItemSelected → here).

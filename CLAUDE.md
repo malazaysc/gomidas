@@ -325,7 +325,9 @@ Ctrl+Alt+letter. **One deliberate deviation (user, 2026-10-21): plain Del delete
 GP8's Windows table says Del = Delete Track. Platform: JUCE's `__juce__platform` on desktop, `navigator`
 on web. Native sends `meta` only on macOS (JUCE reports Ctrl as Command elsewhere), and falls back to
 the key code when Ctrl/Alt turned the character into a control character (Ctrl+Z → 0x1A on X11).
-Add a shortcut to the table, never as a branch in `handleKey`; `tests/keymap.test.js` pins both tables
+Two of GP8's own PC chords never reach the page on some hosts: Ctrl+Shift+U (arpeggio up) is IBus/fcitx
+Unicode entry on Linux, and Ctrl+T / Ctrl+1–4 / Ctrl+L are reserved by browsers (the desktop WebView gets
+them). Non-Latin and AZERTY layouts: GOM-104. Add a shortcut to the table, never as a branch in `handleKey`; `tests/keymap.test.js` pins both tables
 and checks every bound action exists in `SHORTCUT_ACTIONS`.
 Effects mutate the alphaTab model then `applyEdit(true)`; dead/palm-mute/let-ring also reshape the MIDI note.
 Also implemented (GP keys): ties `L`/`⇧L` (sustains in MIDI), hammer/pull `H`, legato slide `S`,

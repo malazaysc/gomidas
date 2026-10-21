@@ -22,8 +22,9 @@ interface Binding { action: string; combo: string; }
 
 // A combo is "mod+mod+key". Modifiers: cmd (meta), ctrl, alt, shift. The key is the KeyboardEvent
 // `key` (letters lower-case). cmd/ctrl/alt must match EXACTLY. Shift, when the combo doesn't name it:
-//  - SYMBOLS ("+", ">", "*", "?") ignore it everywhere: shift is what types them;
-//  - on PC, letters, digits and named keys need shift UP — Shift+Ins is the platform's paste,
+//  - SYMBOLS and DIGITS ("+", ">", "*", "?", "1") ignore it everywhere: shift is what types them
+//    on some layouts (AZERTY types digits with shift);
+//  - on PC, letters and named keys need shift UP — Shift+Ins is the platform's paste,
 //    Ctrl+Shift+Del is not Ctrl+Del, and Ctrl+Shift+X must not cut;
 //  - on macOS it is ignored, as before GOM-87 (⇧⌘↑ still moves track; GP8's selection
 //    variants of those are not implemented).
@@ -75,7 +76,10 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'octaveDown',      combo: 'alt+ArrowDown' },
     { action: 'tremoloBar',      combo: 'alt+v' },
     { action: 'wahOpen',         combo: 'alt+o' },
-    { action: 'wahClose',        combo: 'alt+c' }
+    { action: 'wahClose',        combo: 'alt+c' },
+    // A Gomidas alias kept from before GOM-87 (GP's Let Ring is I). macOS only: on PC, Ins is
+    // GP8's Insert Bar and Shift+Ins the platform's paste.
+    { action: 'letRing',         combo: 'Insert' }
   ],
   // GP8's Windows column. Ctrl+Alt+letter is GP's own choice for the ⌥ effects (AltGr on some
   // layouts produces a character instead — the Effects menu is the dependable path there).
@@ -147,9 +151,10 @@ function normKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 
-/** A single non-alphanumeric character — typed with shift on many layouts, so shift can't be exact. */
+/** A single non-letter character: digits and symbols are typed WITH shift on some layouts
+ *  (French AZERTY's digit row; "+", ">" on US), so shift can't be exact for them. */
 function isSymbol(key: string): boolean {
-  return key.length === 1 && !/[a-z0-9]/.test(key);
+  return key.length === 1 && !/[a-z]/.test(key);
 }
 
 /** The action a key press means on this platform, or null. */
