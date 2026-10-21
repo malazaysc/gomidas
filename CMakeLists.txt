@@ -152,6 +152,7 @@ target_sources(Gomidas PRIVATE
   src/Main.cpp
   src/ui/MainComponent.cpp
   src/ui/X11EventWake.cpp
+  src/ui/UiScale.cpp
   src/engine/AudioEngine.cpp
   src/synth/SoundFontSynth.cpp
   src/synth/SfzSynth.cpp)
@@ -232,9 +233,16 @@ if(GOMIDAS_BUILD_TESTS)
   set_target_properties(asset_bytes_test PROPERTIES CXX_STANDARD 20)
   add_test(NAME asset_bytes COMMAND asset_bytes_test)
 
+  # One UI scale for JUCE and the WebKitGTK view: GOMIDAS_SCALE, else Hyprland's monitor scale,
+  # else the desktop's setting — never a DPI guess (GOM-92). Header-only.
+  add_executable(ui_scale_test tests/ui_scale_test.cpp)
+  target_include_directories(ui_scale_test PRIVATE src)
+  set_target_properties(ui_scale_test PROPERTIES CXX_STANDARD 20)
+  add_test(NAME ui_scale COMMAND ui_scale_test)
+
   # Aggregate target so CI (and `cmake --build build --target gomidas_tests`) builds every
   # test executable at once — adding a new test target here needs no CI change.
-  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test)
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test)
 endif()
 
 target_link_libraries(Gomidas PRIVATE

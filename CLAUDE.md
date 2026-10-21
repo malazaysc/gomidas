@@ -167,8 +167,27 @@ JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exist
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
 FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with
-`GDK_SCALE=1` until GOM-92; `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+`recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+- ⚠️ **JUCE and the WebKitGTK view pick their UI scale independently** (GOM-92). GTK reads `GDK_SCALE`
+  (Omarchy exports `2` to every app, whatever the monitor); JUCE reads XSETTINGS, then GNOME's
+  gsettings `scaling-factor` (0 → 1.0), then DPI. When they disagree the page renders at the wrong size
+  inside its box — 2x on this scale-1 monitor, "ultra giant". **Policy (user, 2026-10-21): follow the
+  desktop's own choice, never guess.** `src/ui/UiScale.cpp`: `GOMIDAS_SCALE=1..4`, else on Hyprland
+  the focused monitor's scale from `hyprctl -j monitors` (1 if `xwayland:force_zero_scaling` is off —
+  Hyprland then upscales XWayland itself), else what JUCE read from the desktop. Rounded to an integer
+  (GTK can't do fractional) and applied to both: JUCE's global scale factor, and `GDK_SCALE`, set
+  **once, first thing in `initialise()`** — before the window is built (JUCE forks the WebKit child
+  synchronously in the `WebBrowserComponent` constructor) and before anything that starts a thread
+  (`setenv` is not safe against a concurrent `getenv`; restoring it later raced the audio/WebKit
+  threads) — so `X11EventWake`, whose timer starts JUCE's TimerThread, is created after it. Apps
+  launched later inherit the desktop-chosen value. Verify with `/proc/<webkit child>/environ` (the
+  parent's `/proc` shows its *startup* env, not `setenv`). `hyprctl` is waited on with a 1s timeout
+  *before* reading (reading first blocks forever on a hung hyprctl) and is skipped when
+  `GOMIDAS_SCALE` is valid; an unreadable `force_zero_scaling` falls back to the desktop path (it
+  decides the answer). The window's minimum/initial size is fitted to the display's usable area,
+  since a deliberate 200% on 1080p leaves only 960x540 logical. A DPI-guess version was tried first and dropped: it overrode explicit
+  desktop settings and needed a fit-cap that clipped accessibility scales. Startup logs
+  `[Gomidas] UI scale N (source; …)`. Pinned by `tests/ui_scale_test.cpp`.
 - ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
   an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
   on its display reads pending events into Xlib's in-memory queue, after which the socket isn't
