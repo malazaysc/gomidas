@@ -50,7 +50,7 @@ const MENUS = [{ name: 'File', items: [
   { label: '-', action: '' },
   { label: 'Minimize', action: 'minimize' },
   { label: 'About Gomidas', action: 'about' },
-  { label: 'Load Plugin...', action: 'loadplugin' }
+  { label: 'Load Input Plugin (AU/VST3)...', action: 'loadplugin' }
 ] }];
 
 const items = () => fakeDoc.all().filter((x) => x.className.includes('wm-item'));
@@ -109,6 +109,7 @@ describe('web shell menu bar', () => {
   });
 
   it('web: no Open Recent section, desktop-only items disabled with the browser reason', () => {
+    window.GomidasKeymap = { platform: () => 'pc' };
     buildMenuBar(desktop, { requestRecentFiles() {} });   // a previous bar's recent section must not leak
     fakeDoc = makeDoc(); globalThis.document = fakeDoc;
     buildMenuBar(web, {});
@@ -145,7 +146,7 @@ describe('web shell menu bar', () => {
     fakeDoc = makeDoc(); globalThis.document = fakeDoc;
     window.GomidasKeymap = { platform: () => 'mac' };
     buildMenuBar(desktop, {});
-    expect(byText('Load Plugin...')).toBeDefined();   // the table's own label
+    expect(byText('Load Input Plugin (AU/VST3)...')).toBeDefined();   // the table's own label
   });
 
   it('clicking the Open Recent heading does not close the menu', () => {

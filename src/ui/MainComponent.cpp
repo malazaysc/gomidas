@@ -247,12 +247,28 @@ MainComponent::MainComponent()
                #else
                 // AU exists only on macOS; start where VST3 plugins conventionally live (GOM-88).
                 // Under xdg-desktop-portal the start folder is currently ignored (GOM-105).
-                auto chooser = std::make_shared<juce::FileChooser> (
-                    "Choose a VST3 (.vst3) plugin", defaultVst3Dir(), "*.vst3");
+               #if JUCE_LINUX || JUCE_BSD
+                // Folder mode below: a "*.vst3" filter would also hide the ordinary folders on the way
+                // to the bundle, so none here — VST3PluginFormat rejects a non-.vst3 path anyway.
+                const juce::String filter;
+               #else
+                const juce::String filter ("*.vst3");
                #endif
-                chooser->launchAsync (juce::FileBrowserComponent::openMode
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose a VST3 (.vst3) plugin", defaultVst3Dir(), filter);
+               #endif
+               #if JUCE_LINUX || JUCE_BSD
+                // A Linux VST3 is a DIRECTORY bundle (Foo.vst3/Contents/x86_64-linux/Foo.so), and JUCE's
+                // zenity/kdialog path treats "files and directories" as files-only — so it could never
+                // return one. Directory mode picks the bundle itself (GOM-88).
+                const int pickFlags = juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #else
+                const int pickFlags = juce::FileBrowserComponent::openMode
                                       | juce::FileBrowserComponent::canSelectFiles
-                                      | juce::FileBrowserComponent::canSelectDirectories,
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #endif
+                chooser->launchAsync (pickFlags,
                     [this, chooser] (const juce::FileChooser& fc)
                     {
                         auto f = fc.getResult();
@@ -723,7 +739,7 @@ juce::File MainComponent::recentStoreFile() const
 }
 
 #if ! JUCE_MAC
-// Where the VST3 SDK says plugins live: per-user first, then system-wide; home if none exists.
+// Where the VST3 SDK says plugins live (Linux: per-user first, then system-wide); home if none exists.
 juce::File MainComponent::defaultVst3Dir()
 {
    #if JUCE_WINDOWS
@@ -755,6 +771,13 @@ void MainComponent::loadRecentList()
 {
     recentFiles.clear();
     auto f = recentStoreFile();
+   #if ! JUCE_MAC
+    // Before GOM-88 non-macOS builds kept the list under a literal "Application Support" folder;
+    // read it once until the new file exists (the next save writes the new location).
+    if (! f.existsAsFile())
+        f = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
+   #endif
     if (! f.existsAsFile()) return;
     juce::StringArray lines;
     f.readLines (lines);

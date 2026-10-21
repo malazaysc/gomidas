@@ -39,14 +39,12 @@ function hostHas(host: any, method: string): boolean {
   return !!host && typeof host[method] === 'function';
 }
 
-/** Labels that name a macOS-only technology, reworded wherever the HTML bar draws on a PC host.
- *  The C++ table (and so the macOS native menu) keeps the original. Labels stay ASCII. */
-const PC_LABELS: Record<string, string> = { loadplugin: 'Load Input Plugin (VST3)...' };
-
-function itemLabel(item: { label: string; action: string }): string {
+/** On a PC host, drop the macOS-only "AU/" from labels like "Load Input Plugin (AU/VST3)..." — derived
+ *  from the generated table, so a renamed C++ label can't leave a stale copy here. The macOS native
+ *  menu keeps the original; with no keymap loaded the label is left as the table has it. */
+function itemLabel(item: { label: string }): string {
   const K = (window as any).GomidasKeymap;
-  const pc = K ? K.platform() === 'pc' : true;
-  return (pc && PC_LABELS[item.action]) || item.label;
+  return K && K.platform() === 'pc' ? item.label.replace('AU/VST3', 'VST3') : item.label;
 }
 
 function actionBlocked(action: string, caps: any, host?: any): boolean {
