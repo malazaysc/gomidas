@@ -369,10 +369,17 @@ and/or a bar-window render (`settings.display.startBar`/`barCount`) around the c
 ## Roadmap
 > Authoritative feature status lives in **`docs/FEATURES.md`** / **`docs/BACKLOG.md`** — keep them current.
 
-### ⭐ Current top priority (user, 2026-08-13): the **web app**
-The browser build now **outranks every other line of work**, including the desktop verification debt
-and per-track VST instruments. Spec + decisions: **`docs/WEB_PORT.md`**. The port itself
-(`GOM-30…GOM-39`, **Web port v1** milestone) is done; open web work is on the board.
+### ⭐ Current top priority (user, 2026-10-21): the desktop app running natively on **Linux (Omarchy)**
+The development machine is now Arch/Omarchy under Hyprland. JUCE 8 has no Wayland backend, so the app
+runs under XWayland. First round is **build and launch** (GOM-84); then bundled resource paths (GOM-85),
+the in-page menu bar where there is no global menu (GOM-86), GP8's Windows keymap off macOS (GOM-87),
+small path fixes (GOM-88) and a Linux CI leg (GOM-89). macOS must keep building and behaving identically.
+
+### The web app — paused (user, 2026-10-21)
+No new web feature work for now; its tickets (GOM-60 deploy, GOM-77/78 drum presets, …) stay in Todo.
+**Changes to `packages/core` still have to keep the web build green** — its tests stay in the gates.
+Spec + decisions: **`docs/WEB_PORT.md`**. The port itself (`GOM-30…GOM-39`, **Web port v1** milestone)
+is done.
 
 It is a **second product built from one shared core**, not a replacement — desktop keeps VST/AU
 hosting and low-latency live input, which cannot exist in a browser. Work lands through `/ship`, one PR per
