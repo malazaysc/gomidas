@@ -135,7 +135,11 @@ src/engine/AudioEngine.*    device, transport, scheduler, Sequence hand-off
 src/synth/SoundFontSynth.*  TinySoundFont wrapper
 src/synth/tsf/tsf.h         vendored TinySoundFont (MIT)
 packages/core/index.html              GP8-style dark 4-panel layout (transport / palette / center / inspector / tracks)
-                            + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here
+                            + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here.
+                            NO icon may depend on a system font (GOM-93): UI chrome → sprite; music symbols → SMuFL code
+                            points in Bravura (shipped) via `.eb-smufl` / fretboard.js `SM()`; text stays in what any sans
+                            font covers. Prove with a one-font FONTCONFIG_FILE (keep `/etc/fonts/conf.d` included, or web
+                            fonts fail too and the score goes blank).
 packages/core/app.js                  alphaTab host, model→MIDI (self-computed ticks), bridge
 packages/core/editor.js               tab editor: cursor/nav/entry, mouse select, edit+play cursors
 packages/core/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
