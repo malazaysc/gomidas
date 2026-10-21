@@ -22,19 +22,24 @@ namespace
         return physical.isEmpty() ? std::nullopt : std::optional (physical);
     }
 
-    // The inverse of LinuxComponentPeer::forceSetBounds: the size is divided by the scale of the
-    // display the bounds land on (what setBounds will multiply by), the position goes back
-    // through the Displays mapping and the global scale factor.
-    juce::Rectangle<int> physicalToPeerBounds (juce::Rectangle<int> physical)
+    // The peer-coordinate size that LinuxComponentPeer::forceSetBounds turns into `physicalSize`
+    // when placed at `peerPosition`. forceSetBounds picks the scale from the display its
+    // (logical) bounds land on, so pick the same one: try the display under the physical
+    // bounds, then re-check against the display under the converted bounds.
+    juce::Rectangle<int> peerBoundsForSize (juce::Rectangle<int> physicalBounds, juce::Point<int> peerPosition)
     {
         auto& desktop = juce::Desktop::getInstance();
-        const auto globalScale = desktop.getGlobalScaleFactor();
-        const auto* display = desktop.getDisplays().getDisplayForRect (physical, true);
-        const auto peerScale = display != nullptr ? display->scale / globalScale : 1.0;
+        const auto& displays = desktop.getDisplays();
+        const auto globalScale = (double) desktop.getGlobalScaleFactor();
 
-        const auto size = (physical.toDouble() / (peerScale > 0 ? peerScale : 1.0)).toNearestInt();
-        const auto position = desktop.getDisplays().physicalToLogical (physical.getPosition().toFloat()) * globalScale;
-        return size.withPosition (position.roundToInt());
+        auto convert = [&] (const juce::Displays::Display* display)
+        {
+            const auto peerScale = display != nullptr && display->scale > 0 ? display->scale / globalScale : 1.0;
+            return (physicalBounds.toDouble() / peerScale).toNearestInt().withPosition (peerPosition);
+        };
+
+        const auto first = convert (displays.getDisplayForRect (physicalBounds, true));
+        return convert (displays.getDisplayForRect (first, false));
     }
 
     bool sameSize (juce::Rectangle<int> a, juce::Rectangle<int> b)
@@ -53,9 +58,17 @@ void X11BoundsSync::start()
 
 void X11BoundsSync::timerCallback()
 {
-    if (++ticks * kIntervalMs >= kWindowMs)
-        stopTimer();
+    ++ticks;
+    check();
 
+    // Stop after the window — but give a mismatch awaiting its confirming read one more tick.
+    const auto elapsed = ticks * kIntervalMs;
+    if (elapsed >= kWindowMs + (lastMismatch.has_value() ? kIntervalMs : 0))
+        stopTimer();
+}
+
+void X11BoundsSync::check()
+{
     auto* peer = window.getPeer();
     if (peer == nullptr || peer->isMinimised())
         return;
@@ -72,13 +85,14 @@ void X11BoundsSync::timerCallback()
         return;
     }
 
-    // Adopt only a mismatch read twice in a row, so a resize the user (or WM) is making right now
-    // is never fought. Keep polling afterwards: if the WM re-tiles just after our request, JUCE
-    // drops that older ConfigureNotify (its serial check), and the next reads correct it.
-    if (lastMismatch == real)
+    // Adopt only a size mismatch read twice in a row, so a resize the user (or WM) is making right
+    // now is never fought. Then watch a full window again: our request raises JUCE's
+    // moveResizeSerial, so a re-tile the WM sends meanwhile is dropped and must be caught here.
+    if (lastMismatch.has_value() && sameSize (*lastMismatch, *real))
     {
-        peer->setBounds (physicalToPeerBounds (*real), peer->isFullScreen());
+        peer->setBounds (peerBoundsForSize (*real, peer->getBounds().getPosition()), peer->isFullScreen());
         lastMismatch.reset();
+        ticks = 0;
         return;
     }
 
@@ -87,5 +101,6 @@ void X11BoundsSync::timerCallback()
 #else
 void X11BoundsSync::start() {}
 void X11BoundsSync::timerCallback() {}
+void X11BoundsSync::check() {}
 #endif
 }
