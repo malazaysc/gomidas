@@ -4,7 +4,7 @@
 // JUCE wire format: every method must emit the SAME call name and payload shape the old
 // nativeInvoke() call sites used. If one of these fails, the Mac app has silently changed.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createEventBus, createJuceBackends, JUCE_CAPS } from '../core/backend.ts';
+import { createEventBus, createJuceBackends, hasJuceBridge, JUCE_CAPS } from '../core/backend.ts';
 
 /** Fake JUCE host that records every emitEvent call. */
 function fakeWindow() {
@@ -148,10 +148,33 @@ describe('JUCE audio backend — wire format', () => {
   });
 
   it('declares desktop capabilities', () => {
-    expect(audio.caps).toEqual(JUCE_CAPS);
     expect(audio.caps.pluginHost).toBe(true);
     expect(audio.caps.liveInput).toBe(true);
     expect(audio.caps.fileSystem).toBe('native');
+  });
+
+  // GOM-86: NATIVE says whether it drew a menu bar (gomidasNativeMenus, from the same switch that
+  // compiles in setMacMainMenu). The platform string plays no part.
+  it('takes nativeMenus only from the flag the host publishes', () => {
+    const on = (platform, declared) => {
+      const w = fakeWindow();
+      w.__JUCE__.initialisationData = { __juce__platform: [platform] };
+      if (declared !== undefined) w.__JUCE__.initialisationData.gomidasNativeMenus = [declared];
+      return createJuceBackends(w);
+    };
+    expect(on('macos', true).host.caps).toEqual(JUCE_CAPS);
+    expect(on('linux', false).audio.caps).toEqual({ ...JUCE_CAPS, nativeMenus: false });
+    expect(on('linux', true).audio.caps.nativeMenus).toBe(true);
+    expect(on('macos', false).audio.caps.nativeMenus).toBe(false);
+    // Missing or malformed -> no native menu, so the HTML bar shows (the visible failure).
+    expect(on('macos').audio.caps.nativeMenus).toBe(false);
+    expect(on('macos', 'yes').audio.caps.nativeMenus).toBe(false);
+  });
+
+  it('treats an unclassified OS (platform [""]) as a JUCE host — presence, not a known name', () => {
+    expect(hasJuceBridge({ __JUCE__: { initialisationData: { __juce__platform: [''] } } })).toBe(true);
+    expect(hasJuceBridge({ __JUCE__: { initialisationData: { __juce__platform: [] } } })).toBe(false);
+    expect(hasJuceBridge({})).toBe(false);
   });
 
   it('survives a missing JUCE bridge instead of throwing', () => {
@@ -168,12 +191,17 @@ describe('JUCE host backend — wire format', () => {
   it('file and shell calls match the pre-refactor names', () => {
     host.openFile();            expect(wire(win, 0)).toMatchObject({ name: 'openFile', payload: undefined });
     host.openProject();         expect(wire(win, 1)).toMatchObject({ name: 'openProject', payload: 1 });
-    host.openRecent(2);         expect(wire(win, 2)).toMatchObject({ name: 'openRecent', payload: 2 });
+    host.openRecent('/u/a.gp'); expect(wire(win, 2)).toMatchObject({ name: 'openRecent', payload: '/u/a.gp' });
     host.saveProject('{"a":1}');expect(wire(win, 3)).toMatchObject({ name: 'saveProject', payload: '{"a":1}' });
     host.saveBinary('gp', 'QUJD');
     expect(wire(win, 4)).toMatchObject({ name: 'saveBinary', payload: { ext: 'gp', b64: 'QUJD' } });
     host.minimizeWindow();      expect(wire(win, 5).name).toBe('minimizeWindow');
     host.showAbout();           expect(wire(win, 6).name).toBe('showAbout');
+  });
+
+  it('recent-files calls match the native function names (GOM-86)', () => {
+    host.requestRecentFiles();  expect(wire(win, 0)).toMatchObject({ name: 'getRecentFiles', payload: 1 });
+    host.clearRecent();         expect(wire(win, 1)).toMatchObject({ name: 'clearRecent', payload: 1 });
   });
 
   it('log stringifies its argument (the old nlog contract)', () => {

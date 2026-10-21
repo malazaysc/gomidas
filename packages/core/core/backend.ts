@@ -20,6 +20,7 @@ interface JuceBridgeWindow {
     backend?: {
       emitEvent?: (eventId: string, payload: { name: string; params: unknown[]; resultId: number }) => void;
     };
+    initialisationData?: { __juce__platform?: unknown; gomidasNativeMenus?: unknown };
   };
 }
 
@@ -29,7 +30,8 @@ interface BackendCaps {
   liveInput: boolean;
   /** desktop: true (VST/AU). NEVER true on web — plugin hosting does not exist in a browser. */
   pluginHost: boolean;
-  /** desktop: true (juce::MenuBarModel). */
+  /** macOS desktop: true (juce::MenuBarModel in the system menu bar). Linux/Windows desktop and web:
+   *  false — there is no global menu, so the web shell draws the HTML menu bar (GOM-86). */
   nativeMenus: boolean;
   /** web: 'picker' with File System Access, 'download' as the Safari fallback. */
   fileSystem: 'native' | 'picker' | 'download';
@@ -107,12 +109,18 @@ interface HostBackend {
   caps: BackendCaps;
   openFile(): void;
   openProject(): void;
-  openRecent(index: number): void;
+  /** By PATH, never position (GOM-86): the list can change while the unsaved-changes guard is up.
+   *  Native only opens a path that is still in its list. */
+  openRecent(path: string): void;
   saveProject(json: string): void;
   saveBinary(ext: string, b64: string): void;
   log(msg: unknown): void;
   minimizeWindow?(): void;
   showAbout?(): void;
+  /** Desktop only: ask native to push its recent-files list to window.gomidasRecentFiles. */
+  requestRecentFiles?(): void;
+  /** Desktop only: empty the recent-files list (native pushes the new, empty list back). */
+  clearRecent?(): void;
 }
 
 // ---- event bus ------------------------------------------------------------------------------
@@ -144,6 +152,8 @@ function createEventBus(): EventBus {
   };
 }
 
+// The desktop baseline, as on macOS. createJuceBackends takes nativeMenus from the flag native
+// publishes (gomidasNativeMenus, GOM-86).
 const JUCE_CAPS: BackendCaps = {
   liveInput: true,
   pluginHost: true,
@@ -151,6 +161,24 @@ const JUCE_CAPS: BackendCaps = {
   fileSystem: 'native',
   offlineRender: false
 };
+
+/** initialisationData[key][0] if it has the given typeof, else undefined. JUCE publishes every
+ *  `withInitialisationData` value as an array. */
+function juceInitValue(win: JuceBridgeWindow | undefined, key: string, type: string): any {
+  try {
+    const w = win || (window as unknown as JuceBridgeWindow);
+    const v = (w.__JUCE__!.initialisationData as Record<string, unknown>)[key];
+    return Array.isArray(v) && typeof v[0] === type ? v[0] : undefined;
+  } catch (e) { return undefined; }
+}
+
+/** Whether the host draws a native menu bar (GOM-86). NATIVE decides and publishes it as
+ *  `gomidasNativeMenus` (GOMIDAS_NATIVE_MENUS, which also compiles in setMacMainMenu), so the page
+ *  cannot disagree with the binary. The page ships inside that binary, so the flag is always there;
+ *  missing or malformed means "no native menu" — the HTML bar shows, which is the visible failure. */
+function juceNativeMenus(win?: JuceBridgeWindow): boolean {
+  return juceInitValue(win, 'gomidasNativeMenus', 'boolean') === true;
+}
 
 // ---- JUCE implementation --------------------------------------------------------------------
 // Wraps the existing wire format VERBATIM — same call names, same payload shapes — so Phase 0
@@ -172,9 +200,10 @@ function createJuceBackends(win?: JuceBridgeWindow): { audio: AudioBackend; host
   }
 
   const bus = createEventBus();
+  const caps: BackendCaps = { ...JUCE_CAPS, nativeMenus: juceNativeMenus(w) };
 
   const audio: AudioBackend = {
-    caps: JUCE_CAPS,
+    caps,
     on: bus.on,
     emit: bus.emit,                 // used by the window.gomidas* adapters in app.js
     listenerCount: bus.listenerCount,
@@ -218,15 +247,17 @@ function createJuceBackends(win?: JuceBridgeWindow): { audio: AudioBackend; host
   };
 
   const host: HostBackend = {
-    caps: JUCE_CAPS,
+    caps,
     openFile: () => invoke('openFile'),
     openProject: () => invoke('openProject', 1),
-    openRecent: (index) => invoke('openRecent', index),
+    openRecent: (path) => invoke('openRecent', path),
     saveProject: (json) => invoke('saveProject', json),
     saveBinary: (ext, b64) => invoke('saveBinary', { ext, b64 }),
     log: (msg) => invoke('log', String(msg)),
     minimizeWindow: () => invoke('minimizeWindow', 1),
-    showAbout: () => invoke('showAbout', 1)
+    showAbout: () => invoke('showAbout', 1),
+    requestRecentFiles: () => invoke('getRecentFiles', 1),
+    clearRecent: () => invoke('clearRecent', 1)
   };
 
   return { audio, host };
@@ -241,11 +272,8 @@ function createJuceBackends(win?: JuceBridgeWindow): { audio: AudioBackend; host
 // The placeholder sets initialisationData.__juce__platform to an EMPTY array; a real host fills
 // it in. That is the discriminator, and it is what lets one index.html serve both products.
 function hasJuceBridge(win?: any): boolean {
-  try {
-    const j = (win || window).__JUCE__;
-    const platform = j && j.initialisationData && j.initialisationData.__juce__platform;
-    return Array.isArray(platform) && platform.length > 0;
-  } catch (e) { return false; }
+  // Presence, not a known name: JUCE publishes [""] for an OS it doesn't classify, still a host.
+  return juceInitValue(win, '__juce__platform', 'string') !== undefined;
 }
 
 const WEB_CAPS: BackendCaps = {
@@ -332,7 +360,8 @@ function createWebBackends(): { audio: AudioBackend; host: HostBackend } {
       Files.saveData('score.' + ext, bytes, 'application/octet-stream');
     },
     log: (msg) => { try { console.log('[gomidas]', String(msg)); } catch (e) { /* ignore */ } }
-    // minimizeWindow / showAbout absent — caps.nativeMenus is false.
+    // minimizeWindow / showAbout absent — there is no window or native dialog to drive; the web
+    // shell gates those menu items on the methods themselves (webshell HOST_ACTIONS).
   };
 
   return { audio, host };
@@ -348,4 +377,4 @@ function createBackends(win?: any): { audio: AudioBackend; host: HostBackend } {
 (function publish(api: unknown) {
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasBackend = api;
-}({ createEventBus, createJuceBackends, createWebBackends, createBackends, hasJuceBridge, JUCE_CAPS, WEB_CAPS }));
+}({ createEventBus, createJuceBackends, createWebBackends, createBackends, hasJuceBridge, juceNativeMenus, JUCE_CAPS, WEB_CAPS }));

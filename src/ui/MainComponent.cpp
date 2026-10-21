@@ -67,6 +67,8 @@ MainComponent::MainComponent()
     // ---- web view hosting alphaTab (owns the whole UI: toolbar, editor, fretboard) ----
     auto options = juce::WebBrowserComponent::Options{}
         .withNativeIntegrationEnabled()
+        // The page draws its own menu bar unless this says the native one exists (GOM-86).
+        .withInitialisationData ("gomidasNativeMenus", kNativeMenus)
         .withResourceProvider ([this] (const auto& url) { return serveResource (url); })
         .withNativeFunction ("setSequence",
             [this] (const juce::Array<juce::var>& args,
@@ -437,12 +439,37 @@ MainComponent::MainComponent()
             [this] (const juce::Array<juce::var>& args,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
-                if (! args.isEmpty())
+                // By path, from both menus (GOM-86): the list can change while the unsaved-changes
+                // guard is up, so a position could name a different file by the time it comes back.
+                // Only a path native itself put in the list is opened — otherwise any script in the
+                // page could read an arbitrary file through this bridge.
+                if (! args.isEmpty() && args[0].isString())
                 {
-                    const int i = (int) args[0];
-                    if (i >= 0 && i < recentFiles.size())
-                        loadFileFromPath (juce::File (recentFiles[i]));
+                    const auto path = args[0].toString();
+                    if (recentFiles.contains (path))
+                    {
+                        loadFileFromPath (juce::File (path));
+                    }
+                    else
+                    {
+                        juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Gomidas",
+                            "That file is no longer in the recent files list - open it with File > Open.", this);
+                        pushRecentFiles();
+                    }
                 }
+                completion (juce::var());
+            })
+        // The page draws its own menu bar where there is no global one (Linux/Windows, GOM-86); these
+        // let its Open Recent section show and clear the same list the macOS submenu uses.
+        .withNativeFunction ("getRecentFiles",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            { pushRecentFiles(); completion (juce::var()); })
+        .withNativeFunction ("clearRecent",
+            [this] (const juce::Array<juce::var>&,
+                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                clearRecentFiles();
                 completion (juce::var());
             });
 
@@ -458,8 +485,8 @@ MainComponent::MainComponent()
 
     loadRecentList();
     buildMenus();
-   #if JUCE_MAC
-    juce::MenuBarModel::setMacMainMenu (this);   // no global menu elsewhere (Linux menu: GOM-86)
+   #if GOMIDAS_NATIVE_MENUS
+    juce::MenuBarModel::setMacMainMenu (this);   // elsewhere the page draws an HTML menu bar (GOM-86)
    #endif
 
     setSize (1280, 820);
@@ -468,7 +495,7 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
-   #if JUCE_MAC
+   #if GOMIDAS_NATIVE_MENUS
     juce::MenuBarModel::setMacMainMenu (nullptr);
    #endif
     closePluginEditor();   // destroy the editor before the engine frees the plugin
@@ -683,6 +710,14 @@ juce::File MainComponent::recentStoreFile() const
                .getChildFile ("recent.txt");
 }
 
+// The one Clear Recent, for both the macOS submenu and the page's HTML menu (GOM-86).
+void MainComponent::clearRecentFiles()
+{
+    recentFiles.clear();
+    saveRecentList();
+    pushRecentFiles();
+}
+
 void MainComponent::loadRecentList()
 {
     recentFiles.clear();
@@ -693,7 +728,10 @@ void MainComponent::loadRecentList()
     for (auto& line : lines)
     {
         auto p = line.trim();
-        if (p.isNotEmpty() && juce::File (p).existsAsFile() && ! recentFiles.contains (p))
+        if (p.isEmpty() || ! juce::File::isAbsolutePath (p))   // juce::File asserts on relative paths
+            continue;
+        p = juce::File (p).getFullPathName();   // normalised, so removeString finds it later
+        if (juce::File (p).existsAsFile() && ! recentFiles.contains (p))
             recentFiles.add (p);
     }
     while (recentFiles.size() > kRecentMax) recentFiles.remove (recentFiles.size() - 1);
@@ -713,6 +751,25 @@ void MainComponent::addRecent (const juce::File& file)
     recentFiles.insert (0, p);
     while (recentFiles.size() > kRecentMax) recentFiles.remove (recentFiles.size() - 1);
     saveRecentList();
+    pushRecentFiles();
+}
+
+// Hand the page's HTML menu {name, path} pairs; the name comes from juce::File so the page never
+// guesses at path syntax. macOS has the native submenu and never draws the HTML one.
+void MainComponent::pushRecentFiles()
+{
+    if (kNativeMenus || webView == nullptr)
+        return;
+    juce::Array<juce::var> entries;
+    for (const auto& path : recentFiles)
+    {
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty ("name", juce::File (path).getFileName());
+        entry->setProperty ("path", path);
+        entries.add (juce::var (entry));
+    }
+    webView->evaluateJavascript ("window.gomidasRecentFiles && window.gomidasRecentFiles("
+                                 + juce::JSON::toString (juce::var (entries), true) + ");");
 }
 
 void MainComponent::loadFileFromPath (const juce::File& f)
@@ -722,6 +779,9 @@ void MainComponent::loadFileFromPath (const juce::File& f)
     {
         recentFiles.removeString (f.getFullPathName());
         saveRecentList();
+        pushRecentFiles();
+        juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Gomidas",
+            f.getFileName() + " could not be found - it may have been moved or deleted.", this);
         return;
     }
 
@@ -735,7 +795,12 @@ void MainComponent::loadFileFromPath (const juce::File& f)
     {
         // Guitar Pro / MusicXML: hand the raw bytes to alphaTab as base64.
         juce::MemoryBlock mb;
-        if (! f.loadFileAsData (mb)) return;
+        if (! f.loadFileAsData (mb))
+        {
+            juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Gomidas",
+                f.getFileName() + " could not be read.", this);
+            return;
+        }
         auto b64 = juce::Base64::toBase64 (mb.getData(), mb.getSize());
         webView->evaluateJavascript ("window.gomidasLoadBinary(" + juce::JSON::toString (juce::var (b64)) + ");");
     }
@@ -805,15 +870,14 @@ void MainComponent::menuItemSelected (int menuItemID, int)
     {
         if (menuItemID == kRecentIdBase + kRecentMax + 2) // Clear Recent
         {
-            recentFiles.clear();
-            saveRecentList();
+            clearRecentFiles();
             return;
         }
         const int idx = menuItemID - kRecentIdBase;
         if (idx >= 0 && idx < recentFiles.size() && webView != nullptr)
             // Route through JS so the unsaved-changes guard runs first.
             webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
-                                         + juce::String (idx) + ");");
+                                         + juce::JSON::toString (juce::var (recentFiles[idx])) + ");");
         return;
     }
 

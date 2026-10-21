@@ -16,7 +16,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Add track (Guitar / Bass / Drums) | toolbar `+ Track…` | ✅ matches existing master bars; drums via importer+JSON merge |
 | Delete track | `⌥⌘R` / menu Track→Delete Track | ✅ JSON round-trip rebuild; keeps ≥1 track; cursor moves to previous track |
 | Open `.gp` / `.gomidas` / MusicXML | toolbar `Open` / menu File→Open | ✅ native file chooser (real path); `.gomidas` = score JSON, others via alphaTab (`gomidasLoadBinary`, base64) |
-| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt`; honours the unsaved-changes guard; `Clear Recent` |
+| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
 | Save `.gomidas` project | toolbar `Save` | ✅ clears the unsaved-changes flag; **folds per-track volume/pan into `playbackInfo`** so the mix persists (mute/solo/hidden stay session-only) |
 | Export Guitar Pro `.gp` | menu File→Export Guitar Pro | ✅ alphaTab `Gp7Exporter` → native save dialog (`saveBinary`, base64). Round-trip pending runtime verification |
 | Unsaved-changes guard | — | ✅ New / Open / Sample prompt to discard if there are unsaved edits |
@@ -197,7 +197,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | **Per-track + master EQ** | track-list EQ buttons / Master row | ✅ 3-band EQ (low/mid/high, −12..+12 dB) per track and on the master, live. Synth re-architected into **per-channel audio buses** (`tsf_copy`) so each track EQs independently. **Persisted** in the `.gomidas` envelope (`mix`: per-track `eq` + master `{vol,pan,eq}`) |
 | **Master row** | bottom track list | ✅ live master volume + balance pan + EQ |
 | **Expanded left palette** | left palette | ✅ GP8 sections: voice tabs 1–4, Lyrics/Chords, bar & signatures, octave/clef (8va/8vb/15ma/15mb → `beat.ottava`, shifts playback octave), durations, tuplets, **dynamics ppp–fff** (→ velocity), **crescendo/diminuendo** (notation marking **+ playback velocity ramp** across the hairpin span), articulation grid (~30 effects), bars & beats |
-| Native macOS menu bar | menu bar | File / Edit / Track / Bar / Note / Effects / Section / Tools / Sound / View / Window / Help |
+| Native macOS menu bar | menu bar | File / Edit / Track / Bar / Note / Effects / Section / Tools / Sound / View / Window / Help. Linux/Windows desktop (no global menu): the page's HTML menu bar from the same generated table, with Open Recent (GOM-86) |
 | Track mute / solo | track-list M / S | ✅ live via per-channel gain in `AudioEngine` (`setChannelMix`); solo overrides mute; takes effect instantly during playback |
 | Track volume (mixer) | track-list slider | ✅ per-track linear gain (0–100%), live; defaults from `playbackInfo.volume` |
 | Track pan (mixer) | inspector TRACK→Mixer slider | ✅ per-track pan (L/C/R), live via `setChannelMix`; defaults from `playbackInfo.balance` |

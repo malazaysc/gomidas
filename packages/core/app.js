@@ -1199,8 +1199,8 @@ window.gomidasLoadBinary = function (b64) {
   } catch (e) { setStatus('load failed: ' + e); nlog('gomidasLoadBinary: ' + e); }
 };
 // Native "Open Recent" routes here first so the unsaved-changes guard runs.
-window.gomidasConfirmOpenRecent = function (index) {
-  confirmDiscard(() => Host.openRecent(index));
+window.gomidasConfirmOpenRecent = function (path) {
+  confirmDiscard(() => Host.openRecent(path));
 };
 // Called by native (MainComponent::keyPressed) so editor keys work even when the
 // WebView doesn't hold first-responder focus.
