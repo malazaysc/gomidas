@@ -6,7 +6,8 @@
 
 #if JUCE_LINUX || JUCE_BSD
  // @internal in JUCE, but it is exactly the hook JUCE's own VST3 client uses to run an fd's
- // callback; a JUCE upgrade that changes it fails to compile here rather than silently.
+ // callback. A signature change fails to compile; a behaviour change would not, so a JUCE
+ // upgrade must re-run the GOM-91 check (see CLAUDE.md).
  #include <juce_events/native/juce_EventLoopInternal_linux.h>
 #endif
 
@@ -24,23 +25,20 @@ void X11EventWake::timerCallback()
         return;
 
     auto& x = *juce::X11Symbols::getInstance();
-    int queued = 0, fd = -1;
+    int queued = 0;
     {
         juce::XWindowSystemUtilities::ScopedXLock lock;
+        if (connectionFd < 0)
+            connectionFd = x.xConnectionNumber (display);   // fixed for the display's lifetime
         // Only what is already buffered in Xlib — reading the socket here would be the very kind
         // of round trip that strands events.
         queued = x.xEventsQueued (display, QueuedAlready);
-        fd = x.xConnectionNumber (display);
     }
 
     // Run JUCE's own X fd callback (it drains with XPending/XNextEvent through its normal
     // handlers). Harmless if JUCE was about to run it anyway: it just finds the queue empty.
-    if (queued > 0 && fd >= 0)
-        juce::LinuxEventLoopInternal::invokeEventLoopCallbackForFd (fd);
+    if (queued > 0 && connectionFd >= 0)
+        juce::LinuxEventLoopInternal::invokeEventLoopCallbackForFd (connectionFd);
 }
-#else
-X11EventWake::X11EventWake()  {}
-X11EventWake::~X11EventWake() {}
-void X11EventWake::timerCallback() {}
 #endif
 }

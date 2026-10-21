@@ -47,7 +47,9 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
-    X11EventWake x11EventWake;   // Linux/BSD: wake JUCE for X events stranded in Xlib's queue (GOM-91)
+   #if JUCE_LINUX || JUCE_BSD
+    X11EventWake x11EventWake;   // wake JUCE for X events stranded in Xlib's queue (GOM-91)
+   #endif
 };
 } // namespace gomidas
 

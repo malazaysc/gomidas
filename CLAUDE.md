@@ -179,7 +179,9 @@ WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI re
   moveResizeSerial`). Fix: `src/ui/X11EventWake.cpp`, one app-wide watchdog (owned by
   `GomidasApplication`). Every 100ms it reads the queued count (no I/O) and, if anything is queued,
   runs JUCE's own X fd callback via `LinuxEventLoopInternal::invokeEventLoopCallbackForFd` (an
-  `@internal` JUCE hook its VST3 client uses). Measured 10/10. Approaches that **didn't** work or were
+  `@internal` JUCE hook its VST3 client uses). Measured 10/10. **After any JUCE upgrade, re-run the
+  check** (10 launches tiled under Hyprland, JUCE size vs `hyprctl clients -j`): a behaviour change
+  behind that hook would compile fine and silently bring the bug back. Removing the timer = GOM-96. Approaches that **didn't** work or were
   rejected along the way: polling the real bounds and `setSize`-ing (worked, but five review rounds
   of side effects); re-requesting bounds (2/5); re-reading the geometry on MapNotify inside JUCE
   (3/10). The probe that found it: log `XEventsQueued(display, QueuedAlready)` from a timer.
