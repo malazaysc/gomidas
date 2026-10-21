@@ -167,9 +167,15 @@ JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exist
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
 FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-content stuck at 1280x820 in a tiled window (GOM-91); WebKitGTK honours Omarchy's `GDK_SCALE=2` while
-JUCE lays out at 1, so the UI renders 2x — run with `GDK_SCALE=1` until GOM-92; `recent.txt` and
-plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with
+`GDK_SCALE=1` until GOM-92; `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+- ⚠️ **JUCE can miss the size a tiling WM gives the window as it maps it** (GOM-91). Measured under
+  Hyprland: the X window had the tile's size while JUCE still believed its own 1280x820, in about 2
+  launches in 5, with **no** ConfigureNotify reaching JUCE's handler at all (so not its serial check).
+  Re-requesting the bounds didn't help. `Main.cpp`'s `MainWindow` therefore polls the real size from the
+  X server (`src/platform/X11WindowSize.cpp`, its own TU because Xlib macros collide with JUCE) for
+  the first 3s and adopts it. Later resizes/re-tiles are delivered normally. Check with
+  `hyprctl clients -j` against a temporary `resized()` log — Hyprland's number is the truth.
 - ⚠️ **WebKitGTK ignores the `Content-Type` JUCE sets on resource-provider responses** (GOM-90). JUCE
   only calls `webkit_uri_scheme_response_set_http_headers`, never `…_set_content_type` (not in 8.0.13,
   master or develop), so every embedded asset reaches the page as `application/octet-stream`. The

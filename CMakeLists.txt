@@ -155,6 +155,14 @@ target_sources(Gomidas PRIVATE
   src/synth/SoundFontSynth.cpp
   src/synth/SfzSynth.cpp)
 
+# Linux/BSD: read the real window size from the X server (GOM-91). JUCE loads Xlib at runtime,
+# so this is the only part of the app that links it directly.
+if(UNIX AND NOT APPLE)
+  find_package(X11 REQUIRED)
+  target_sources(Gomidas PRIVATE src/platform/X11WindowSize.cpp)
+  target_link_libraries(Gomidas PRIVATE X11::X11)
+endif()
+
 # High-quality GM SoundFont (FluidR3, ~150MB, MIT). Too big to embed in the binary,
 # so it ships as a bundle resource and is loaded at runtime. Falls back to the
 # embedded sonivox bank when this file is absent.
