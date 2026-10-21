@@ -85,7 +85,10 @@ touching `src/`, `packages/` or `apps/` takes the full loop.
 
 Review is **`/code-review high <PR#>`**, looped until clean — always pass the level, or the skill
 silently reuses whatever was typed last and the gate stops being reproducible. **`ultra` is on
-the user's demand ONLY: never run it, never propose it.** CI already runs on `pull_request`.
+the user's demand ONLY: never run it, never propose it.** CI already runs on `pull_request`:
+`web-tests` (sweep + vitest) and `native-tests`, a **macOS + Ubuntu matrix that builds the full
+`Gomidas` app and the test targets, then runs ctest** (GOM-89). That matrix is the only place the
+macOS app is compiled now that development is on Linux — a red macOS leg is a real break, not noise.
 
 ## Architecture (decided)
 
@@ -167,7 +170,7 @@ JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exist
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
 FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-`recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+`recent.txt` and plugin-chooser paths (GOM-88).
 - ⚠️ **JUCE and the WebKitGTK view pick their UI scale independently** (GOM-92). GTK reads `GDK_SCALE`
   (Omarchy exports `2` to every app, whatever the monitor); JUCE reads XSETTINGS, then GNOME's
   gsettings `scaling-factor` (0 → 1.0), then DPI. When they disagree the page renders at the wrong size

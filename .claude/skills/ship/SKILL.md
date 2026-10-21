@@ -177,7 +177,7 @@ EOF
 )"
 ```
 
-CI runs on `pull_request` (web-tests + native-tests). **Wait for it and confirm it's green** —
+CI runs on `pull_request` (web-tests + native-tests on macOS **and** Ubuntu, both building the full app). **Wait for it and confirm it's green** —
 `gh pr checks --watch`. Red CI → back to stage 4.
 
 ## 7. REVIEW
