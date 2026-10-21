@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "GomidasAssets.h"
+#include "AssetBytes.h"
 
 namespace gomidas
 {
@@ -829,19 +830,14 @@ MainComponent::serveResource (const juce::String& url)
             int size = 0;
             if (const char* data = GomidasAssets::getNamedResource (a.resource, size))
             {
-                std::vector<std::byte> bytes ((size_t) size);
-                std::memcpy (bytes.data(), data, (size_t) size);
-               #if JUCE_LINUX
-                // WebKitGTK ignores the Content-Type header JUCE puts on custom-scheme responses, so
-                // every asset arrives as application/octet-stream, is sniffed as HTML, and decodes as
-                // windows-1252 — <meta charset> doesn't rescue it (GOM-90). A UTF-8 BOM outranks all
-                // of that and is stripped before parsing, so text assets carry their own encoding.
-                const std::byte bom[] = { std::byte (0xEF), std::byte (0xBB), std::byte (0xBF) };
-                const bool hasBom = bytes.size() >= 3 && std::equal (std::begin (bom), std::end (bom), bytes.begin());
-                if (juce::String (a.mime).startsWith ("text/") && ! hasBom)
-                    bytes.insert (bytes.begin(), std::begin (bom), std::end (bom));
+                // WebKitGTK (Linux, BSD) needs a BOM on UTF-8 text assets — see AssetBytes.h (GOM-90).
+               #if JUCE_LINUX || JUCE_BSD
+                constexpr bool addBom = true;
+               #else
+                constexpr bool addBom = false;
                #endif
-                return juce::WebBrowserComponent::Resource { std::move (bytes), juce::String (a.mime) };
+                return juce::WebBrowserComponent::Resource { assetBytes (data, (size_t) size, a.mime, addBom),
+                                                             juce::String (a.mime) };
             }
         }
     }

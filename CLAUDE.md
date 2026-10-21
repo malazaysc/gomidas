@@ -172,10 +172,13 @@ JUCE lays out at 1, so the UI renders 2x — run with `GDK_SCALE=1` until GOM-92
 plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
 - ⚠️ **WebKitGTK ignores the `Content-Type` JUCE sets on resource-provider responses** (GOM-90). JUCE
   only calls `webkit_uri_scheme_response_set_http_headers`, never `…_set_content_type` (not in 8.0.13,
-  master or develop), so every embedded asset reaches the page as `application/octet-stream`, is sniffed
-  as HTML and decodes as **windows-1252** — `<meta charset="utf-8">` and a `; charset=utf-8` MIME both do
-  nothing. `serveResource` therefore prefixes `text/*` assets with a UTF-8 **BOM** on Linux. Probe it from
-  the page with `document.characterSet` / `document.contentType` — that, not the source bytes, is the truth.
+  master or develop), so every embedded asset reaches the page as `application/octet-stream`. The
+  document is sniffed as HTML and decodes as **windows-1252** — `<meta charset="utf-8">` and a
+  `; charset=utf-8` MIME both do nothing. `serveResource` therefore serves every UTF-8 text asset (text/*,
+  JSON, JS, XML/SVG) with a UTF-8 **BOM** on WebKitGTK platforms; the rule lives in `src/ui/AssetBytes.h`
+  and is pinned by `tests/asset_bytes_test.cpp`. A new UTF-8 asset type must be covered by
+  `isUtf8TextMime`. Probe the page with `document.characterSet` / `document.contentType` — that, not
+  the source bytes, is the truth.
 
 FetchContent only re-runs a patch step whose
 command changed, so the sfizz `PATCH_COMMAND` carries `patch_sfizz.py`'s SHA-256: editing the script
