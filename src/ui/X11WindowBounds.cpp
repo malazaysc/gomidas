@@ -22,26 +22,6 @@ namespace
         return physical.isEmpty() ? std::nullopt : std::optional (physical);
     }
 
-    // The peer-coordinate size that LinuxComponentPeer::forceSetBounds turns into `physicalSize`
-    // when placed at `peerPosition`. forceSetBounds picks the scale from the display its
-    // (logical) bounds land on, so pick the same one: try the display under the physical
-    // bounds, then re-check against the display under the converted bounds.
-    juce::Rectangle<int> peerBoundsForSize (juce::Rectangle<int> physicalBounds, juce::Point<int> peerPosition)
-    {
-        auto& desktop = juce::Desktop::getInstance();
-        const auto& displays = desktop.getDisplays();
-        const auto globalScale = (double) desktop.getGlobalScaleFactor();
-
-        auto convert = [&] (const juce::Displays::Display* display)
-        {
-            const auto peerScale = display != nullptr && display->scale > 0 ? display->scale / globalScale : 1.0;
-            return (physicalBounds.toDouble() / peerScale).toNearestInt().withPosition (peerPosition);
-        };
-
-        const auto first = convert (displays.getDisplayForRect (physicalBounds, true));
-        return convert (displays.getDisplayForRect (first, false));
-    }
-
     bool sameSize (juce::Rectangle<int> a, juce::Rectangle<int> b)
     {
         constexpr int tolerance = 2;   // physical px; absorbs scale rounding both ways
@@ -52,6 +32,10 @@ namespace
 void X11BoundsSync::start()
 {
     ticks = 0;
+    if (isTimerRunning())
+        return;   // already watching (e.g. focus flapping): keep a pending mismatch, just extend
+
+    corrections = 0;
     lastMismatch.reset();
     startTimer (kIntervalMs);
 }
@@ -90,8 +74,22 @@ void X11BoundsSync::check()
     // moveResizeSerial, so a re-tile the WM sends meanwhile is dropped and must be caught here.
     if (lastMismatch.has_value() && sameSize (*lastMismatch, *real))
     {
-        peer->setBounds (peerBoundsForSize (*real, peer->getBounds().getPosition()), peer->isFullScreen());
         lastMismatch.reset();
+        if (corrections >= kMaxCorrections)
+            return;   // not converging: don't loop
+
+        // Through Component::setSize, JUCE's normal path, so position and scale handling stay
+        // JUCE's own. Scale physical -> component with the same ratios `believed` used.
+        const auto peerBounds = peer->getBounds();
+        auto toComponent = [] (int realPhysical, double platformScale, int peerSize, int componentSize)
+        {
+            const auto peerUnits = realPhysical / (platformScale > 0 ? platformScale : 1.0);
+            return juce::roundToInt (peerSize > 0 ? peerUnits * componentSize / peerSize : peerUnits);
+        };
+        const auto scale = (double) peer->getPlatformScaleFactor();
+        window.setSize (toComponent (real->getWidth(),  scale, peerBounds.getWidth(),  window.getWidth()),
+                        toComponent (real->getHeight(), scale, peerBounds.getHeight(), window.getHeight()));
+        ++corrections;
         ticks = 0;
         return;
     }

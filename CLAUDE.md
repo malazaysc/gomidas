@@ -175,10 +175,12 @@ WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI re
   Re-requesting the bounds didn't help. So `MainWindow` (`Main.cpp`) owns an `X11BoundsSync`, started on
   visibilityChanged/activeWindowStatusChanged (not broughtToFront — it fires on every click). For 3s it
   compares JUCE's size with the X server's in physical px and adopts a size mismatch once it has read
-  it twice, at JUCE's own position. It never stops early (before the WM tiles the window, JUCE and X
-  agree on the pre-tile size), and a correction restarts the 3s: our request raises JUCE's
-  `moveResizeSerial`, so a re-tile right after it is dropped and must be caught by polling. Other
-  top-level windows (plugin editor, JUCE's fallback dialogs) are not covered yet (GOM-95). The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
+  it twice, through `Component::setSize`. It never stops early (before the WM tiles the window, JUCE
+  and X agree on the pre-tile size), a correction restarts the 3s (our request raises JUCE's
+  `moveResizeSerial`, so a re-tile right after it is dropped), and corrections are capped at 3 per
+  start. **Patching JUCE to re-read the geometry on MapNotify does not fix it** — measured 3/10: the
+  tile lands after the map, in the configure JUCE misses. Other top-level windows (plugin editor,
+  JUCE's fallback dialogs) are not covered yet (GOM-95). The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
   (exposed by `JUCE_GUI_BASICS_INCLUDE_XHEADERS`, which is why that TU stands alone — Xlib's macros),
   converted back through JUCE's own scale maths. Don't open a second X connection or link libX11 —
   JUCE loads Xlib at runtime on purpose. Check with `hyprctl clients -j` against a temporary
