@@ -167,9 +167,24 @@ JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exist
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
 FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-content stuck at 1280x820 in a tiled window (GOM-91); WebKitGTK honours Omarchy's `GDK_SCALE=2` while
-JUCE lays out at 1, so the UI renders 2x — run with `GDK_SCALE=1` until GOM-92; `recent.txt` and
-plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with
+`GDK_SCALE=1` until GOM-92; `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+- ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
+  an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
+  on its display reads pending events into Xlib's in-memory queue, after which the socket isn't
+  readable and JUCE ignores them until new X traffic arrives. Measured under Hyprland: ~100 events
+  sat queued through the first seconds of every failing launch (`XEventsQueued(QueuedAlready)`),
+  among them the ConfigureNotify with the tile size. So the content stayed 1280x820 inside the tile,
+  and when later input drained the queue, JUCE dropped that stale configure (`serial <
+  moveResizeSerial`). Fix: `src/ui/X11EventWake.cpp`, one app-wide watchdog (owned by
+  `GomidasApplication`). Every 100ms it reads the queued count (no I/O) and, if anything is queued,
+  runs JUCE's own X fd callback via `LinuxEventLoopInternal::invokeEventLoopCallbackForFd` (an
+  `@internal` JUCE hook its VST3 client uses). Measured 10/10. **After any JUCE upgrade, re-run the
+  check** (10 launches tiled under Hyprland, JUCE size vs `hyprctl clients -j`): a behaviour change
+  behind that hook would compile fine and silently bring the bug back. Removing the timer = GOM-96. Approaches that **didn't** work or were
+  rejected along the way: polling the real bounds and `setSize`-ing (worked, but five review rounds
+  of side effects); re-requesting bounds (2/5); re-reading the geometry on MapNotify inside JUCE
+  (3/10). The probe that found it: log `XEventsQueued(display, QueuedAlready)` from a timer.
 - ⚠️ **WebKitGTK ignores the `Content-Type` JUCE sets on resource-provider responses** (GOM-90). JUCE
   only calls `webkit_uri_scheme_response_set_http_headers`, never `…_set_content_type` (not in 8.0.13,
   master or develop), so every embedded asset reaches the page as `application/octet-stream`. The

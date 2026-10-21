@@ -1,5 +1,6 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "ui/MainComponent.h"
+#include "ui/X11EventWake.h"
 
 namespace gomidas
 {
@@ -46,6 +47,9 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
+   #if JUCE_LINUX || JUCE_BSD
+    X11EventWake x11EventWake;   // wake JUCE for X events stranded in Xlib's queue (GOM-91)
+   #endif
 };
 } // namespace gomidas
 
