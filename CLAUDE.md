@@ -167,8 +167,16 @@ JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exist
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
 FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with
-`GDK_SCALE=1` until GOM-92; `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+`recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
+- ⚠️ **JUCE and the WebKitGTK view pick their UI scale independently** (GOM-92). GTK reads `GDK_SCALE`
+  (Omarchy exports `2` to every app, whatever the monitor); JUCE reads XSETTINGS, then GNOME's
+  gsettings `scaling-factor` (0 → **1.0 without ever looking at DPI**), then DPI. When they disagree
+  the page renders at the wrong size inside its box: 2x on this 81-dpi ultrawide, which was "ultra
+  giant". So `src/ui/UiScale.cpp` (called first thing in `initialise()`, before any web view exists)
+  derives ONE integer scale from the primary display's DPI, `round(dpi/96)` clamped 1-4, and applies it
+  to both: JUCE's global scale factor and `GDK_SCALE` (`GDK_DPI_SCALE` cleared). `GOMIDAS_SCALE=1..4`
+  overrides it — also how to check HiDPI behaviour on a low-DPI screen. Startup logs
+  `[Gomidas] UI scale N (display D dpi)`. Pinned by `tests/ui_scale_test.cpp`.
 - ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
   an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
   on its display reads pending events into Xlib's in-memory queue, after which the socket isn't

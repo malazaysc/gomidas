@@ -1,6 +1,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "ui/MainComponent.h"
 #include "ui/X11EventWake.h"
+#include "ui/UiScale.h"
 
 namespace gomidas
 {
@@ -13,6 +14,7 @@ public:
 
     void initialise (const juce::String&) override
     {
+        applyUiScale();   // Linux: before the web view exists, so GTK and JUCE agree (GOM-92)
         mainWindow = std::make_unique<MainWindow> ("Gomidas");
     }
 
