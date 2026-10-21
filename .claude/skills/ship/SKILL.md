@@ -99,10 +99,11 @@ pnpm install                                     # if lockfile/deps moved
 pnpm typecheck
 pnpm test                                        # vitest (builds core first)
 cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGOMIDAS_BUILD_TESTS=ON
-cmake --build build --target gomidas_tests && ctest --test-dir build --output-on-failure
+cmake --build build && ctest --test-dir build --output-on-failure   # app + tests, as CI builds
 ```
 
-The desktop app itself must also still build — `cmake --build build`. The standing rule is that
+CI builds the same on macOS **and** Ubuntu, so a Linux-only or macOS-only compile error fails the
+PR even if your machine is the other one. The standing rule is that
 **every commit leaves `cmake --build build` green and the macOS app behaving identically**.
 
 **Gate B — the dangling-reference sweep.** `app.js` / `editor.js` / `fretboard.js` / `grooves.js`
@@ -177,7 +178,7 @@ EOF
 )"
 ```
 
-CI runs on `pull_request` (web-tests + native-tests). **Wait for it and confirm it's green** —
+CI runs on `pull_request` (web-tests + native-tests on macOS **and** Ubuntu, both building the full app). A PR that touches only `*.md`, `docs/**` or `.claude/**` runs **no** CI (`paths-ignore`), so "no checks reported" is expected there and is not a failure. Otherwise **wait for it and confirm it's green** —
 `gh pr checks --watch`. Red CI → back to stage 4.
 
 ## 7. REVIEW

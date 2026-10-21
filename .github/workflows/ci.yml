@@ -1,9 +1,13 @@
 name: CI
 
+# Docs and agent-config changes (CLAUDE.md, skills, docs/) don't touch anything CI builds or tests,
+# and the native legs each build the whole app, so they don't run for those.
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**', '.claude/**']
   pull_request:
+    paths-ignore: ['**/*.md', 'docs/**', '.claude/**']
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -34,16 +38,29 @@ jobs:
         run: pnpm -C packages/core run sweep
       - run: pnpm -C packages/core run test
 
-  # Native audio-path smoke tests (sfizz SFZ load + render) via ctest. Heavier: this
+  # Native build + audio-path smoke tests, on both desktop platforms the app ships on. Heavier:
   # configures with -DGOMIDAS_BUILD_TESTS=ON, which fetches JUCE 8 + builds sfizz.
+  # Builds the full Gomidas APP too, not just the test targets (GOM-89): development moved to
+  # Linux, so nothing else compiles the macOS app, and nothing else compiles the Linux one.
   native-tests:
-    name: Native smoke tests (ctest, macOS)
-    runs-on: macos-latest
-    # A docs- or web-shell-only change should not spend ~10 minutes building JUCE and sfizz.
-    # web/ IS still native-relevant: CMake compiles it into the binary (GMD-31), so it is not
-    # excluded here.
+    name: Native build + smoke tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false   # a Linux break must not hide whether macOS still builds, and vice versa
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # JUCE's Linux dependencies for the modules this app links (no juce_opengl, so no GL).
+      # NEEDS_WEB_BROWSER (GOM-84) makes configure require webkit2gtk-4.1 + gtk3 via pkg-config.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev \
+            libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev
       # The web front-end is TypeScript and CMake compiles it during configure
       # (GMD-31, docs/WEB_PORT.md §1.1), so the native job needs Node and pnpm too — CMake
       # shells out to `pnpm exec tsc` and hard-fails if pnpm is missing.
@@ -54,14 +71,21 @@ jobs:
           cache: pnpm
       - name: Install web deps (for tsc)
         run: pnpm install --frozen-lockfile
-      - name: Cache CMake FetchContent deps (JUCE, sfizz)
+      # Only the FETCHED SOURCES (and FetchContent's own subbuild stamps, so it doesn't re-fetch or
+      # re-patch), never compiled objects: sources don't depend on the toolchain, so a runner image
+      # with a new compiler can't reuse another compiler's objects, and the entries stay small enough
+      # not to thrash the repo's 10 GB cache.
+      - name: Cache CMake FetchContent sources (JUCE, sfizz)
         uses: actions/cache@v4
         with:
-          path: build/_deps
-          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+          key: deps-src-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGOMIDAS_BUILD_TESTS=ON
-      - name: Build test targets
-        run: cmake --build build --target gomidas_tests
+      # As many jobs as the runner has cores (macos-latest has 3, ubuntu-latest 4).
+      - name: Build app + test targets
+        run: cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN)"
       - name: Run ctest
         run: ctest --test-dir build --output-on-failure

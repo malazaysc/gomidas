@@ -240,8 +240,9 @@ if(GOMIDAS_BUILD_TESTS)
   set_target_properties(ui_scale_test PROPERTIES CXX_STANDARD 20)
   add_test(NAME ui_scale COMMAND ui_scale_test)
 
-  # Aggregate target so CI (and `cmake --build build --target gomidas_tests`) builds every
-  # test executable at once — adding a new test target here needs no CI change.
+  # Aggregate target to build every test executable at once locally (`cmake --build build
+  # --target gomidas_tests`). CI builds `all` (the app + these), so a new test target must not be
+  # EXCLUDE_FROM_ALL.
   add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test)
 endif()
 
