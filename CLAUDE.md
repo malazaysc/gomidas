@@ -177,12 +177,14 @@ both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl s
   Hyprland then upscales XWayland itself), else what JUCE read from the desktop. Rounded to an integer
   (GTK can't do fractional) and applied to both: JUCE's global scale factor, and `GDK_SCALE`, set
   **once, first thing in `initialise()`** — before the window is built (JUCE forks the WebKit child
-  synchronously in the `WebBrowserComponent` constructor) and before any thread starts (`setenv` is
-  not safe against a concurrent `getenv`; restoring it later raced the audio/WebKit threads). Apps
+  synchronously in the `WebBrowserComponent` constructor) and before anything that starts a thread
+  (`setenv` is not safe against a concurrent `getenv`; restoring it later raced the audio/WebKit
+  threads) — so `X11EventWake`, whose timer starts JUCE's TimerThread, is created after it. Apps
   launched later inherit the desktop-chosen value. Verify with `/proc/<webkit child>/environ` (the
   parent's `/proc` shows its *startup* env, not `setenv`). `hyprctl` is waited on with a 1s timeout
   *before* reading (reading first blocks forever on a hung hyprctl) and is skipped when
-  `GOMIDAS_SCALE` is valid. The window's minimum/initial size is fitted to the display's usable area,
+  `GOMIDAS_SCALE` is valid; an unreadable `force_zero_scaling` falls back to the desktop path (it
+  decides the answer). The window's minimum/initial size is fitted to the display's usable area,
   since a deliberate 200% on 1080p leaves only 960x540 logical. A DPI-guess version was tried first and dropped: it overrode explicit
   desktop settings and needed a fit-cap that clipped accessibility scales. Startup logs
   `[Gomidas] UI scale N (source; …)`. Pinned by `tests/ui_scale_test.cpp`.

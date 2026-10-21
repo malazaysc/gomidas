@@ -10,7 +10,8 @@
 //   2. Hyprland: the focused monitor's scale as Hyprland reports it (`hyprctl -j monitors`), i.e.
 //      what monitors.lua configures. If xwayland:force_zero_scaling is off, Hyprland scales
 //      XWayland apps itself, so the app must render at 1.
-//   3. Anywhere else: the scale JUCE reads from the desktop (XSETTINGS, GNOME/Ubuntu settings).
+//   3. Anywhere else: the scale JUCE reads from the desktop (XSETTINGS, GNOME/Ubuntu settings — and,
+//      when none of those exist, JUCE's own round(dpi/96); that is JUCE's rule, not ours).
 // The session-wide GDK_SCALE is ignored: it need not match the monitor (Omarchy sets 2 always).
 // GTK only does integer device scales, so a fractional desktop scale is rounded and both halves
 // use that same integer.
@@ -34,7 +35,7 @@ struct UiScaleChoice
 struct HyprlandInfo
 {
     double monitorScale = 1.0;        // the focused monitor's configured scale
-    bool forceZeroScaling = true;     // xwayland:force_zero_scaling
+    bool forceZeroScaling = false;    // xwayland:force_zero_scaling (Hyprland's default is off)
 };
 
 inline int toDeviceScale (double scale)
@@ -95,7 +96,8 @@ inline double globalScaleFactorFor (double displayScale, double currentGlobal, i
 // Linux/BSD: decides the scale (querying Hyprland only when no valid GOMIDAS_SCALE is set) and
 // applies it to both halves — JUCE's global scale factor and GDK_SCALE for the WebKit child. Call
 // it first thing in initialise(): before the window exists (the WebKit child is forked while it is
-// built) and before any other thread starts (setenv is not safe against concurrent getenv). The
+// built) and before anything that starts a thread — X11EventWake's timer included, which is why
+// that member is created after this call (setenv is not safe against a concurrent getenv). The
 // value stays set, so apps launched later inherit the scale the desktop chose — on Omarchy that is
 // the monitor's correct value, unlike the session's GDK_SCALE. Logs the choice. No-op elsewhere.
 void applyUiScale();

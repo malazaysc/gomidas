@@ -22,6 +22,7 @@ namespace
         if (! process.waitForProcessToFinish (1000))
         {
             process.kill();
+            process.waitForProcessToFinish (500);   // reaps it (waitpid), so no zombie is left
             return {};
         }
         if (process.getExitCode() != 0)
@@ -48,11 +49,15 @@ namespace
         HyprlandInfo info;
         info.monitorScale = (double) monitor.getProperty ("scale", 1.0);
 
+        // This option decides the answer (off: Hyprland upscales XWayland itself), so an unreadable
+        // value means "don't know" — fall back to the desktop path rather than guess either way.
         const auto option = hyprctlJson ({ "getoption", "xwayland:force_zero_scaling" });
         if (option.hasProperty ("bool"))
-            info.forceZeroScaling = (bool) option.getProperty ("bool", true);
+            info.forceZeroScaling = (bool) option.getProperty ("bool", false);
         else if (option.hasProperty ("int"))
-            info.forceZeroScaling = (int) option.getProperty ("int", 1) != 0;
+            info.forceZeroScaling = (int) option.getProperty ("int", 0) != 0;
+        else
+            return std::nullopt;
         return info;
     }
 
@@ -63,7 +68,7 @@ namespace
             case UiScaleChoice::Source::override:                 return "GOMIDAS_SCALE";
             case UiScaleChoice::Source::hyprland:                 return "Hyprland monitor scale";
             case UiScaleChoice::Source::hyprlandCompositorScaled: return "Hyprland scales XWayland itself";
-            case UiScaleChoice::Source::desktop:                  return "desktop setting";
+            case UiScaleChoice::Source::desktop:                  return "JUCE: desktop setting or display dpi";
         }
         return "?";
     }
