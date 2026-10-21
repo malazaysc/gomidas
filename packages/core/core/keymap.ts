@@ -21,11 +21,13 @@ interface KeyMods { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boole
 interface Binding { action: string; combo: string; }
 
 // A combo is "mod+mod+key". Modifiers: cmd (meta), ctrl, alt, shift. The key is the KeyboardEvent
-// `key` (letters lower-case). cmd/ctrl/alt must match EXACTLY. Shift:
-//  - NAMED keys (Insert, Delete, arrows, Home/End) match shift exactly — Shift+Ins is the
-//    platform's paste and Ctrl+Shift+Del is not Ctrl+Del;
-//  - single characters ignore shift when the combo doesn't name it, because shift is often what
-//    TYPES the character ("+", ">", "Z" with Caps Lock) — list a shift variant before its plain form.
+// `key` (letters lower-case). cmd/ctrl/alt must match EXACTLY. Shift, when the combo doesn't name it:
+//  - SYMBOLS ("+", ">", "*", "?") ignore it everywhere: shift is what types them;
+//  - on PC, letters, digits and named keys need shift UP — Shift+Ins is the platform's paste,
+//    Ctrl+Shift+Del is not Ctrl+Del, and Ctrl+Shift+X must not cut;
+//  - on macOS it is ignored, as before GOM-87 (⇧⌘↑ still moves track; GP8's selection
+//    variants of those are not implemented).
+// List a shift variant before its plain form.
 const BINDINGS: Record<Platform, Binding[]> = {
   mac: [
     { action: 'deleteTrack',     combo: 'cmd+alt+r' },
@@ -37,6 +39,7 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'cut',             combo: 'cmd+x' },
     { action: 'paste',           combo: 'cmd+v' },
     { action: 'doubleDot',       combo: 'cmd+.' },
+    { action: 'doubleDot',       combo: 'cmd+*' },
     { action: 'insertBar',       combo: 'cmd++' },
     { action: 'insertBar',       combo: 'cmd+=' },
     { action: 'deleteBeats',     combo: 'cmd+-' },
@@ -56,6 +59,7 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'zoomIn',          combo: 'cmd+>' },
     { action: 'zoomOut',         combo: 'cmd+<' },
     { action: 'tripletFeel',     combo: 'cmd+/' },
+    { action: 'tripletFeel',     combo: 'cmd+?' },
     { action: 'voice1',          combo: 'cmd+1' },
     { action: 'voice2',          combo: 'cmd+2' },
     { action: 'voice3',          combo: 'cmd+3' },
@@ -87,6 +91,7 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'cut',             combo: 'ctrl+x' },
     { action: 'paste',           combo: 'ctrl+v' },
     { action: 'doubleDot',       combo: 'ctrl+.' },
+    { action: 'doubleDot',       combo: 'ctrl+*' },
     { action: 'insertBeat',      combo: 'ctrl+Insert' },
     { action: 'insertBar',       combo: 'Insert' },
     { action: 'deleteBar',       combo: 'ctrl+Delete' },
@@ -108,6 +113,7 @@ const BINDINGS: Record<Platform, Binding[]> = {
     { action: 'zoomOut',         combo: 'ctrl+-' },
     { action: 'zoomOut',         combo: 'ctrl+_' },
     { action: 'tripletFeel',     combo: 'ctrl+/' },
+    { action: 'tripletFeel',     combo: 'ctrl+?' },
     { action: 'voice1',          combo: 'ctrl+1' },
     { action: 'voice2',          combo: 'ctrl+2' },
     { action: 'voice3',          combo: 'ctrl+3' },
@@ -141,6 +147,11 @@ function normKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 
+/** A single non-alphanumeric character — typed with shift on many layouts, so shift can't be exact. */
+function isSymbol(key: string): boolean {
+  return key.length === 1 && !/[a-z0-9]/.test(key);
+}
+
 /** The action a key press means on this platform, or null. */
 function resolve(key: string, mods: KeyMods, platform: Platform): string | null {
   const k = normKey(key || '');
@@ -149,7 +160,7 @@ function resolve(key: string, mods: KeyMods, platform: Platform): string | null 
     const c = b.c;
     if (c.key !== k || c.cmd !== m.cmd || c.ctrl !== m.ctrl || c.alt !== m.alt) continue;
     if (c.shift && !m.shift) continue;
-    if (!c.shift && m.shift && c.key.length > 1) continue;   // named key: shift is exact
+    if (!c.shift && m.shift && platform === 'pc' && !isSymbol(c.key)) continue;
     return b.action;
   }
   return null;
@@ -198,7 +209,13 @@ function platform(): Platform {
   return cachedPlatform;
 }
 
-  const api = { resolve, label, platformOf, platform, BINDINGS };
+/** ' (⌘Z)' / ' (Ctrl+Z)' to append to a tooltip, or '' when the action has no key here. */
+function hint(action: string): string {
+  const l = label(action, platform());
+  return l ? ' (' + l + ')' : '';
+}
+
+  const api = { resolve, label, hint, platformOf, platform, BINDINGS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasKeymap = api;
 }());

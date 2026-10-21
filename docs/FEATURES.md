@@ -14,7 +14,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | --- | --- | --- |
 | New score (setup dialog) | toolbar `New…` / menu File→New | ✅ GP8-style modal: title, tempo, time signature, add/remove tracks (Guitar/Bass/Drums) + tuning preset per track |
 | Add track (Guitar / Bass / Drums) | toolbar `+ Track…` | ✅ matches existing master bars; drums via importer+JSON merge |
-| Delete track | `⌥⌘R` / menu Track→Delete Track | ✅ JSON round-trip rebuild; keeps ≥1 track; cursor moves to previous track |
+| Delete track | `⌥⌘R` (Linux/Windows: no key, menu only) / menu Track→Delete Track | ✅ JSON round-trip rebuild; keeps ≥1 track; cursor moves to previous track |
 | Open `.gp` / `.gomidas` / MusicXML | toolbar `Open` / menu File→Open | ✅ native file chooser (real path); `.gomidas` = score JSON, others via alphaTab (`gomidasLoadBinary`, base64) |
 | Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
 | Save `.gomidas` project | toolbar `Save` | ✅ clears the unsaved-changes flag; **folds per-track volume/pan into `playbackInfo`** so the mix persists (mute/solo/hidden stay session-only) |
@@ -156,7 +156,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Single cursor over tab & notation | automatic | ✅ one cursor; follows the transport while playing and stays where playback stopped (Play resumes from it) |
 | Auto-scroll during playback | automatic | ✅ keeps the play cursor in view (GP-style page turn); only scrolls near an edge. Toggle: `GomidasEditor.setAutoScroll(bool)` |
 | Auto-scroll to the **edit** cursor | automatic | ✅ as you navigate/edit, the score scrolls to keep the edit cursor in view (edge-triggered, instant; stands down during playback). Same `setAutoScroll` toggle |
-| A/B loop | `⌘L` / menu Sound→Loop Selection | — | ✅ loops the beat selection (or current bar) via `AudioEngine::setLoopRange`; `⌘L` again or Clear Loop turns it off; cleared on score load |
+| A/B loop | `⌘L` (Linux/Windows: `Ctrl+L`) / menu Sound→Loop Selection | — | ✅ loops the beat selection (or current bar) via `AudioEngine::setLoopRange`; `⌘L` again or Clear Loop turns it off; cleared on score load |
 | Metronome | transport `♩` toggle / menu Sound→Metronome | — | ✅ wood-block click on the time-signature grid (downbeat accented), on a free melodic channel; injected into the sequence so it loops/repeats with the music |
 | Practice speed (tempo slow-down) | transport speed select (25–150%) | — | ✅ `AudioEngine::setPlaybackRate` scales playback tempo without changing pitch or the notated tempo |
 | Count-in | transport `⏱` toggle + 1/2-bar selector / menu Sound→Count-in | — | ✅ **1 or 2 bars** of wood-block clicks at the playback tempo before the transport starts, with a **big on-screen countdown** number over the score; press play again to abort |
@@ -212,13 +212,13 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Lyrics | palette `Lyrics` | ✅ per-beat lyric syllable (`beat.lyrics`) |
 | Window / Help | menu Window→Minimize, Help→About | ✅ native minimise + About box |
 | Inspector — SONG (live) | right panel `SONG` tab | ✅ editable title + tempo |
-| Zoom | transport `−` / `＋` or `⌘<` / `⌘>` | ✅ rescales the score |
+| Zoom | transport `−` / `＋` or `⌘<` / `⌘>` (Linux/Windows: `Ctrl+-` / `Ctrl++`) | ✅ rescales the score |
 | Multitrack view toggle | `F3` / menu View→Toggle Multitrack View | ✅ flips focused single track ↔ all non-hidden tracks |
 
 ## Edit history
 | Feature | Gomidas key | GP8 | Notes |
 | --- | --- | --- | --- |
-| Undo | `⌘Z` | same | ✅ score-JSON snapshots, debounced |
+| Undo | `⌘Z` (Linux/Windows: `Ctrl+Z`; redo `Ctrl+Y` / `Ctrl+Shift+Z`) | same | ✅ score-JSON snapshots, debounced |
 | Redo | `⌘⇧Z` / `⌘Y` | same | ✅ |
 
 ---

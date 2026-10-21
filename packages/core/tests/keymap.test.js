@@ -31,6 +31,11 @@ describe('macOS keymap (unchanged from before GOM-87)', () => {
     expect(mac('r', { meta: true, alt: true })).toBe('deleteTrack');
   });
 
+  it('ignores shift on macOS named keys, as before (⇧⌘↑ still moves track)', () => {
+    expect(mac('ArrowUp', { meta: true, shift: true })).toBe('prevTrack');
+    expect(mac('End', { meta: true, shift: true })).toBe('lastBar');
+  });
+
   it('matches cmd/ctrl/alt exactly: ⌥⌘C is not Copy, ⌃Z is not Undo', () => {
     expect(mac('c', { meta: true, alt: true })).toBe(null);
     expect(mac('z', { ctrl: true })).toBe(null);
@@ -68,6 +73,20 @@ describe('PC keymap (GP8 Windows column) — Linux and Windows', () => {
     expect(pc('Delete', { ctrl: true, shift: true })).toBe(null);
     expect(pc('Delete', { shift: true })).toBe('deleteBeats');
     expect(pc('ArrowUp', { ctrl: true, shift: true })).toBe(null);
+  });
+
+  it('on PC Ctrl+Shift+letter is not the plain Ctrl action (Ctrl+Shift+X must not cut)', () => {
+    expect(pc('X', { ctrl: true, shift: true })).toBe(null);
+    expect(pc('V', { ctrl: true, shift: true })).toBe(null);
+    expect(pc('Z', { ctrl: true, shift: true })).toBe('redo');     // named in the table
+    expect(pc('+', { ctrl: true, shift: true })).toBe('zoomIn');   // a symbol: shift types it
+  });
+
+  it('has GP8\'s shifted variants: Ctrl+* double dot, Ctrl+? (Ctrl+Shift+/) triplet feel', () => {
+    expect(pc('*', { ctrl: true, shift: true })).toBe('doubleDot');
+    expect(pc('?', { ctrl: true, shift: true })).toBe('tripletFeel');
+    expect(mac('*', { meta: true, shift: true })).toBe('doubleDot');
+    expect(mac('?', { meta: true, shift: true })).toBe('tripletFeel');
   });
 
   it('deviates on plain Del (user decision): it stays Delete Note, never Delete Track', () => {

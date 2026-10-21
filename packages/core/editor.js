@@ -2333,7 +2333,12 @@
     wahOpen: () => setWah(false),
     wahClose: () => setWah(true)
   };
-  function keyPlatform() { return window.GomidasKeymap ? window.GomidasKeymap.platform() : 'mac'; }
+  let warnedNoKeymap = false;
+  function keyPlatform() {
+    if (window.GomidasKeymap) return window.GomidasKeymap.platform();
+    if (!warnedNoKeymap) { warnedNoKeymap = true; console.warn('[Gomidas] keymap.js not loaded: no modified shortcuts'); }
+    return 'pc';   // keymap.ts's own default
+  }
 
   // Shared key logic — used by the JS keydown listener AND native key forwarding
   // (MainComponent::keyPressed → window.gomidasNativeKey). Returns true if handled.
@@ -2437,8 +2442,14 @@
   }
   function modalIsOpen() { const m = document.getElementById('modal-overlay'); return !!(m && m.classList.contains('show')); }
 
+  // The one "may the editor take keys now?" rule, for BOTH entry points: the browser keydown
+  // below and native forwarding (app.js gomidasNativeKey) — a shortcut must not edit the score
+  // behind an open dialog or steal a key from a text field.
+  function acceptsKeys(target) {
+    return !(modalIsOpen() || isTypingTarget(target) || isTypingTarget(document.activeElement));
+  }
   function onKey(e) {
-    if (modalIsOpen() || isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+    if (!acceptsKeys(e.target)) return;
     if (handleKey(e.key, { ctrl: e.ctrlKey, shift: e.shiftKey, meta: e.metaKey, alt: e.altKey })) {
       e.preventDefault(); e.stopPropagation();
     }
@@ -2595,6 +2606,7 @@
   }
 
   window.GomidasEditor = {
+    acceptsKeys,
     init, onScoreLoaded, onRenderFinished, onPlayTick, handleKey,
     addBar, setFret, deleteNoteOnString, setDuration, toggleDot, toggleDoubleDot, makeRest,
     toggleTriplet, setTuplet, palmMute: palmMuteBeat, palmMuteNote, deadNote, letRing,

@@ -168,11 +168,7 @@
   }
 
   // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
-  function sc(action) {
-    const K = window.GomidasKeymap;
-    const l = K ? K.label(action, K.platform()) : '';
-    return l ? ' (' + l + ')' : '';
-  }
+  function sc(action) { return window.GomidasKeymap ? window.GomidasKeymap.hint(action) : ''; }
   function mkBtn(label, title, fn) {
     const b = el('button', 'eb-btn', label);
     b.title = title;

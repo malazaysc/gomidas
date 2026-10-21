@@ -1205,7 +1205,8 @@ window.gomidasConfirmOpenRecent = function (path) {
 // Called by native (MainComponent::keyPressed) so editor keys work even when the
 // WebView doesn't hold first-responder focus.
 window.gomidasNativeKey = function (key, cmd, ctrl, shift, alt) {
-  if (window.GomidasEditor) window.GomidasEditor.handleKey(key, { meta: !!cmd, ctrl: !!ctrl, shift: !!shift, alt: !!alt });
+  const E = window.GomidasEditor;
+  if (E && (!E.acceptsKeys || E.acceptsKeys(null))) E.handleKey(key, { meta: !!cmd, ctrl: !!ctrl, shift: !!shift, alt: !!alt });
 };
 
 // Dispatch a native menu-bar action (MainComponent menuItemSelected → here).
@@ -1329,8 +1330,7 @@ onClick('undo-btn', () => { if (window.GomidasEditor) window.GomidasEditor.undo(
 (function labelUndoRedo() {
   const K = window.GomidasKeymap;
   if (!K) return;
-  const p = K.platform();
-  const set = (id, name, action) => { const b = document.getElementById(id); if (b) b.title = name + ' (' + K.label(action, p) + ')'; };
+  const set = (id, name, action) => { const b = document.getElementById(id); if (b) b.title = name + K.hint(action); };
   set('undo-btn', 'Undo', 'undo');
   set('redo-btn', 'Redo', 'redo');
 }());
