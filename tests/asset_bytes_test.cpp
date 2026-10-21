@@ -32,8 +32,10 @@ int main()
            "image/svg+xml gets a BOM");
     check (str (gomidas::assetBytes (html.data(), html.size(), "application/manifest+json", true)) == bom + html,
            "+json gets a BOM");
-    check (str (gomidas::assetBytes (html.data(), html.size(), "Application/JSON; charset=utf-8", true)) == bom + html,
-           "MIME matching ignores case and parameters");
+    check (str (gomidas::assetBytes (html.data(), html.size(), "  Application/JSON; Charset=\"UTF-8\"", true)) == bom + html,
+           "MIME matching ignores case, surrounding space and a utf-8 charset parameter");
+    check (str (gomidas::assetBytes (html.data(), html.size(), "text/plain; charset=iso-8859-1", true)) == html,
+           "a text asset declaring another charset gets no UTF-8 BOM");
 
     const std::string utf16 ("\xFF\xFE" "N\0e\0w\0", 8);
     check (str (gomidas::assetBytes (utf16.data(), utf16.size(), "text/plain", true)) == utf16,
@@ -53,6 +55,12 @@ int main()
            "no BOM when not requested (macOS path)");
     check (gomidas::assetBytes (nullptr, 0, "text/html", false).empty(),
            "empty asset stays empty");
+
+   #if defined (__linux__)
+    check (gomidas::kWebViewNeedsUtf8Bom, "the BOM is switched on for Linux builds");
+   #elif defined (__APPLE__)
+    check (! gomidas::kWebViewNeedsUtf8Bom, "the BOM stays off on macOS");
+   #endif
 
     if (failures == 0)
         std::printf ("PASS: asset_bytes_test\n");

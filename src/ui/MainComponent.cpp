@@ -830,13 +830,8 @@ MainComponent::serveResource (const juce::String& url)
             int size = 0;
             if (const char* data = GomidasAssets::getNamedResource (a.resource, size))
             {
-                // WebKitGTK (Linux, BSD) needs a BOM on UTF-8 text assets — see AssetBytes.h (GOM-90).
-               #if JUCE_LINUX || JUCE_BSD
-                constexpr bool addBom = true;
-               #else
-                constexpr bool addBom = false;
-               #endif
-                return juce::WebBrowserComponent::Resource { assetBytes (data, (size_t) size, a.mime, addBom),
+                // WebKitGTK needs a BOM on UTF-8 text assets — see AssetBytes.h (GOM-90).
+                return juce::WebBrowserComponent::Resource { assetBytes (data, (size_t) size, a.mime, kWebViewNeedsUtf8Bom),
                                                              juce::String (a.mime) };
             }
         }
