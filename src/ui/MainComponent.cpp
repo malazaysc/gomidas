@@ -831,6 +831,16 @@ MainComponent::serveResource (const juce::String& url)
             {
                 std::vector<std::byte> bytes ((size_t) size);
                 std::memcpy (bytes.data(), data, (size_t) size);
+               #if JUCE_LINUX
+                // WebKitGTK ignores the Content-Type header JUCE puts on custom-scheme responses, so
+                // every asset arrives as application/octet-stream, is sniffed as HTML, and decodes as
+                // windows-1252 — <meta charset> doesn't rescue it (GOM-90). A UTF-8 BOM outranks all
+                // of that and is stripped before parsing, so text assets carry their own encoding.
+                const std::byte bom[] = { std::byte (0xEF), std::byte (0xBB), std::byte (0xBF) };
+                const bool hasBom = bytes.size() >= 3 && std::equal (std::begin (bom), std::end (bom), bytes.begin());
+                if (juce::String (a.mime).startsWith ("text/") && ! hasBom)
+                    bytes.insert (bytes.begin(), std::begin (bom), std::end (bom));
+               #endif
                 return juce::WebBrowserComponent::Resource { std::move (bytes), juce::String (a.mime) };
             }
         }
