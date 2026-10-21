@@ -240,30 +240,26 @@ MainComponent::MainComponent()
             [this] (const juce::Array<juce::var>&,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
+                // One block per platform: title, start folder, filter and flags belong together.
                #if JUCE_MAC
                 auto chooser = std::make_shared<juce::FileChooser> (
                     "Choose an AU (.component) or VST3 (.vst3) plugin",
                     juce::File ("/Library/Audio/Plug-Ins"), "*.vst3;*.component");
-               #else
-                // AU exists only on macOS; start where VST3 plugins conventionally live (GOM-88).
-                // Under xdg-desktop-portal the start folder is currently ignored (GOM-105).
-               #if JUCE_LINUX || JUCE_BSD
-                // Folder mode below: a "*.vst3" filter would also hide the ordinary folders on the way
-                // to the bundle, so none here — VST3PluginFormat rejects a non-.vst3 path anyway.
-                const juce::String filter;
-               #else
-                const juce::String filter ("*.vst3");
-               #endif
-                auto chooser = std::make_shared<juce::FileChooser> (
-                    "Choose a VST3 (.vst3) plugin", defaultVst3Dir(), filter);
-               #endif
-               #if JUCE_LINUX || JUCE_BSD
+                const int pickFlags = juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #elif JUCE_LINUX || JUCE_BSD
                 // A Linux VST3 is a DIRECTORY bundle (Foo.vst3/Contents/x86_64-linux/Foo.so), and JUCE's
-                // zenity/kdialog path treats "files and directories" as files-only — so it could never
-                // return one. Directory mode picks the bundle itself (GOM-88).
+                // zenity/kdialog path treats "files and directories" as files-only, so it could never
+                // return one: pick in folder mode. No filter — "*.vst3" would also hide the folders on
+                // the way to the bundle. Start folder ignored under xdg-desktop-portal: GOM-105.
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose a VST3 plugin (the .vst3 folder)", defaultVst3Dir(), juce::String());
                 const int pickFlags = juce::FileBrowserComponent::openMode
                                       | juce::FileBrowserComponent::canSelectDirectories;
                #else
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose a VST3 (.vst3) plugin", defaultVst3Dir(), "*.vst3");
                 const int pickFlags = juce::FileBrowserComponent::openMode
                                       | juce::FileBrowserComponent::canSelectFiles
                                       | juce::FileBrowserComponent::canSelectDirectories;
@@ -272,6 +268,11 @@ MainComponent::MainComponent()
                     [this, chooser] (const juce::FileChooser& fc)
                     {
                         auto f = fc.getResult();
+                       #if JUCE_LINUX || JUCE_BSD
+                        // Picked a folder INSIDE the bundle (…/Foo.vst3/Contents/x86_64-linux)? Load the bundle.
+                        for (auto p = f; p != juce::File() && p != p.getParentDirectory(); p = p.getParentDirectory())
+                            if (p.hasFileExtension ("vst3")) { f = p; break; }
+                       #endif
                         if (f != juce::File())
                         {
                             closePluginEditor();                 // drop the old editor first
@@ -772,11 +773,17 @@ void MainComponent::loadRecentList()
     recentFiles.clear();
     auto f = recentStoreFile();
    #if ! JUCE_MAC
-    // Before GOM-88 non-macOS builds kept the list under a literal "Application Support" folder;
-    // read it once until the new file exists (the next save writes the new location).
+    // Before GOM-88 non-macOS builds kept the list under a literal "Application Support" folder.
+    // Move it once: read it, write the new location (below), then remove the old file and any
+    // folder it leaves EMPTY — deleteFile on a directory is rmdir, so nothing else can go.
+    juce::File legacy;
     if (! f.existsAsFile())
-        f = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
+    {
+        const auto old = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                             .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
+        if (old.existsAsFile())
+            f = legacy = old;
+    }
    #endif
     if (! f.existsAsFile()) return;
     juce::StringArray lines;
@@ -791,6 +798,21 @@ void MainComponent::loadRecentList()
             recentFiles.add (p);
     }
     while (recentFiles.size() > kRecentMax) recentFiles.remove (recentFiles.size() - 1);
+   #if ! JUCE_MAC
+    if (legacy.existsAsFile())
+    {
+        saveRecentList();
+        if (recentStoreFile().existsAsFile() && legacy.deleteFile())
+        {
+            // Only EMPTY real folders go (rmdir); a symlinked one is left alone, since deleteFile
+            // would remove the link itself.
+            const auto gomidasDir = legacy.getParentDirectory();             // .../Application Support/Gomidas
+            for (const auto& dir : { gomidasDir, gomidasDir.getParentDirectory() })
+                if (dir.isSymbolicLink() || ! dir.deleteFile())
+                    break;
+        }
+    }
+   #endif
 }
 
 void MainComponent::saveRecentList() const
