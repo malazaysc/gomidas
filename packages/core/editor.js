@@ -1988,7 +1988,7 @@
       st.textContent = `${track() ? track().name : ''} · bar ${cur.bar + 1} · beat ${cur.beat + 1} · string ${cur.string + 1}`
         + (cur.voice > 0 ? ` · voice ${cur.voice + 1}` : '')
         + (fretBuffer ? ` · fret ${fretBuffer}` : '')
-        + (fc === 'under' ? ' · ⚠ bar incomplete' : (fc === 'over' ? ' · ⚠ bar overfilled' : ''));
+        + (fc === 'under' ? ' · ! bar incomplete' : (fc === 'over' ? ' · ! bar overfilled' : ''));
       st.classList.toggle('bar-warn', fc !== 'exact');
     }
     if (window.GomidasUI) window.GomidasUI.refresh(getState());

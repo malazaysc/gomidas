@@ -8,13 +8,13 @@
   const SINGLE_INLAY = new Set([3, 5, 7, 9, 15, 17, 19, 21]);
   const DOUBLE_INLAY = new Set([12, 24]);
   const DURS = [
-    { v: 1, label: '𝅝', name: 'whole' },
-    { v: 2, label: '𝅗𝅥', name: 'half' },
-    { v: 4, label: '♩', name: 'quarter' },
-    { v: 8, label: '♪', name: 'eighth' },
-    { v: 16, label: '𝅘𝅥𝅯', name: '16th' },
-    { v: 32, label: '𝅘𝅥𝅰', name: '32nd' }
-  ].map(d => ({ v: d.v, name: d.name, label: ({ 1: '1', 2: '½', 4: '¼', 8: '⅛', 16: '16', 32: '32' })[d.v] }));
+    { v: 1, label: '1', name: 'whole' },
+    { v: 2, label: '½', name: 'half' },
+    { v: 4, label: '¼', name: 'quarter' },
+    { v: 8, label: '⅛', name: 'eighth' },
+    { v: 16, label: '16', name: '16th' },
+    { v: 32, label: '32', name: '32nd' }
+  ];
   const E = window.GomidasEditor;
   function nlog(m) { try { window.GomidasHost.log('[fretboard] ' + m); } catch (e) {} }
 
@@ -63,12 +63,12 @@
     const sig = el('div', 'eb-group');
     sig.appendChild(el('span', 'eb-label', 'bar & signatures'));
     sig.append(
-      mkMenu('♯♭', 'key signature', 'keysig'),
+      music(mkMenu('', 'key signature', 'keysig'), [0xE262, 0xE260]),
       mkMenu('4/4', 'time signature', 'timesig'),
       mkMenu('|:', 'repeat start', 'repeatstart'),
       mkMenu(':|', 'repeat end', 'repeatend'),
       mkMenu('TF', 'triplet feel', 'tripletfeel'),
-      mkMenu('⌒', 'fermata', 'fermata'),
+      music(mkMenu('', 'fermata', 'fermata'), 0xE4C0),
       mkMenu('T', 'text', 'text')
     );
     bar.appendChild(sig);
@@ -94,7 +94,7 @@
       durs.appendChild(b);
     });
     dotBtn = mkBtn('.', 'dotted (.)', () => E.toggleDot());
-    dot2Btn = mkBtn('‥', 'double dotted' + sc('doubleDot'), () => E.toggleDoubleDot());
+    dot2Btn = music(mkBtn('', 'double dotted' + sc('doubleDot'), () => E.toggleDoubleDot()), [0xE1E7, 0xE1E7]);
     dotBtn.classList.add('eb-sq'); dot2Btn.classList.add('eb-sq');
     durs.append(dotBtn, dot2Btn);
     bar.appendChild(durs);
@@ -126,32 +126,40 @@
     // ---- articulations / effects ----
     const fx = el('div', 'eb-group');
     fx.appendChild(el('span', 'eb-label', 'articulations'));
-    pmBtn = mkBtn('P.M.', 'palm mute (P / ⇧P)', () => E.palmMute());
-    deadBtn = mkBtn('✕', 'dead note (X)', () => E.deadNote());
+    pmBtn = mkBtn('P.M.', 'palm mute (P / ' + shiftHint('P') + ')', () => E.palmMute());
+    deadBtn = music(mkBtn('', 'dead note (X)', () => E.deadNote()), 0xE0A9);
     lrBtn = mkBtn('L.R.', 'let ring (I)', () => E.letRing());
-    tieBtn = mkBtn('⌣', 'tie (L / ⇧L)', () => E.tieNote());
+    tieBtn = music(mkBtn('', 'tie (L / ' + shiftHint('L') + ')', () => E.tieNote()), 0xE1FD);
     hpBtn = mkBtn('H', 'hammer-on / pull-off (H)', () => E.hammerPull());
     slideBtn = mkBtn('sl', 'legato slide (S)', () => E.slideNote(false));
     ghostBtn = mkBtn('gh', 'ghost note (O)', () => E.ghostNote());
-    stacBtn = mkBtn('·', 'staccato (!)', () => E.staccato());
+    stacBtn = music(mkBtn('', 'staccato (!)', () => E.staccato()), 0xE4A2);
     accentBtn = mkBtn('>', 'accent (;) · heavy (:)', () => E.accent(false));
-    harmBtn = mkBtn('◇', 'natural harmonic (Y)', () => E.naturalHarmonic());
-    vibBtn = mkBtn('∿', 'vibrato (V)', () => E.vibratoNote());
+    harmBtn = music(mkBtn('', 'natural harmonic (Y)', () => E.naturalHarmonic()), 0xE0D9);
+    vibBtn = music(mkBtn('', 'vibrato (V)', () => E.vibratoNote()), [0xEAB2, 0xEAB2]);
     [pmBtn, deadBtn, lrBtn, tieBtn, hpBtn, slideBtn, ghostBtn, stacBtn, accentBtn, harmBtn, vibBtn]
       .forEach(b => b.classList.add('eb-sq'));
     fx.append(pmBtn, deadBtn, lrBtn, tieBtn, hpBtn, slideBtn, ghostBtn, stacBtn, accentBtn, harmBtn, vibBtn);
     // more fx (wired through the menu dispatch; no per-state highlight)
+    // Faces: { m } = SMuFL code point(s) drawn in Bravura (shipped); { icon } = sprite icon (the
+    // SMuFL arpeggios are staff-height and overflow a button); a plain string = text, which must stay
+    // inside what any sans font covers (GOM-93; tests/ui-glyphs.test.js enforces it).
     [
-      ['sh', 'shift slide', 'shiftslide'], ['≡', 'wide vibrato', 'widevibrato'],
-      ['⤳', 'brush up', 'brushup'], ['⤴', 'brush down', 'brushdown'],
-      ['↻', 'arpeggio up', 'arpup'], ['↺', 'arpeggio down', 'arpdown'],
-      ['↑', 'pick stroke up', 'pickup'], ['↓', 'pick stroke down', 'pickdown'],
-      ['tr', 'trill', 'trill'], ['⦀', 'tremolo picking', 'tremolo'],
+      ['sh', 'shift slide', 'shiftslide'], [{ m: [0xEAB3, 0xEAB3] }, 'wide vibrato', 'widevibrato'],
+      [{ m: 0xE846 }, 'brush up', 'brushup'], [{ m: 0xE847 }, 'brush down', 'brushdown'],
+      [{ icon: 'arp-up' }, 'arpeggio up', 'arpup'], [{ icon: 'arp-down' }, 'arpeggio down', 'arpdown'],
+      [{ m: 0xE612 }, 'pick stroke up', 'pickup'], [{ m: 0xE610 }, 'pick stroke down', 'pickdown'],
+      ['tr', 'trill', 'trill'], [{ m: 0xE222 }, 'tremolo picking', 'tremolo'],
       ['gr', 'grace note', 'grace'], ['slap', 'slap', 'slap'], ['pop', 'pop', 'pop'],
-      ['◹', 'fade in', 'fadein'], ['◿', 'fade out', 'fadeout'], ['⋈', 'volume swell', 'swell'],
-      ['p↗', 'pick slide up', 'pickslideup'], ['p↘', 'pick slide down', 'pickslidedown'],
+      [{ m: 0xE843 }, 'fade in', 'fadein'], [{ m: 0xE844 }, 'fade out', 'fadeout'], [{ m: 0xE845 }, 'volume swell', 'swell'],
+      ['ps↑', 'pick slide up', 'pickslideup'], ['ps↓', 'pick slide down', 'pickslidedown'],
       ['AH', 'artificial harmonic', 'artharmonic'], ['PH', 'pinch harmonic', 'pinchharmonic']
-    ].forEach(([lbl, title, act]) => fx.appendChild(mkMenu(lbl, title, 'fx:' + act, false, 'eb-sq')));
+    ].forEach(([face, title, act]) => {
+      const b = mkMenu(typeof face === 'string' ? face : '', title, 'fx:' + act, false, 'eb-sq');
+      if (face.m) music(b, face.m);
+      else if (face.icon) { b.innerHTML = IC(face.icon); b.setAttribute('aria-label', title); }
+      fx.appendChild(b);
+    });
     bar.appendChild(fx);
 
     // ---- bars & beats ----
@@ -159,16 +167,57 @@
     ops.appendChild(el('span', 'eb-label', 'bars & beats'));
     ops.append(
       mkBtn('R', 'rest (R)', () => E.makeRest()),
-      mkBtn('＋beat', 'insert beat' + sc('insertBeat'), () => E.insertBeat()),
-      mkBtn('－beat', 'delete beat' + sc('deleteBeats'), () => E.removeBeat()),
-      mkBtn('＋bar', 'insert bar' + sc('insertBar'), () => E.addBar()),
-      mkBtn('－bar', 'delete bar' + sc('deleteBar'), () => E.deleteBar())
+      mkBtn('+beat', 'insert beat' + sc('insertBeat'), () => E.insertBeat()),
+      mkBtn('\u2212beat', 'delete beat' + sc('deleteBeats'), () => E.removeBeat()),
+      mkBtn('+bar', 'insert bar' + sc('insertBar'), () => E.addBar()),
+      mkBtn('\u2212bar', 'delete bar' + sc('deleteBar'), () => E.deleteBar())
     );
     bar.appendChild(ops);
   }
 
   // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
   function sc(action) { return window.GomidasKeymap ? window.GomidasKeymap.hint(action) : ''; }
+  function shiftHint(key) { return window.GomidasKeymap ? window.GomidasKeymap.shifted(key) : 'Shift+' + key; }
+  // A music button face: SMuFL code point(s) drawn in Bravura, the music font we already ship for
+  // alphaTab — symbols from optional system fonts render as boxes on a bare Linux install (GOM-93).
+  // SMuFL glyphs are drawn for a staff (sized to a staff space, placed on its lines), so each face
+  // gets its own size and vertical nudge to sit centred in a 28px button; values measured from the
+  // glyph boxes in Bravura. The glyph is aria-hidden, so the button's name is its title.
+  const MUSIC_FACE = {
+    0xE262: { px: 20 }, 0xE260: { px: 20 },           // sharp, flat (key signature)
+    0xE4C0: { px: 20, dy: 3 },                         // fermata
+    0xE1E7: { px: 30, dy: -2 },                        // augmentation dot (double dot)
+    0xE0A9: { px: 26 },                                // dead note: X notehead
+    0xE1FD: { px: 22, dy: -6 },                        // tie
+    0xE4A2: { px: 34, dy: -1 },                        // staccato
+    0xE0D9: { px: 26 },                                // natural harmonic: diamond notehead
+    0xEAB2: { px: 22 }, 0xEAB3: { px: 20 },            // vibrato, wide vibrato (tiling segments)
+    0xE846: { px: 18, dy: 5 }, 0xE847: { px: 18, dy: 5 },   // brush up / down
+    0xE612: { px: 20, dy: 3 }, 0xE610: { px: 20, dy: 3 },   // pick stroke (up / down bow)
+    0xE222: { px: 18 },                                // tremolo picking
+    0xE843: { px: 20, dy: 4 }, 0xE844: { px: 20, dy: 4 }, 0xE845: { px: 20, dy: 4 }  // fades, swell
+  };
+  // Pairs that are separate symbols (♯♭, the two dots) get a gap; tiling segments (vibrato) must not.
+  const MUSIC_SPACED = new Set([0xE262, 0xE1E7]);
+  function music(b, cps) {
+    const list = [].concat(cps);
+    const f = MUSIC_FACE[list[0]] || { px: 20 };
+    const span = document.createElement('span');
+    span.className = 'smf';
+    span.setAttribute('aria-hidden', 'true');
+    span.textContent = list.map((cp) => String.fromCodePoint(cp)).join('');
+    span.style.fontSize = f.px + 'px';
+    if (f.dy) span.style.top = f.dy + 'px';
+    if (list.length > 1 && MUSIC_SPACED.has(list[0])) {
+      span.style.letterSpacing = '0.15em';
+      span.style.marginRight = '-0.15em';   // letter-spacing also trails the last glyph; keep it centred
+    }
+    b.textContent = '';
+    b.appendChild(span);
+    b.classList.add('eb-smufl');
+    b.setAttribute('aria-label', b.title);
+    return b;
+  }
   function mkBtn(label, title, fn) {
     const b = el('button', 'eb-btn', label);
     b.title = title;
@@ -261,7 +310,7 @@
     const fb = document.getElementById('fretboard'); if (!fb) return;
     fb.classList.toggle('collapsed', on);
     const ch = fb.querySelector('.dp-collapse');
-    if (ch) { ch.textContent = on ? '▴' : '▾'; ch.classList.toggle('on', on); }
+    if (ch) { ch.innerHTML = IC(on ? 'chevron-up' : 'chevron-down', 'sm'); ch.classList.toggle('on', on); }
   }
   function toggleDrumCollapse() {
     const fb = document.getElementById('fretboard'); if (!fb) return;
@@ -365,7 +414,8 @@
       b.addEventListener('click', () => { setDrumCollapsed(false); applyDrumH(h); refocus(); });
       ctl.appendChild(b);
     });
-    const col = el('button', 'dp-hbtn dp-collapse', '▾');
+    const col = el('button', 'dp-hbtn dp-collapse');
+    col.innerHTML = IC('chevron-down', 'sm');
     col.title = 'Collapse drum panel — give the score more room';
     col.addEventListener('click', toggleDrumCollapse);
     ctl.appendChild(col);
@@ -510,7 +560,11 @@
       const card = el('div', 'pl-card' + (selGroove === g.name ? ' sel' : ''));
       const head = el('div', 'pl-name');
       head.appendChild(el('span', null, g.name));
-      const fav = el('span', 'pl-fav' + (favs.has(g.name) ? ' on' : ''), favs.has(g.name) ? '♥' : '♡');
+      const fav = el('span', 'pl-fav' + (favs.has(g.name) ? ' on' : ''));
+      fav.innerHTML = IC('heart', 'sm');   // .on fills it
+      fav.title = favs.has(g.name) ? 'Remove from favourites' : 'Add to favourites';
+      fav.setAttribute('role', 'button');
+      fav.setAttribute('aria-label', fav.title);
       fav.addEventListener('click', (e) => { e.stopPropagation(); const f = plFavs(); f.has(g.name) ? f.delete(g.name) : f.add(g.name); plSaveFavs(f); renderPatternLib(); });
       head.appendChild(fav);
       card.appendChild(head);
@@ -522,11 +576,12 @@
       card.appendChild(dots);
       const foot = el('div', 'pl-foot');
       const previewing = window.gomidasGroovePreviewName && window.gomidasGroovePreviewName() === g.name;
-      const play = el('div', 'pl-play' + (previewing ? ' on' : ''), previewing ? '■' : '▶');
+      const play = el('div', 'pl-play' + (previewing ? ' on' : ''));
+      play.innerHTML = IC(previewing ? 'stop' : 'play', 'sm');
       play.title = previewing ? 'Stop' : 'Preview (loops)';
       play.addEventListener('click', (e) => { e.stopPropagation(); if (window.gomidasPreviewGroove) window.gomidasPreviewGroove(g); });
       foot.appendChild(play);
-      const ins = el('div', 'pl-play', '＋'); ins.title = 'Insert at cursor';
+      const ins = el('div', 'pl-play'); ins.innerHTML = IC('plus', 'sm'); ins.title = 'Insert at cursor';
       ins.addEventListener('click', (e) => { e.stopPropagation(); selGroove = g.name; E.insertGroove(g); refocus(); });
       foot.appendChild(ins);
       card.appendChild(foot);
@@ -534,7 +589,7 @@
       card.addEventListener('dblclick', () => { selGroove = g.name; E.insertGroove(g); refocus(); });
       cardsEl.appendChild(card);
     });
-    const add = el('div', 'pl-add'); add.appendChild(el('div', null, '＋')); add.appendChild(el('div', null, 'Add Pattern'));
+    const add = el('div', 'pl-add'); const addIc = el('div'); addIc.innerHTML = IC('plus', 'lg'); add.appendChild(addIc); add.appendChild(el('div', null, 'Add Pattern'));
     add.addEventListener('click', () => { if (window.gomidasAddGrooveFromBar) window.gomidasAddGrooveFromBar(); });
     cardsEl.appendChild(add);
   }
@@ -692,7 +747,7 @@
     if (vibBtn) vibBtn.classList.toggle('active', !!s.vibrato);
     voiceBtns.forEach((b, i) => b && b.classList.toggle('active', i === (s.curVoice | 0)));
     if (playBtn) playBtn.innerHTML = window.Icons ? window.Icons.use(s.isPlaying ? 'pause' : 'play', 'lg')
-                                                  : (s.isPlaying ? '⏹' : '▶');
+                                                  : (s.isPlaying ? '||' : '>');
     if (trackLabel) trackLabel.textContent = (s.curTrackIndex + 1) + '. ' + s.trackName;
     if (posLabel) posLabel.textContent = s.pos;
     const tsEl = document.getElementById('tp-timesig');
@@ -758,7 +813,7 @@
   function drumInspectorExtra(s) {
     const mode = window.gomidasInsertMode || 'replace';
     const voice = (s.curVoice | 0);
-    return '<div class="insp-sec"><button class="insp-bigbtn" id="ins-genvar">✨ Generate Variation</button></div>' +
+    return '<div class="insp-sec"><button class="insp-bigbtn" id="ins-genvar">Generate Variation</button></div>' +
       '<div class="insp-sec"><div class="insp-h">Insert Options</div>' +
         '<div class="insp-row"><span>Insert</span><select class="insp-select" id="ins-insmode">' +
           '<option value="replace"' + (mode === 'replace' ? ' selected' : '') + '>Replace Bar</option>' +
@@ -799,7 +854,7 @@
       const matched = presets.some(p => p.midis.join(',') === curMidis);
       const tuningSel =
         '<select class="insp-select" id="ins-tuning" title="Re-tune this track (frets kept, pitches shift)">' +
-          presets.map(p => '<option value="' + p.midis.join(',') + '"' + (p.midis.join(',') === curMidis ? ' selected' : '') + '>' + esc(p.name) + (p.user ? ' ★' : '') + '</option>').join('') +
+          presets.map(p => '<option value="' + p.midis.join(',') + '"' + (p.midis.join(',') === curMidis ? ' selected' : '') + '>' + esc(p.name) + (p.user ? ' (custom)' : '') + '</option>').join('') +
           (matched ? '' : '<option value="" selected>Custom (' + esc((s.tuningNames || []).join(' ')) + ')</option>') +
           '<option value="__edit__">Custom / Edit…</option>' +
         '</select>';
@@ -969,7 +1024,8 @@
   window.gomidasRefreshInspector = function () { if (E && E.getState) buildInspector(E.getState()); };
 
   // ---- bottom track list (GP8: controls + per-bar timeline + Master row) ------
-  const IC = (n, c) => (window.Icons ? window.Icons.use(n, c) : '');
+  // A function declaration, so it is hoisted: the drum panel and pattern library above use it too.
+  function IC(n, c) { return window.Icons ? window.Icons.use(n, c) : ''; }
   function buildTrackList(s) {
     const tk = document.getElementById('tracks');
     if (!tk || !s.allTracks) return;

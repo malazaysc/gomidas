@@ -479,10 +479,12 @@ function togglePanel(which) {
 // thin rail (chevron flips). State persists. Panels that rebuild via innerHTML (#inspector/
 // #tracks/#fretboard) wipe the handle but keep their .collapsed class, so a MutationObserver
 // re-appends the handle; the rebuilt content stays hidden by CSS while collapsed.
+// Sprite chevrons, not glyphs: ▴ ▾ exist only in optional symbol fonts on Linux (GOM-93).
 function chevronFor(side, collapsed) {
-  if (side === 'left') return collapsed ? '»' : '«';   // » / «
-  if (side === 'right') return collapsed ? '«' : '»';
-  return collapsed ? '▴' : '▾';                        // ▴ / ▾
+  const name = side === 'left' ? (collapsed ? 'chevron-right' : 'chevron-left')
+             : side === 'right' ? (collapsed ? 'chevron-left' : 'chevron-right')
+             : (collapsed ? 'chevron-up' : 'chevron-down');
+  return window.Icons ? window.Icons.use(name, 'sm') : '';   // same degrade-to-blank as fretboard.js IC()
 }
 function initDrawers() {
   const defs = [
@@ -499,7 +501,7 @@ function initDrawers() {
     tab.querySelector('.drawer-title').textContent = d.title;
     const chev = tab.querySelector('.drawer-chev');
     const key = 'gomidasDrawer_' + d.id;
-    const setGlyph = () => { chev.textContent = chevronFor(d.side, el.classList.contains('collapsed')); };
+    const setGlyph = () => { chev.innerHTML = chevronFor(d.side, el.classList.contains('collapsed')); };
     const apply = (collapsed, persist) => {
       el.classList.toggle('collapsed', collapsed); setGlyph();
       if (persist) try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
@@ -689,7 +691,7 @@ function trackRowHtml(t, i) {
   return '<div class="m-track" data-i="' + i + '">' +
     '<select class="m-inst">' + inst + '</select>' +
     '<select class="m-tuning"' + (isDrums ? ' style="visibility:hidden"' : '') + '>' + (isDrums ? '' : tuningOptions(t.kind, t.tuning)) + '</select>' +
-    '<button class="m-del" title="remove track">✕</button>' +
+    '<button class="m-del" title="remove track">' + (window.Icons ? window.Icons.use('trash', 'sm') : '') + '</button>' +
   '</div>';
 }
 function openNewDialog(presetKind) {
@@ -827,7 +829,7 @@ const KEY_NAMES = [
 function keyOptions(value, minor) {
   return KEY_NAMES.map(k => {
     const name = (minor ? k.minor + 'm' : k.major) +
-      (k.v === 0 ? '' : ' (' + Math.abs(k.v) + (k.v > 0 ? '♯' : '♭') + ')');
+      (k.v === 0 ? '' : ' (' + Math.abs(k.v) + (k.v > 0 ? ' sharp' : ' flat') + (Math.abs(k.v) > 1 ? 's' : '') + ')');
     return '<option value="' + k.v + '"' + (k.v === value ? ' selected' : '') + '>' + name + '</option>';
   }).join('');
 }

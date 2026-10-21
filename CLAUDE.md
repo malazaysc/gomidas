@@ -135,7 +135,12 @@ src/engine/AudioEngine.*    device, transport, scheduler, Sequence hand-off
 src/synth/SoundFontSynth.*  TinySoundFont wrapper
 src/synth/tsf/tsf.h         vendored TinySoundFont (MIT)
 packages/core/index.html              GP8-style dark 4-panel layout (transport / palette / center / inspector / tracks)
-                            + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here
+                            + inline SVG icon sprite (`<symbol>` defs) and `Icons.use(name,cls)` helper — all UI icons live here.
+                            NO icon may depend on a system font (GOM-93): UI chrome → sprite; music symbols → SMuFL code
+                            points in Bravura (shipped) via `.eb-smufl` / fretboard.js `SM()`; text stays in what any sans
+                            font covers — `tests/ui-glyphs.test.js` gates it (allowlist; SMuFL code points are written as numbers).
+                            Prove visually with a one-font FONTCONFIG_FILE (keep `/etc/fonts/conf.d` included, or web
+                            fonts fail too and the score goes blank).
 packages/core/app.js                  alphaTab host, model→MIDI (self-computed ticks), bridge
 packages/core/editor.js               tab editor: cursor/nav/entry, mouse select, edit+play cursors
 packages/core/juce_native_interop.js  JUCE WebView bridge (vendored from JUCE; sets window.__JUCE__.backend)
@@ -310,8 +315,9 @@ File→**Open Recent** submenu (built in `getMenuForIndex`, ids `kRecentIdBase+i
 `handleKey`; **`onKey` bails when a text field/SELECT/modal is focused** so Space types instead of toggling
 play (a focused plain button still plays — it's not a typing target). Auto-scroll keeps the play cursor in
 view during playback (`autoScrollToPlayCursor`, GP-style edge-triggered; `setAutoScroll(bool)`).
-**Edit bar:** `◀▶` beat · `▲▼` string · durations `1 ½ ¼ ⅛ 16 32` · `.` dot · `‥` double-dot ·
-`3` triplet · `P.M.` palm-mute · `R` rest · `＋beat`/`－beat`/`＋bar` · `↶`/`↷` undo/redo · `▶ Play`.
+**Edit bar:** beat/string navigation · durations `1 ½ ¼ ⅛ 16 32` · `.` dot · double-dot ·
+`3` triplet · `P.M.` palm-mute · `R` rest · `+beat`/`−beat`/`+bar`/`−bar` · undo/redo · Play (icons from
+the sprite; music faces in Bravura — never a system-font glyph, see the Layout note).
 **Keymap is GP8-faithful** (no Gomidas-specific muscle memory to preserve — user asked for GP parity):
 digits = fret (instant, 2-digit within 600 ms) · `R` rest · `.`/`⌘.` dot/double-dot · `/` triplet ·
 `P`/`⇧P` palm-mute note/beat · `X` dead note · `I` let ring · `+`/`-` shorter/longer duration ·

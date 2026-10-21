@@ -71,14 +71,14 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Decrease note duration | `+` / `=` | same | ✅ |
 | Increase note duration | `-` / `_` | same | ✅ |
 | Dotted | `.` / toolbar `.` | same | ✅ single dot toggle |
-| Double dotted | `⌘.` / toolbar `‥` | same | ✅ |
+| Double dotted | `⌘.` / toolbar double-dot (Bravura) | same | ✅ |
 | Triplet (3 in space of 2) | `/` / toolbar `3` | same (Triolet) | 🟡 per-beat (spanning groups → backlog) |
 | Tuplets 5 / 6 / 7 / 9 | Note menu | same | ✅ `setTuplet(n)`; denom = nearest lower power of two; applies across the beat selection (spanning groups), toggles off when all selected already have it |
 | Rest | `R` / toolbar `R` | same | ✅ clears beat to a timed rest |
-| Insert beat after cursor | `⌃+` (Linux/Windows: `Ctrl+Ins`), toolbar `＋beat`, or `→` at end | `⌃+` / `Ctrl+Ins` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
-| Delete the beats | `⌘-` (Linux/Windows: `Shift+Del`) / toolbar `－beat` | `⌘-` / `Shift+Del` | ✅ |
-| Insert bar (to all tracks) | `⌘+` (Linux/Windows: `Ins`) / toolbar `＋bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
-| Delete bar (from all tracks) | `⌃-` (Linux/Windows: `Ctrl+Del`) / toolbar `－bar` | `⌃-` / `Ctrl+Del` | ✅ JSON round-trip rebuild; keeps ≥1 bar |
+| Insert beat after cursor | `⌃+` (Linux/Windows: `Ctrl+Ins`), toolbar `+beat`, or `→` at end | `⌃+` / `Ctrl+Ins` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
+| Delete the beats | `⌘-` (Linux/Windows: `Shift+Del`) / toolbar `−beat` | `⌘-` / `Shift+Del` | ✅ |
+| Insert bar (to all tracks) | `⌘+` (Linux/Windows: `Ins`) / toolbar `+bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
+| Delete bar (from all tracks) | `⌃-` (Linux/Windows: `Ctrl+Del`) / toolbar `−bar` | `⌃-` / `Ctrl+Del` | ✅ JSON round-trip rebuild; keeps ≥1 bar |
 | Time signature | `⌘T` / **click the time sig in the transport chip** / palette `4/4` / menu Bar→Time Signature | same | ✅ modal (beats / note value, incl. custom e.g. 3/4, 6/8); applies from the current bar to the end. The transport chip shows the current bar's time signature live |
 | Key signature | `⌘K` / menu Bar→Key Signature | same | ✅ modal (−7..+7 accidentals + major/minor); applies from the current bar to the end |
 | Open / close repeat | `[` / `]` / menu Bar | same | ✅ notation barline + **playback loops** (repeats unrolled into the event list; play cursor jumps back). Alternate endings → backlog |
@@ -129,8 +129,8 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | **KIT VIEW** | drum track, bottom panel | ✅ photoreal kit (`packages/core/drumkit.png`) with clickable hotspots per piece → toggle hit on the current beat + select; hit pieces ring purple |
 | Quick Tools | KIT VIEW rail | ✅ Select/Draw/Erase/Paint entry modes + Accent/Ghost/Repeat/Tie actions |
 | Articulation panel | KIT VIEW right | ✅ per-piece GM articulation (Hi-Hat Closed/Open/Pedal, Snare Center/Side-stick, Ride/Bell…) + Velocity→dynamic |
-| **Pattern Library** | row under the kit | ✅ categories + search, groove cards with dot-grid preview, ▶ audition, ＋ insert, ♡ favourite (localStorage); **Add Pattern** captures the current bar as a User Groove |
-| **Groove insert** | card ＋ / dbl-click / Insert Pattern | ✅ writes the groove as sixteen 16th-steps; honours accents/ghosts; Replace-Bar or Append-Bars (Insert Options) + target Voice |
+| **Pattern Library** | row under the kit | ✅ categories + search, groove cards with dot-grid preview, play-icon audition, plus-icon insert, heart-icon favourite (localStorage); **Add Pattern** captures the current bar as a User Groove |
+| **Groove insert** | card plus icon / dbl-click / Insert Pattern | ✅ writes the groove as sixteen 16th-steps; honours accents/ghosts; Replace-Bar or Append-Bars (Insert Options) + target Voice |
 | **GROOVE EDITOR** | drum tab | ✅ step-sequencer grid (lanes × 16); click toggles, Shift=accent, Alt=ghost; edits rewrite the bar live |
 | **Generate Variation** | inspector button / `E.generateVariation()` | ✅ seeded musical variation (ghost hats/snares, off-beat kicks, accented backbeat) |
 | Kit picker | inspector SOUNDS | ✅ Standard/Room/Rock/Electronic/808/Jazz/Brush/Orchestra → drum program (kit) |
@@ -191,8 +191,8 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | **Track timeline (bar squares)** | bottom track list | ✅ per-track row of small fixed-width per-bar blocks, filled in the track color where the bar has notes, current bar outlined; **click a square to jump to that bar**, **shift-click to select a bar range**. Bar-number ruler in the header. **Horizontal scroll**: ruler + all rows scroll-synced (controls frozen-left); the timeline follows the current bar |
 | **Time-grid tab ("piano roll for tabs")** | panel below the score · `⇧⌘G` / View→Toggle Beat Grid | — | ✅ a **consistent rhythm view** rendered by us on a canvas (`editor.js renderBeatLane`), since alphaTab's engraved tab is optically spaced and can never be even. **The grid represents TIME, not note count**: every 4/4 bar is the same width; each bar's columns **adapt to its smallest value** (8ths→8, 16ths→16, triplets→3/beat — `laneBeatK`). BEAT row (1·2·3·4) + counting row (`e + a` etc.); fret numbers sit on string rows (e B G D A E gutter) at their **start time** with a duration bar (ties=long bars, rests=gaps). Center-locked green **playhead** during playback (music flows in from the right), purple edit cursor, click-to-seek. Engraved tab/notation above stays source of truth. _v2 deferred:_ fretboard-dot strip, left rhythm thumbnails, right annotations |
 | **Collapsible drawers (per panel)** | chevron handle on each panel | — | ✅ every dockable panel (Tools / Inspector / Beat Grid / Fretboard / Tracks) has a corner chevron that collapses it in place to a thin **labelled rail** (vertical title for side panels, horizontal for bottom); click the rail to expand. State persists per panel (`gomidasDrawer_*`); score reflows. Panels that rebuild via `innerHTML` keep the handle via a `MutationObserver` re-append (`app.js initDrawers`) |
-| **Collapse / expand panels** | transport ◧ ◨ ▤ buttons / View menu | — | ✅ toggle the left palette / right inspector / track list individually; score reflows |
-| **Full view** | transport ⛶ / `F11` / `Esc` / View→Full View | — | ✅ hides all chrome (palette, inspector, tracks, fretboard) leaving transport + score; `Esc` or toggle exits |
+| **Collapse / expand panels** | transport panel-toggle icons / View menu | — | ✅ toggle the left palette / right inspector / track list individually; score reflows |
+| **Full view** | transport full-view icon / `F11` / `Esc` / View→Full View | — | ✅ hides all chrome (palette, inspector, tracks, fretboard) leaving transport + score; `Esc` or toggle exits |
 | Track row controls | bottom track list | ✅ color swatch · instrument icon · name · show/hide · mute · solo · volume fader + value · **pan knob** (drag; double-click = center) · **EQ button** (3-band per-track EQ popup) · **⋮ track-options menu** (rename / mute / solo / hide / add / delete) |
 | **Per-track + master EQ** | track-list EQ buttons / Master row | ✅ 3-band EQ (low/mid/high, −12..+12 dB) per track and on the master, live. Synth re-architected into **per-channel audio buses** (`tsf_copy`) so each track EQs independently. **Persisted** in the `.gomidas` envelope (`mix`: per-track `eq` + master `{vol,pan,eq}`) |
 | **Master row** | bottom track list | ✅ live master volume + balance pan + EQ |
@@ -212,7 +212,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Lyrics | palette `Lyrics` | ✅ per-beat lyric syllable (`beat.lyrics`) |
 | Window / Help | menu Window→Minimize, Help→About | ✅ native minimise + About box |
 | Inspector — SONG (live) | right panel `SONG` tab | ✅ editable title + tempo |
-| Zoom | transport `−` / `＋` or `⌘<` / `⌘>` (Linux/Windows: `Ctrl+-` / `Ctrl++`) | ✅ rescales the score |
+| Zoom | transport `−` / `+` or `⌘<` / `⌘>` (Linux/Windows: `Ctrl+-` / `Ctrl++`) | ✅ rescales the score |
 | Multitrack view toggle | `F3` / menu View→Toggle Multitrack View | ✅ flips focused single track ↔ all non-hidden tracks |
 
 ## Edit history
