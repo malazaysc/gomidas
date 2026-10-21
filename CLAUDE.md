@@ -169,22 +169,20 @@ FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85
 both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
 WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with
 `GDK_SCALE=1` until GOM-92; `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
-- ⚠️ **JUCE can miss the size a tiling WM gives the window as it maps it** (GOM-91). Measured under
-  Hyprland: the X window had the tile's size while JUCE still believed its own 1280x820, in about 2
-  launches in 5, with **no** ConfigureNotify reaching JUCE's handler at all (so not its serial check).
-  Re-requesting the bounds didn't help. So `MainWindow` (`Main.cpp`) owns an `X11BoundsSync`, started on
-  visibilityChanged/activeWindowStatusChanged (not broughtToFront — it fires on every click). For 3s it
-  compares JUCE's size with the X server's in physical px and adopts a size mismatch once it has read
-  it twice, through `Component::setSize`. It never stops early (before the WM tiles the window, JUCE
-  and X agree on the pre-tile size), a correction restarts the 3s (our request raises JUCE's
-  `moveResizeSerial`, so a re-tile right after it is dropped), and corrections are capped at 3 per
-  start. **Patching JUCE to re-read the geometry on MapNotify does not fix it** — measured 3/10: the
-  tile lands after the map, in the configure JUCE misses. Other top-level windows (plugin editor,
-  JUCE's fallback dialogs) are not covered yet (GOM-95). The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
-  (exposed by `JUCE_GUI_BASICS_INCLUDE_XHEADERS`, which is why that TU stands alone — Xlib's macros),
-  converted back through JUCE's own scale maths. Don't open a second X connection or link libX11 —
-  JUCE loads Xlib at runtime on purpose. Check with `hyprctl clients -j` against a temporary
-  `resized()` log — Hyprland's number is the truth.
+- ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
+  an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
+  on its display reads pending events into Xlib's in-memory queue, after which the socket isn't
+  readable and JUCE ignores them until new X traffic arrives. Measured under Hyprland: ~100 events
+  sat queued through the first seconds of every failing launch (`XEventsQueued(QueuedAlready)`),
+  among them the ConfigureNotify with the tile size. So the content stayed 1280x820 inside the tile,
+  and when later input drained the queue, JUCE dropped that stale configure (`serial <
+  moveResizeSerial`). Fix: `src/ui/X11EventWake.cpp`, one app-wide watchdog (owned by
+  `GomidasApplication`). Every 100ms it reads the queued count (no I/O). After two ticks with events
+  queued, it sends the app a no-op ClientMessage, so JUCE drains everything through its own handlers.
+  Measured 10/10; about one wake per launch, none when idle. Approaches that **didn't** work or were
+  rejected along the way: polling the real bounds and `setSize`-ing (worked, but five review rounds
+  of side effects); re-requesting bounds (2/5); re-reading the geometry on MapNotify inside JUCE
+  (3/10). The probe that found it: log `XEventsQueued(display, QueuedAlready)` from a timer.
 - ⚠️ **WebKitGTK ignores the `Content-Type` JUCE sets on resource-provider responses** (GOM-90). JUCE
   only calls `webkit_uri_scheme_response_set_http_headers`, never `…_set_content_type` (not in 8.0.13,
   master or develop), so every embedded asset reaches the page as `application/octet-stream`. The

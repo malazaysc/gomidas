@@ -151,7 +151,7 @@ add_dependencies(GomidasAssets GomidasWeb)
 target_sources(Gomidas PRIVATE
   src/Main.cpp
   src/ui/MainComponent.cpp
-  src/ui/X11WindowBounds.cpp
+  src/ui/X11EventWake.cpp
   src/engine/AudioEngine.cpp
   src/synth/SoundFontSynth.cpp
   src/synth/SfzSynth.cpp)

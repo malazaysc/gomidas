@@ -1,6 +1,6 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "ui/MainComponent.h"
-#include "ui/X11WindowBounds.h"
+#include "ui/X11EventWake.h"
 
 namespace gomidas
 {
@@ -36,34 +36,18 @@ public:
             setVisible (true);
         }
 
-        // Keep JUCE's bounds in step with what a tiling WM applied (GOM-91) — see X11BoundsSync.
-        void visibilityChanged() override
-        {
-            DocumentWindow::visibilityChanged();
-            if (isVisible())
-                boundsSync.start();
-        }
-
-        void activeWindowStatusChanged() override
-        {
-            DocumentWindow::activeWindowStatusChanged();
-            if (isActiveWindow())
-                boundsSync.start();
-        }
-
         void closeButtonPressed() override
         {
             JUCEApplication::getInstance()->systemRequestedQuit();
         }
 
     private:
-        X11BoundsSync boundsSync { *this };
-
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
+    X11EventWake x11EventWake;   // Linux/BSD: wake JUCE for X events stranded in Xlib's queue (GOM-91)
 };
 } // namespace gomidas
 
