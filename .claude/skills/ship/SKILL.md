@@ -178,7 +178,7 @@ EOF
 )"
 ```
 
-CI runs on `pull_request` (web-tests + native-tests on macOS **and** Ubuntu, both building the full app). **Wait for it and confirm it's green** —
+CI runs on `pull_request` (web-tests + native-tests on macOS **and** Ubuntu, both building the full app). A PR that touches only `*.md`, `docs/**` or `.claude/**` runs **no** CI (`paths-ignore`), so "no checks reported" is expected there and is not a failure. Otherwise **wait for it and confirm it's green** —
 `gh pr checks --watch`. Red CI → back to stage 4.
 
 ## 7. REVIEW

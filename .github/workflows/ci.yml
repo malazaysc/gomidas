@@ -71,17 +71,21 @@ jobs:
           cache: pnpm
       - name: Install web deps (for tsc)
         run: pnpm install --frozen-lockfile
-      - name: Cache CMake FetchContent deps (JUCE, sfizz)
+      # Only the FETCHED SOURCES (and FetchContent's own subbuild stamps, so it doesn't re-fetch or
+      # re-patch), never compiled objects: sources don't depend on the toolchain, so a runner image
+      # with a new compiler can't reuse another compiler's objects, and the entries stay small enough
+      # not to thrash the repo's 10 GB cache.
+      - name: Cache CMake FetchContent sources (JUCE, sfizz)
         uses: actions/cache@v4
         with:
-          path: build/_deps
-          # build/_deps holds compiled sfizz/abseil objects and the juceaide binary too, so the key
-          # carries the arch and runner image: a new image must not reuse another toolchain's objects.
-          key: deps-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+          key: deps-src-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGOMIDAS_BUILD_TESTS=ON
       # As many jobs as the runner has cores (macos-latest has 3, ubuntu-latest 4).
       - name: Build app + test targets
-        run: cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
+        run: cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN)"
       - name: Run ctest
         run: ctest --test-dir build --output-on-failure
