@@ -126,10 +126,10 @@
     // ---- articulations / effects ----
     const fx = el('div', 'eb-group');
     fx.appendChild(el('span', 'eb-label', 'articulations'));
-    pmBtn = mkBtn('P.M.', 'palm mute (P / Shift+P)', () => E.palmMute());
+    pmBtn = mkBtn('P.M.', 'palm mute (P / ' + shiftHint('P') + ')', () => E.palmMute());
     deadBtn = music(mkBtn('', 'dead note (X)', () => E.deadNote()), 0xE0A9);
     lrBtn = mkBtn('L.R.', 'let ring (I)', () => E.letRing());
-    tieBtn = music(mkBtn('', 'tie (L / Shift+L)', () => E.tieNote()), 0xE1FD);
+    tieBtn = music(mkBtn('', 'tie (L / ' + shiftHint('L') + ')', () => E.tieNote()), 0xE1FD);
     hpBtn = mkBtn('H', 'hammer-on / pull-off (H)', () => E.hammerPull());
     slideBtn = mkBtn('sl', 'legato slide (S)', () => E.slideNote(false));
     ghostBtn = mkBtn('gh', 'ghost note (O)', () => E.ghostNote());
@@ -157,7 +157,7 @@
     ].forEach(([face, title, act]) => {
       const b = mkMenu(typeof face === 'string' ? face : '', title, 'fx:' + act, false, 'eb-sq');
       if (face.m) music(b, face.m);
-      else if (face.icon) b.innerHTML = IC(face.icon);
+      else if (face.icon) { b.innerHTML = IC(face.icon); b.setAttribute('aria-label', title); }
       fx.appendChild(b);
     });
     bar.appendChild(fx);
@@ -177,6 +177,7 @@
 
   // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
   function sc(action) { return window.GomidasKeymap ? window.GomidasKeymap.hint(action) : ''; }
+  function shiftHint(key) { return window.GomidasKeymap ? window.GomidasKeymap.shifted(key) : 'Shift+' + key; }
   // A music button face: SMuFL code point(s) drawn in Bravura, the music font we already ship for
   // alphaTab — symbols from optional system fonts render as boxes on a bare Linux install (GOM-93).
   // SMuFL glyphs are drawn for a staff (sized to a staff space, placed on its lines), so each face
@@ -207,7 +208,10 @@
     span.textContent = list.map((cp) => String.fromCodePoint(cp)).join('');
     span.style.fontSize = f.px + 'px';
     if (f.dy) span.style.top = f.dy + 'px';
-    if (list.length > 1 && MUSIC_SPACED.has(list[0])) span.style.letterSpacing = '0.15em';
+    if (list.length > 1 && MUSIC_SPACED.has(list[0])) {
+      span.style.letterSpacing = '0.15em';
+      span.style.marginRight = '-0.15em';   // letter-spacing also trails the last glyph; keep it centred
+    }
     b.textContent = '';
     b.appendChild(span);
     b.classList.add('eb-smufl');
@@ -558,6 +562,9 @@
       head.appendChild(el('span', null, g.name));
       const fav = el('span', 'pl-fav' + (favs.has(g.name) ? ' on' : ''));
       fav.innerHTML = IC('heart', 'sm');   // .on fills it
+      fav.title = favs.has(g.name) ? 'Remove from favourites' : 'Add to favourites';
+      fav.setAttribute('role', 'button');
+      fav.setAttribute('aria-label', fav.title);
       fav.addEventListener('click', (e) => { e.stopPropagation(); const f = plFavs(); f.has(g.name) ? f.delete(g.name) : f.add(g.name); plSaveFavs(f); renderPatternLib(); });
       head.appendChild(fav);
       card.appendChild(head);

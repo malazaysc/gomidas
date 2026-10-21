@@ -215,13 +215,19 @@ function platform(): Platform {
   return cachedPlatform;
 }
 
+/** A shifted plain key in this platform's notation: '⇧P' on macOS, 'Shift+P' elsewhere. The ⇧
+ *  glyph lives here because only this module may emit the macOS-only key glyphs (ui-glyphs.test). */
+function shifted(key: string): string {
+  return (platform() === 'mac' ? MAC_GLYPH.shift : 'Shift+') + key;
+}
+
 /** ' (⌘Z)' / ' (Ctrl+Z)' to append to a tooltip, or '' when the action has no key here. */
 function hint(action: string): string {
   const l = label(action, platform());
   return l ? ' (' + l + ')' : '';
 }
 
-  const api = { resolve, label, hint, platformOf, platform, BINDINGS };
+  const api = { resolve, label, hint, shifted, platformOf, platform, BINDINGS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') (window as any).GomidasKeymap = api;
 }());

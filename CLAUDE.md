@@ -315,8 +315,9 @@ File→**Open Recent** submenu (built in `getMenuForIndex`, ids `kRecentIdBase+i
 `handleKey`; **`onKey` bails when a text field/SELECT/modal is focused** so Space types instead of toggling
 play (a focused plain button still plays — it's not a typing target). Auto-scroll keeps the play cursor in
 view during playback (`autoScrollToPlayCursor`, GP-style edge-triggered; `setAutoScroll(bool)`).
-**Edit bar:** `◀▶` beat · `▲▼` string · durations `1 ½ ¼ ⅛ 16 32` · `.` dot · double-dot ·
-`3` triplet · `P.M.` palm-mute · `R` rest · `+beat`/`−beat`/`+bar`/`−bar` · `↶`/`↷` undo/redo · `▶ Play`.
+**Edit bar:** beat/string navigation · durations `1 ½ ¼ ⅛ 16 32` · `.` dot · double-dot ·
+`3` triplet · `P.M.` palm-mute · `R` rest · `+beat`/`−beat`/`+bar`/`−bar` · undo/redo · Play (icons from
+the sprite; music faces in Bravura — never a system-font glyph, see the Layout note).
 **Keymap is GP8-faithful** (no Gomidas-specific muscle memory to preserve — user asked for GP parity):
 digits = fret (instant, 2-digit within 600 ms) · `R` rest · `.`/`⌘.` dot/double-dot · `/` triplet ·
 `P`/`⇧P` palm-mute note/beat · `X` dead note · `I` let ring · `+`/`-` shorter/longer duration ·
