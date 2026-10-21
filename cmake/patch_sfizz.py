@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Patch sfizz 1.2.3 so it builds with a modern toolchain on Apple Silicon.
+"""Patch sfizz 1.2.3 so it builds with modern toolchains (Apple Silicon clang, Linux GCC 16).
 
-Run from the sfizz source dir (this is FetchContent's PATCH_COMMAND cwd). Idempotent:
+Run from the sfizz source dir (this is FetchContent's PATCH_COMMAND cwd). CMake passes this
+file's SHA-256 as an argument, which is ignored here; it only exists so that editing this
+script re-runs the patch on an existing checkout. Every fix must therefore stay idempotent:
 every fix is a no-op if already applied or if upstream changed the code. Never fails the
 build on a missing/altered file — we'd rather let the compile surface a clear error.
 
@@ -15,6 +17,8 @@ Fixes:
      `do_push_any(...)` are used WITHOUT a template argument list, which recent clang
      rejects as a hard error (-Wmissing-template-arg-list-after-template-kw). The
      `template` disambiguator is unnecessary here; remove it.
+  3. abseil missing <cstdint>: container_memory.h uses uintptr_t but only got <cstdint>
+     transitively, which GCC 16's libstdc++ no longer provides (first Linux build, GOM-84).
 """
 import pathlib
 
@@ -46,3 +50,9 @@ patch("external/atomic_queue/include/atomic_queue/atomic_queue.h", [
     ("Base::template do_pop_any(",  "Base::do_pop_any("),
     ("Base::template do_push_any(", "Base::do_push_any("),
 ])
+
+# 3. abseil header that relies on a transitive <cstdint> (GCC 16 libstdc++)
+patch("external/abseil-cpp/absl/container/internal/container_memory.h", [(
+    "#include <cstddef>\n#include <cstring>\n",
+    "#include <cstddef>\n#include <cstdint>\n#include <cstring>\n",
+)])

@@ -134,7 +134,9 @@ the evidence for the PR body. Pick by what you touched:
 - **Web UI/editor** → `pnpm web:dev`, drive it in Chrome, check the console. Remember the editor
   serves compiled `dist/core/*.js`: a tab left open across a build runs the OLD code.
 - **Desktop** → `cmake --build build && open build/Gomidas_artefacts/Debug/Gomidas.app`, or run
-  the binary directly (`.../MacOS/Gomidas`) with stderr captured when you need logs.
+  the binary directly (`.../MacOS/Gomidas`) with stderr captured when you need logs. On Linux the
+  binary is `build/Gomidas_artefacts/Debug/Gomidas`; screenshot with `grim`, find the window with
+  `hyprctl clients -j`.
 - **Audio** → don't trust your ears through a hidden tab. Stub `GomidasFiles.saveData` to
   capture, call `GomidasAudio.startRecording()` (the offline bounce), analyse the WAV. It's
   deterministic and it exercises the real instrument path.

@@ -156,8 +156,23 @@ compiling what gets embedded.)
 pnpm install                              # workspace root; required before configuring
 cmake -B build -DCMAKE_BUILD_TYPE=Debug   # first run fetches JUCE 8.0.13
 cmake --build build
-open "build/Gomidas_artefacts/Debug/Gomidas.app"
+open "build/Gomidas_artefacts/Debug/Gomidas.app"   # macOS
+./build/Gomidas_artefacts/Debug/Gomidas            # Linux (no .app; runs under XWayland)
 ```
+
+**Linux** (GOM-84) needs `webkit2gtk-4.1 gtk3 alsa-lib freetype2 fontconfig pkgconf python` and, on
+PipeWire, `pipewire-alsa`. `NEEDS_WEB_BROWSER TRUE` on `juce_add_gui_app` is what links WebKitGTK —
+JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exists on macOS, so it is
+`#if JUCE_MAC`-guarded. **Linux builds and launches but is not at parity yet** — known gaps, each
+ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
+FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
+both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
+UI text decoded as Latin-1 (GOM-90); content stuck at 1280x820 in a tiled window (GOM-91); WebKitGTK
+honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI renders 2x — run with `GDK_SCALE=1`
+until GOM-92;
+`recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89). FetchContent only re-runs a patch step whose
+command changed, so the sfizz `PATCH_COMMAND` carries `patch_sfizz.py`'s SHA-256: editing the script
+re-patches an existing `build/_deps/sfizz-src` on the next configure. Every fix in it must stay idempotent.
 
 Root scripts: `pnpm build` / `test` / `typecheck` (packages/core) and `pnpm web:dev` /
 `web:build` / `web:preview` (apps/web). Per-package: `pnpm -C <dir> run <script>` — filter by
