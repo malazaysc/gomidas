@@ -78,7 +78,8 @@ const HASHED_SCRIPTS = [
   'dist/editor.js',
   'dist/fretboard.js',
   'dist/app.js',
-  'dist/core/webshell.js'
+  'dist/core/webshell.js',
+  'dist/core/keymap.js'
 ];
 
 const VERBATIM_CORE = [

@@ -133,6 +133,7 @@ juce_add_binary_data(GomidasAssets
     packages/core/dist/core/webfiles.js
     packages/core/dist/core/menus.js
     packages/core/dist/core/webshell.js
+    packages/core/dist/core/keymap.js
     packages/core/dist/core/webaudio.js
     packages/core/dist/app.js
     packages/core/dist/editor.js

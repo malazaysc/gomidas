@@ -175,8 +175,7 @@ whenever it changes (`pushRecentFiles`, a no-op on macOS), the page calls `getRe
 and both menus open by **path** — never position, since the list can change while the unsaved-changes
 guard is up; native opens only a path it put in the list itself (anything else would let page script read arbitrary
 files through the bridge), and says so when a file has left the list or no longer exists.
-**Linux builds and launches but is not at parity yet** — known gaps, each ticketed: Ctrl reports as
-both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
+**Linux builds and launches but is not at parity yet** — known gaps, each ticketed:
 `recent.txt` and plugin-chooser paths (GOM-88); no Quit/Exit item in the HTML menu (GOM-101).
 - **Bundled resources live in one place per OS** (GOM-85): `src/AppResources.h` `resourcesDir()` —
   `Gomidas.app/Contents/Resources` on macOS, `<real binary dir>/resources` elsewhere. Off macOS CMake
@@ -317,6 +316,19 @@ digits = fret (instant, 2-digit within 600 ms) · `R` rest · `.`/`⌘.` dot/dou
 `⌃+` insert beat · `⌘+` insert bar · `⌘-` delete beat · `⌘↑`/`⌘↓` prev/next track · `→` at last beat
 appends · `⌘Z`/`⌘⇧Z` undo/redo · `Space` play. Command (⌘) vs Control (⌃) are distinct — the native
 bridge (`MainComponent::keyPressed` → `gomidasNativeKey(key,cmd,ctrl,shift)`) forwards them separately.
+**Off macOS it is GP8's Windows keymap, not a modifier swap** (GOM-87): every modified shortcut lives
+in **`core/keymap.ts`**, one table per platform (`mac` / `pc`), resolved by the pure `resolve(key, mods,
+platform)` → an action name dispatched through `editor.js SHORTCUT_ACTIONS`; tooltips come from
+`label(action, platform)`. On PC the bar/beat group moves to Ins/Del (Ins insert bar, Ctrl+Ins insert
+beat, Ctrl+Del delete bar, Shift+Del delete beats), Ctrl++/Ctrl+- zoom, and the ⌥ effects are
+Ctrl+Alt+letter. **One deliberate deviation (user, 2026-10-21): plain Del deletes the note** on PC —
+GP8's Windows table says Del = Delete Track. Platform: JUCE's `__juce__platform` on desktop, `navigator`
+on web. Native sends `meta` only on macOS (JUCE reports Ctrl as Command elsewhere), and falls back to
+the key code when Ctrl/Alt turned the character into a control character (Ctrl+Z → 0x1A on X11).
+Two of GP8's own PC chords never reach the page on some hosts: Ctrl+Shift+U (arpeggio up) is IBus/fcitx
+Unicode entry on Linux, and Ctrl+T / Ctrl+1–4 / Ctrl+L are reserved by browsers (the desktop WebView gets
+them). Non-Latin and AZERTY layouts: GOM-104. Add a shortcut to the table, never as a branch in `handleKey`; `tests/keymap.test.js` pins both tables
+and checks every bound action exists in `SHORTCUT_ACTIONS`.
 Effects mutate the alphaTab model then `applyEdit(true)`; dead/palm-mute/let-ring also reshape the MIDI note.
 Also implemented (GP keys): ties `L`/`⇧L` (sustains in MIDI), hammer/pull `H`, legato slide `S`,
 ghost `O`, staccato `!`, accent `;`/`:`, natural harmonic `Y`, vibrato `V`, transpose `⌥⇧↑/↓` (semitone)

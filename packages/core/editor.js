@@ -2288,6 +2288,59 @@
   function setAutoScroll(on) { autoScrollOn = !!on; }
 
   // ---- input -----------------------------------------------------------------
+  // Every action a shortcut can name (core/keymap.ts BINDINGS). Kept beside handleKey so the
+  // table and the editor can't drift: keymap.test.js checks every bound action exists here.
+  const SHORTCUT_ACTIONS = {
+    deleteTrack,
+    undo,
+    redo,
+    selectAll,
+    copy: () => copySelection(),
+    cut: () => cutSelection(),
+    paste: () => pasteClipboard(),
+    doubleDot: () => toggleDoubleDot(),
+    insertBar: () => addBar(),
+    deleteBeats: () => removeBeat(),
+    insertBeat: () => insertBeatAfter(),
+    deleteBar,
+    prevTrack: () => moveTrack(-1),
+    nextTrack: () => moveTrack(1),
+    firstBar: () => moveToScoreEdge(false),
+    lastBar: () => moveToScoreEdge(true),
+    toggleBeatGrid,
+    goTo: () => { if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); },
+    timeSignature: () => { if (window.gomidasOpenTimeSig) window.gomidasOpenTimeSig(); },
+    keySignature: () => { if (window.gomidasOpenKeySig) window.gomidasOpenKeySig(); },
+    brushUp: () => setBrush('up'),
+    arpeggioUp: () => setBrush('arpup'),
+    brushDown: () => setBrush('down'),
+    arpeggioDown: () => setBrush('arpdown'),
+    zoomIn: () => { if (window.gomidasZoom) window.gomidasZoom(1); },
+    zoomOut: () => { if (window.gomidasZoom) window.gomidasZoom(-1); },
+    tripletFeel: () => toggleTripletFeel(),
+    voice1: () => selectVoice(0),
+    voice2: () => selectVoice(1),
+    voice3: () => selectVoice(2),
+    voice4: () => selectVoice(3),
+    toggleLoop,
+    semitoneUp: () => transposeNote(1),
+    octaveUp: () => transposeNote(12),
+    semitoneDown: () => transposeNote(-1),
+    octaveDown: () => transposeNote(-12),
+    // ⌥-letter on macOS usually arrives composed (√, ø, ç), so these mirror the Effects menu,
+    // which is the dependable path.
+    tremoloBar,
+    wahOpen: () => setWah(false),
+    wahClose: () => setWah(true),
+    letRing
+  };
+  function keyPlatform() { return window.GomidasKeymap.platform(); }
+  let warnedNoKeymap = false;
+  function noKeymap() {
+    if (!warnedNoKeymap) { warnedNoKeymap = true; console.warn('[Gomidas] keymap.js not loaded: no modified shortcuts'); }
+    return null;
+  }
+
   // Shared key logic — used by the JS keydown listener AND native key forwarding
   // (MainComponent::keyPressed → window.gomidasNativeKey). Returns true if handled.
   function handleKey(k, mods) {
@@ -2298,54 +2351,12 @@
     const shift = !!mods.shift;
     const alt = !!mods.alt;      // Option ⌥
 
-    // ---- Command (⌘) shortcuts ----
-    if (meta) {
-      if (alt && (k === 'r' || k === 'R')) { deleteTrack(); return true; } // Delete Track ⌥⌘R
-      if (k === 'z' || k === 'Z') { shift ? redo() : undo(); return true; } // Undo / Redo (⇧⌘Z)
-      if (k === 'y' || k === 'Y') { redo(); return true; }
-      if (k === 'a' || k === 'A') { selectAll(); return true; }     // Select All ⌘A
-      if (k === 'c' || k === 'C') { copySelection(); return true; } // Copy ⌘C
-      if (k === 'x' || k === 'X') { cutSelection(); return true; }  // Cut ⌘X
-      if (k === 'v' || k === 'V') { pasteClipboard(); return true; }// Paste ⌘V
-      if (k === '.') { toggleDoubleDot(); return true; }       // Double Dotting ⌘.
-      if (k === '+' || k === '=') { addBar(); return true; }    // Insert Bar ⌘+
-      if (k === '-' || k === '_') { removeBeat(); return true; }// Delete the Beats ⌘-
-      if (k === 'ArrowUp') { moveTrack(-1); return true; }      // Previous Track ⌘↑
-      if (k === 'ArrowDown') { moveTrack(1); return true; }     // Next Track ⌘↓
-      if (k === 'Home') { moveToScoreEdge(false); return true; }// First Bar ⌘Home
-      if (k === 'End') { moveToScoreEdge(true); return true; }  // Last Bar ⌘End
-      if (k === 'g' || k === 'G') {
-        if (shift) { toggleBeatGrid(); return true; }                       // Toggle Beat Grid ⇧⌘G
-        if (window.gomidasOpenGoTo) window.gomidasOpenGoTo(); return true;   // Go To ⌘G
-      }
-      if (k === 't' || k === 'T') { if (window.gomidasOpenTimeSig) window.gomidasOpenTimeSig(); return true; } // Time Signature ⌘T
-      if (k === 'k' || k === 'K') { if (window.gomidasOpenKeySig) window.gomidasOpenKeySig(); return true; }   // Key Signature ⌘K
-      if (k === 'u' || k === 'U') { setBrush(shift ? 'arpup' : 'up'); return true; }    // Brush Up ⌘U / Arpeggio Up ⇧⌘U
-      if (k === 'd' || k === 'D') { setBrush(shift ? 'arpdown' : 'down'); return true; }// Brush Down ⌘D / Arpeggio Down ⇧⌘D
-      if (k === '>') { if (window.gomidasZoom) window.gomidasZoom(1); return true; }    // Zoom In ⌘>
-      if (k === '<') { if (window.gomidasZoom) window.gomidasZoom(-1); return true; }   // Zoom Out ⌘<
-      if (k === '/') { toggleTripletFeel(); return true; }                              // Triplet Feel ⌘/
-      if (k.length === 1 && k >= '1' && k <= '4') { selectVoice(parseInt(k, 10) - 1); return true; } // Voices 1–4 ⌘1–⌘4
-      if (k === 'l' || k === 'L') { toggleLoop(); return true; }                        // A/B loop toggle ⌘L
-      return false; // leave other ⌘ combos to the system
-    }
-    // ---- Control (⌃) shortcuts ----
-    if (ctrl) {
-      if (k === '+' || k === '=') { insertBeatAfter(); return true; } // Insert a Beat ⌃+
-      if (k === '-' || k === '_') { deleteBar(); return true; }       // Delete Bar ⌃-
-      return false;
-    }
-    // ---- Option (⌥) shortcuts: note transpose (arrows survive ⌥; letters don't) ----
-    if (alt) {
-      if (k === 'ArrowUp') { transposeNote(shift ? 1 : 12); return true; }    // ⌥⇧↑ semitone / ⌥↑ octave
-      if (k === 'ArrowDown') { transposeNote(shift ? -1 : -12); return true; }// ⌥⇧↓ semitone / ⌥↓ octave
-      // ⌥-letter combos are unreliable (the OS eats the letter) — these mirror the
-      // Effects menu entries, which are the dependable path.
-      if (k === 'v' || k === 'V') { tremoloBar(); return true; }              // ⌥V Tremolo Bar
-      if (k === 'o' || k === 'O') { setWah(false); return true; }             // ⌥O Wah Open
-      if (k === 'c' || k === 'C') { setWah(true); return true; }              // ⌥C Wah Closed
-      return false;
-    }
+    // ---- shortcuts: per-platform table (core/keymap.ts, GOM-87) ----
+    // GP8 has a macOS keymap and a Windows one, and they are not a modifier swap, so the
+    // resolver answers "which action is this here"; an unmatched chord does nothing.
+    const action = window.GomidasKeymap ? window.GomidasKeymap.resolve(k, mods, keyPlatform()) : noKeymap();
+    if (action && SHORTCUT_ACTIONS[action]) { SHORTCUT_ACTIONS[action](); return true; }
+    if (meta || ctrl || alt) return false; // leave other chords to the system
 
     // ---- no modifier ----
     if (k === 'ArrowRight') { if (shift) extendSelection(1); else { clearSelection(); moveBeat(1); } return true; }  // ⇧→ extends selection
@@ -2385,7 +2396,7 @@
     if (k === '/') { toggleTriplet(); return true; }                    // GP: Triolet (triplet)
     if (k === 'p' || k === 'P') { (shift || k === 'P') ? palmMuteBeat() : palmMuteNote(); return true; } // GP: Palm Mute (P / ⇧P)
     if (k === 'x' || k === 'X') { deadNote(); return true; }            // GP: Dead Note
-    if (k === 'i' || k === 'I' || k === 'Insert') { letRing(); return true; } // GP: Let Ring
+    if (k === 'i' || k === 'I') { letRing(); return true; }   // GP: Let Ring (macOS Insert alias: keymap.ts)
     if (k === 'l' || k === 'L') { (shift || k === 'L') ? tieBeat() : tieNote(); return true; } // GP: Tie Note / Tie Beat
     if (k === 'h' || k === 'H') { hammerPull(); return true; }          // GP: Hammer On / Pull Off
     if (k === 's' || k === 'S') { slideNote(false); return true; }      // GP: Legato Slide
@@ -2430,8 +2441,20 @@
   }
   function modalIsOpen() { const m = document.getElementById('modal-overlay'); return !!(m && m.classList.contains('show')); }
 
+  // The one "may the editor take keys now?" rule, for BOTH entry points: the browser keydown
+  // below and native forwarding (app.js gomidasNativeKey) — a shortcut must not edit the score
+  // behind an open dialog or steal a key from a text field.
+  // `fromNative`: the key came through MainComponent. That happens two ways: the WebView lost
+  // keyboard focus (then the DOM's focused element is stale and must not swallow the key), or it
+  // still has focus and passed up a key it didn't handle (macOS WKWebView does this — then a
+  // focused text field still owns the key). document.hasFocus() tells the two apart.
+  function acceptsKeys(target, fromNative) {
+    if (modalIsOpen()) return false;
+    if (fromNative && !document.hasFocus()) return true;
+    return !(isTypingTarget(target) || isTypingTarget(document.activeElement));
+  }
   function onKey(e) {
-    if (modalIsOpen() || isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+    if (!acceptsKeys(e.target)) return;
     if (handleKey(e.key, { ctrl: e.ctrlKey, shift: e.shiftKey, meta: e.metaKey, alt: e.altKey })) {
       e.preventDefault(); e.stopPropagation();
     }
@@ -2588,6 +2611,7 @@
   }
 
   window.GomidasEditor = {
+    acceptsKeys,
     init, onScoreLoaded, onRenderFinished, onPlayTick, handleKey,
     addBar, setFret, deleteNoteOnString, setDuration, toggleDot, toggleDoubleDot, makeRest,
     toggleTriplet, setTuplet, palmMute: palmMuteBeat, palmMuteNote, deadNote, letRing,
