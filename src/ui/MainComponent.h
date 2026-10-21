@@ -51,6 +51,9 @@ private:
     void loadFileFromPath (const juce::File& f); // dispatch into the WebView (text/base64)
     void addRecent (const juce::File& f);
     juce::File recentStoreFile() const;
+   #if ! JUCE_MAC
+    static juce::File defaultVst3Dir();
+   #endif
     void loadRecentList();
     void saveRecentList() const;
     void pushRecentFiles();                      // -> window.gomidasRecentFiles (GOM-86)

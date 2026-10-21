@@ -39,6 +39,16 @@ function hostHas(host: any, method: string): boolean {
   return !!host && typeof host[method] === 'function';
 }
 
+/** Labels that name a macOS-only technology, reworded wherever the HTML bar draws on a PC host.
+ *  The C++ table (and so the macOS native menu) keeps the original. Labels stay ASCII. */
+const PC_LABELS: Record<string, string> = { loadplugin: 'Load Input Plugin (VST3)...' };
+
+function itemLabel(item: { label: string; action: string }): string {
+  const K = (window as any).GomidasKeymap;
+  const pc = K ? K.platform() === 'pc' : true;
+  return (pc && PC_LABELS[item.action]) || item.label;
+}
+
 function actionBlocked(action: string, caps: any, host?: any): boolean {
   for (const cap of Object.keys(CAP_ACTIONS)) {
     if (!caps[cap] && CAP_ACTIONS[cap].indexOf(action) >= 0) return true;
@@ -121,7 +131,7 @@ function buildMenuBar(caps: any, host?: any): void {
     for (const item of menu.items) {
       if (item.label === '-') { list.appendChild(el('div', 'wm-sep')); continue; }
       const blocked = actionBlocked(item.action, caps, host);
-      const b = el('button', 'wm-item' + (blocked ? ' wm-disabled' : ''), item.label);
+      const b = el('button', 'wm-item' + (blocked ? ' wm-disabled' : ''), itemLabel(item));
       if (blocked) {
         // Kept visible but inert, with the reason — silently omitting items makes the web build
         // look broken rather than different.

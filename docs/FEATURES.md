@@ -16,7 +16,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Add track (Guitar / Bass / Drums) | toolbar `+ Track…` | ✅ matches existing master bars; drums via importer+JSON merge |
 | Delete track | `⌥⌘R` (Linux/Windows: no key, menu only) / menu Track→Delete Track | ✅ JSON round-trip rebuild; keeps ≥1 track; cursor moves to previous track |
 | Open `.gp` / `.gomidas` / MusicXML | toolbar `Open` / menu File→Open | ✅ native file chooser (real path); `.gomidas` = score JSON, others via alphaTab (`gomidasLoadBinary`, base64) |
-| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
+| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS) / `~/.config/Gomidas/recent.txt` (Linux); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
 | Save `.gomidas` project | toolbar `Save` | ✅ clears the unsaved-changes flag; **folds per-track volume/pan into `playbackInfo`** so the mix persists (mute/solo/hidden stay session-only) |
 | Export Guitar Pro `.gp` | menu File→Export Guitar Pro | ✅ alphaTab `Gp7Exporter` → native save dialog (`saveBinary`, base64). Round-trip pending runtime verification |
 | Unsaved-changes guard | — | ✅ New / Open / Sample prompt to discard if there are unsaved edits |

@@ -116,7 +116,7 @@ describe('web shell menu bar', () => {
     expect(byText('a.gp')).toBeUndefined();
     expect(byText('Minimize').disabled).toBe(true);
     expect(byText('About Gomidas').disabled).toBe(true);
-    expect(byText('Load Plugin...').title).toMatch(/browser/);
+    expect(byText('Load Input Plugin (VST3)...').title).toMatch(/browser/);
     expect(fakeDoc.all().some((x) => x.className === 'wm-group')).toBe(false);
     byText('Open...').click();
     expect(menuCalls).toEqual(['open']);
@@ -136,6 +136,16 @@ describe('web shell menu bar', () => {
     setRecentFiles(recent('/x/a.gp'));
     expect(byText('a.gp')).toBeDefined();
     expect(byText('Clear Recent')).toBeUndefined();
+  });
+
+  it('rewords the AU/VST3 plugin label on a PC host only (GOM-88)', () => {
+    window.GomidasKeymap = { platform: () => 'pc' };
+    buildMenuBar(desktop, {});
+    expect(byText('Load Input Plugin (VST3)...')).toBeDefined();
+    fakeDoc = makeDoc(); globalThis.document = fakeDoc;
+    window.GomidasKeymap = { platform: () => 'mac' };
+    buildMenuBar(desktop, {});
+    expect(byText('Load Plugin...')).toBeDefined();   // the table's own label
   });
 
   it('clicking the Open Recent heading does not close the menu', () => {
