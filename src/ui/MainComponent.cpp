@@ -768,23 +768,36 @@ void MainComponent::clearRecentFiles()
     pushRecentFiles();
 }
 
+#if ! JUCE_MAC
+// One-time move (GOM-88): before it, non-macOS builds kept the list under a literal
+// "<config>/Application Support/Gomidas/recent.txt". Copied VERBATIM — loadRecentList drops entries
+// that don't exist right now (an unmounted drive), and the old file is the only copy. Then the old
+// file goes, and its two folders only if EMPTY (deleteFile on a directory is rmdir) and never a
+// symlink, since deleteFile would remove the link itself.
+void MainComponent::migrateLegacyRecentList() const
+{
+    const auto target = recentStoreFile();
+    const auto legacy = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
+    if (target.existsAsFile() || ! legacy.existsAsFile())
+        return;
+    target.getParentDirectory().createDirectory();
+    if (! legacy.copyFileTo (target) || ! legacy.deleteFile())
+        return;
+    const auto gomidasDir = legacy.getParentDirectory();
+    for (const auto& dir : { gomidasDir, gomidasDir.getParentDirectory() })
+        if (dir.isSymbolicLink() || ! dir.deleteFile())
+            break;
+}
+#endif
+
 void MainComponent::loadRecentList()
 {
+   #if ! JUCE_MAC
+    migrateLegacyRecentList();
+   #endif
     recentFiles.clear();
     auto f = recentStoreFile();
-   #if ! JUCE_MAC
-    // Before GOM-88 non-macOS builds kept the list under a literal "Application Support" folder.
-    // Move it once: read it, write the new location (below), then remove the old file and any
-    // folder it leaves EMPTY — deleteFile on a directory is rmdir, so nothing else can go.
-    juce::File legacy;
-    if (! f.existsAsFile())
-    {
-        const auto old = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                             .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
-        if (old.existsAsFile())
-            f = legacy = old;
-    }
-   #endif
     if (! f.existsAsFile()) return;
     juce::StringArray lines;
     f.readLines (lines);
@@ -798,21 +811,6 @@ void MainComponent::loadRecentList()
             recentFiles.add (p);
     }
     while (recentFiles.size() > kRecentMax) recentFiles.remove (recentFiles.size() - 1);
-   #if ! JUCE_MAC
-    if (legacy.existsAsFile())
-    {
-        saveRecentList();
-        if (recentStoreFile().existsAsFile() && legacy.deleteFile())
-        {
-            // Only EMPTY real folders go (rmdir); a symlinked one is left alone, since deleteFile
-            // would remove the link itself.
-            const auto gomidasDir = legacy.getParentDirectory();             // .../Application Support/Gomidas
-            for (const auto& dir : { gomidasDir, gomidasDir.getParentDirectory() })
-                if (dir.isSymbolicLink() || ! dir.deleteFile())
-                    break;
-        }
-    }
-   #endif
 }
 
 void MainComponent::saveRecentList() const

@@ -55,6 +55,9 @@ private:
     static juce::File defaultVst3Dir();
    #endif
     void loadRecentList();
+   #if ! JUCE_MAC
+    void migrateLegacyRecentList() const;
+   #endif
     void saveRecentList() const;
     void pushRecentFiles();                      // -> window.gomidasRecentFiles (GOM-86)
     void clearRecentFiles();
