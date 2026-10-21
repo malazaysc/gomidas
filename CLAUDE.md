@@ -170,16 +170,17 @@ both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl s
 `recent.txt` and plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
 - ⚠️ **JUCE and the WebKitGTK view pick their UI scale independently** (GOM-92). GTK reads `GDK_SCALE`
   (Omarchy exports `2` to every app, whatever the monitor); JUCE reads XSETTINGS, then GNOME's
-  gsettings `scaling-factor` (0 → **1.0 without ever looking at DPI**), then DPI. When they disagree
-  the page renders at the wrong size inside its box: 2x on this 81-dpi ultrawide, which was "ultra
-  giant". So `src/ui/UiScale.cpp` (called first thing in `initialise()`, before any web view exists)
-  chooses ONE integer scale and applies it to both: JUCE's global scale factor and `GDK_SCALE`.
-  Order: `GOMIDAS_SCALE=1..4`; else JUCE's detected scale when a desktop setting asked for >1; else
-  `round(dpi/96)`. The scale is then **capped so the logical screen still fits the 900x600 window**, or a 13"
-  1080p laptop (~166dpi) and TVs with bogus EDID sizes would come out at 2x+ and not fit. `GDK_SCALE`
-  from the session is ignored on purpose; `GDK_DPI_SCALE` is left alone (it compensates Xft.dpi on
-  classic HiDPI X11). Startup logs `[Gomidas] UI scale N (source; …)`. `GOMIDAS_SCALE=2` is how to
-  check HiDPI behaviour on a low-DPI screen. Pinned by `tests/ui_scale_test.cpp`.
+  gsettings `scaling-factor` (0 → 1.0), then DPI. When they disagree the page renders at the wrong size
+  inside its box — 2x on this scale-1 monitor, "ultra giant". **Policy (user, 2026-10-21): follow the
+  desktop's own choice, never guess.** `src/ui/UiScale.cpp`: `GOMIDAS_SCALE=1..4`, else on Hyprland
+  the focused monitor's scale from `hyprctl -j monitors` (1 if `xwayland:force_zero_scaling` is off —
+  Hyprland then upscales XWayland itself), else what JUCE read from the desktop. Rounded to an integer
+  (GTK can't do fractional) and applied to both: JUCE's global scale factor, and `GDK_SCALE` **only
+  while the main window is built** (`ScopedGdkScale`) — JUCE forks the WebKit child synchronously in
+  the `WebBrowserComponent` constructor, so the child gets it and zenity etc. keep the user's. Verify
+  with `/proc/<child>/environ`. A DPI-guess version was tried first and dropped: it overrode explicit
+  desktop settings and needed a fit-cap that clipped accessibility scales. Startup logs
+  `[Gomidas] UI scale N (source; …)`. Pinned by `tests/ui_scale_test.cpp`.
 - ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
   an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
   on its display reads pending events into Xlib's in-memory queue, after which the socket isn't

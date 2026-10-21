@@ -1,11 +1,12 @@
-// Pins the GOM-92 rule: GOMIDAS_SCALE, else a desktop scale setting above 1, else round(dpi/96),
-// capped so the logical screen still fits the 900x600 main window.
+// Pins the GOM-92 policy: GOMIDAS_SCALE, else Hyprland's monitor scale (1 if Hyprland scales
+// XWayland itself), else the desktop scale JUCE detected — never a DPI guess, never a cap.
 // Build with -DGOMIDAS_BUILD_TESTS=ON, then: ./ui_scale_test
 #include "ui/UiScale.h"
 #include <cstdio>
 #include <initializer_list>
 
 using gomidas::chooseUiScale;
+using gomidas::HyprlandInfo;
 using Source = gomidas::UiScaleChoice::Source;
 
 static int failures = 0;
@@ -22,33 +23,31 @@ static void check (const gomidas::UiScaleChoice& got, int scale, Source source, 
 
 int main()
 {
-    // DPI rule (no desktop setting: JUCE detected 1).
-    check (chooseUiScale (81.0,  1.0, 3840, 1080, nullptr), 1, Source::dpi, "3840x1080 ultrawide, 81 dpi -> 1");
-    check (chooseUiScale (163.0, 1.0, 3840, 2160, nullptr), 2, Source::dpi, "27in 4K, 163 dpi -> 2");
-    check (chooseUiScale (290.0, 1.0, 5120, 2880, nullptr), 3, Source::dpi, "5K at 290 dpi -> 3");
-    check (chooseUiScale (0.0,   1.0, 1920, 1080, nullptr), 1, Source::dpi, "unknown dpi -> 1");
+    // Hyprland: the configured monitor scale wins, whatever the session's GDK_SCALE says.
+    check (chooseUiScale (nullptr, HyprlandInfo { 1.0, true }, 1.0), 1, Source::hyprland, "this machine: monitor scale 1");
+    check (chooseUiScale (nullptr, HyprlandInfo { 2.0, true }, 1.0), 2, Source::hyprland, "Omarchy on 4K at scale 2 (JUCE said 1)");
+    check (chooseUiScale (nullptr, HyprlandInfo { 1.5, true }, 1.0), 2, Source::hyprland, "fractional 1.5 rounds to 2");
+    check (chooseUiScale (nullptr, HyprlandInfo { 1.25, true }, 1.0), 1, Source::hyprland, "fractional 1.25 rounds to 1");
+    check (chooseUiScale (nullptr, HyprlandInfo { 2.0, false }, 1.0), 1, Source::hyprlandCompositorScaled,
+           "force_zero_scaling off: Hyprland upscales, render at 1");
 
-    // Fit cap: the logical screen must hold 900x600.
-    check (chooseUiScale (166.0, 1.0, 1920, 1080, nullptr), 1, Source::dpi, "13in 1080p laptop, 166 dpi -> capped to 1");
-    check (chooseUiScale (305.0, 1.0, 1920, 1080, nullptr), 1, Source::dpi, "TV reporting a bogus size -> capped to 1");
-    check (chooseUiScale (220.0, 1.0, 2560, 1600, nullptr), 2, Source::dpi, "13in 2560x1600 laptop -> 2 (1280x800 fits)");
+    // Elsewhere: the desktop's own setting as JUCE reads it, uncapped (accessibility 200% on 1080p stays 2).
+    check (chooseUiScale (nullptr, std::nullopt, 1.0), 1, Source::desktop, "GNOME 100% on 4K stays 1");
+    check (chooseUiScale (nullptr, std::nullopt, 2.0), 2, Source::desktop, "GNOME 200% -> 2, even on 1080p");
+    check (chooseUiScale (nullptr, std::nullopt, 0.0), 1, Source::desktop, "unknown -> 1");
 
-    // Desktop setting wins over DPI, still capped.
-    check (chooseUiScale (96.0,  2.0, 3840, 2160, nullptr), 2, Source::desktopSetting, "GNOME scaling-factor 2 on a 96-dpi 4K -> 2");
-    check (chooseUiScale (163.0, 2.0, 1920, 1080, nullptr), 1, Source::desktopSetting, "desktop 2x on 1080p is capped to 1");
-
-    // Override wins, unconditionally.
-    check (chooseUiScale (81.0,  1.0, 3840, 1080, "2"), 2, Source::override, "GOMIDAS_SCALE=2 on a low-dpi screen");
-    check (chooseUiScale (163.0, 2.0, 3840, 2160, "1"), 1, Source::override, "GOMIDAS_SCALE=1 on HiDPI");
+    // Override wins over everything.
+    check (chooseUiScale ("2", HyprlandInfo { 1.0, true }, 1.0), 2, Source::override, "GOMIDAS_SCALE=2 on Hyprland");
+    check (chooseUiScale ("1", std::nullopt, 2.0), 1, Source::override, "GOMIDAS_SCALE=1 on a 2x desktop");
 
     // Rejected overrides fall through and are reported.
     for (const char* bad : { "1.5", "9", "abc", "0" })
     {
-        const auto c = chooseUiScale (163.0, 1.0, 3840, 2160, bad);
-        check (c, 2, Source::dpi, "invalid GOMIDAS_SCALE falls back to dpi");
+        const auto c = chooseUiScale (bad, HyprlandInfo { 2.0, true }, 1.0);
+        check (c, 2, Source::hyprland, "invalid GOMIDAS_SCALE falls through");
         if (! c.overrideRejected) { std::printf ("FAIL: GOMIDAS_SCALE=%s not reported as rejected\n", bad); ++failures; }
     }
-    if (chooseUiScale (163.0, 1.0, 3840, 2160, "").overrideRejected) { std::printf ("FAIL: empty override reported as rejected\n"); ++failures; }
+    if (chooseUiScale ("", std::nullopt, 1.0).overrideRejected) { std::printf ("FAIL: empty override reported as rejected\n"); ++failures; }
 
     if (failures == 0)
         std::printf ("PASS: ui_scale_test\n");

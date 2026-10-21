@@ -14,8 +14,13 @@ public:
 
     void initialise (const juce::String&) override
     {
-        applyUiScale();   // Linux: before the web view exists, so GTK and JUCE agree (GOM-92)
-        mainWindow = std::make_unique<MainWindow> ("Gomidas");
+        // Linux: one UI scale for JUCE and the WebKit view (GOM-92). GDK_SCALE is set only while the
+        // window (and the WebKit child it forks) is created, then restored.
+        const auto webViewScale = applyUiScale();
+        {
+            const ScopedGdkScale gdkScale (webViewScale);
+            mainWindow = std::make_unique<MainWindow> ("Gomidas");
+        }
     }
 
     void shutdown() override { mainWindow = nullptr; }
@@ -33,7 +38,7 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setResizable (true, true);
-            setResizeLimits (kMinWindowWidth, kMinWindowHeight, 4000, 2600);   // UiScale.h fits the scale to this
+            setResizeLimits (900, 600, 4000, 2600);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
         }

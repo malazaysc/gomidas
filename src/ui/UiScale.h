@@ -4,36 +4,48 @@
 // laid out at the wrong size inside its box (Omarchy exports GDK_SCALE=2 to every app, so on a
 // scale-1 monitor WebKit rendered 2x while JUCE laid out at 1x: an "ultra giant" UI).
 //
-// GDK_SCALE is a session-wide setting that need not match the monitor, so it is not used. The
-// scale comes from, in order:
-//   1. GOMIDAS_SCALE (integer 1-4), the user's explicit choice;
-//   2. the scale JUCE detected, when a desktop setting asked for more than 1 (XSETTINGS
-//      Gdk/WindowScalingFactor, a non-zero GNOME scaling-factor, Ubuntu's per-output factor);
-//   3. otherwise the display's DPI, round(dpi / 96) — JUCE never gets there on Omarchy, because
-//      gsettings reports scaling-factor 0 and JUCE turns that into 1.0;
-// and (2) and (3) are then capped so the logical screen still fits the main window's 900x600
-// minimum: a 13" 1080p laptop (~166 dpi) or a TV reporting a bogus size stays at 1.
+// Policy (decided with the user, 2026-10-21): follow the scale the user chose for their desktop,
+// never guess.
+//   1. GOMIDAS_SCALE (integer 1-4) — explicit override.
+//   2. Hyprland: the focused monitor's scale as Hyprland reports it (`hyprctl -j monitors`), i.e.
+//      what monitors.lua configures. If xwayland:force_zero_scaling is off, Hyprland scales
+//      XWayland apps itself, so the app must render at 1.
+//   3. Anywhere else: the scale JUCE reads from the desktop (XSETTINGS, GNOME/Ubuntu settings).
+// The session-wide GDK_SCALE is ignored: it need not match the monitor (Omarchy sets 2 always).
+// GTK only does integer device scales, so a fractional desktop scale is rounded and both halves
+// use that same integer.
 //
-// Header-only pure part so tests/ui_scale_test.cpp can pin it without a display.
+// Header-only pure part so tests/ui_scale_test.cpp can pin the policy without a display.
 #include <cmath>
 #include <cstdlib>
+#include <optional>
+#include <string>
 
 namespace gomidas
 {
 struct UiScaleChoice
 {
-    enum class Source { override, desktopSetting, dpi };
+    enum class Source { override, hyprland, hyprlandCompositorScaled, desktop };
     int scale = 1;
-    Source source = Source::dpi;
-    bool overrideRejected = false;   // GOMIDAS_SCALE was set but not a valid 1-4 integer
+    Source source = Source::desktop;
+    bool overrideRejected = false;   // GOMIDAS_SCALE was set but not an integer 1-4
 };
 
-constexpr int kMinWindowWidth  = 900;   // keep in step with MainWindow's setResizeLimits (Main.cpp)
-constexpr int kMinWindowHeight = 600;
+struct HyprlandInfo
+{
+    double monitorScale = 1.0;        // the focused monitor's configured scale
+    bool forceZeroScaling = true;     // xwayland:force_zero_scaling
+};
 
-inline UiScaleChoice chooseUiScale (double dpi, double detectedScale,
-                                    int screenWidthPx, int screenHeightPx,
-                                    const char* overrideValue)
+inline int toDeviceScale (double scale)
+{
+    const auto rounded = scale > 0 ? (int) std::lround (scale) : 1;
+    return rounded < 1 ? 1 : (rounded > 4 ? 4 : rounded);
+}
+
+inline UiScaleChoice chooseUiScale (const char* overrideValue,
+                                    std::optional<HyprlandInfo> hyprland,
+                                    double desktopScale)
 {
     UiScaleChoice choice;
 
@@ -50,33 +62,39 @@ inline UiScaleChoice chooseUiScale (double dpi, double detectedScale,
         choice.overrideRejected = true;
     }
 
-    int scale = 1;
-    if (detectedScale > 1.01)
+    if (hyprland.has_value())
     {
-        scale = (int) std::lround (detectedScale);
-        choice.source = UiScaleChoice::Source::desktopSetting;
-    }
-    else if (dpi > 0)
-    {
-        scale = (int) std::lround (dpi / 96.0);
-        choice.source = UiScaleChoice::Source::dpi;
-    }
-
-    // The logical screen must still hold the main window.
-    if (screenWidthPx > 0 && screenHeightPx > 0)
-    {
-        const int fits = (int) std::floor (std::fmin ((double) screenWidthPx / kMinWindowWidth,
-                                                      (double) screenHeightPx / kMinWindowHeight));
-        if (scale > fits)
-            scale = fits;
+        if (! hyprland->forceZeroScaling)
+        {
+            choice.scale = 1;   // the compositor upscales XWayland windows itself
+            choice.source = UiScaleChoice::Source::hyprlandCompositorScaled;
+            return choice;
+        }
+        choice.scale = toDeviceScale (hyprland->monitorScale);
+        choice.source = UiScaleChoice::Source::hyprland;
+        return choice;
     }
 
-    choice.scale = scale < 1 ? 1 : (scale > 4 ? 4 : scale);
+    choice.scale = toDeviceScale (desktopScale);
+    choice.source = UiScaleChoice::Source::desktop;
     return choice;
 }
 
-// Linux/BSD only, and before any WebBrowserComponent exists (GTK reads GDK_SCALE when it starts):
-// picks the scale for the primary display and applies it to JUCE (global scale factor) and GTK
-// (GDK_SCALE). Logs the choice and its source to stderr. No-op elsewhere.
-void applyUiScale();
+// Linux/BSD: decides the scale (querying Hyprland when running under it) and applies it to JUCE's
+// global scale factor. Returns the scale for the web view, or 0 elsewhere. Logs the choice.
+int applyUiScale();
+
+// Sets GDK_SCALE for as long as it lives, then restores the previous value — so only the WebKit
+// child (forked synchronously in the WebBrowserComponent constructor) inherits it, not zenity or
+// anything else Gomidas launches later. scale <= 0 does nothing.
+class ScopedGdkScale
+{
+public:
+    explicit ScopedGdkScale (int scale);
+    ~ScopedGdkScale();
+
+private:
+    bool active = false;
+    std::optional<std::string> previous;
+};
 }
