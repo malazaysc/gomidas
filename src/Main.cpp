@@ -33,7 +33,7 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setResizable (true, true);
-            setResizeLimits (900, 600, 4000, 2600);
+            setResizeLimits (kMinWindowWidth, kMinWindowHeight, 4000, 2600);   // UiScale.h fits the scale to this
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
         }

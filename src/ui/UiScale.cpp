@@ -12,22 +12,33 @@ void applyUiScale()
     if (display == nullptr)
         return;
 
-    const int scale = chooseUiScale (display->dpi, std::getenv ("GOMIDAS_SCALE"));
-
-    // JUCE: Display::scale is (JUCE's own per-display scale) x (global factor). Set the global
-    // factor so the product is `scale`, whatever JUCE detected on its own.
+    // JUCE's own per-display scale, without whatever global factor is already applied.
     const auto globalNow = (double) desktop.getGlobalScaleFactor();
-    const auto platformScale = globalNow > 0 ? display->scale / globalNow : display->scale;
-    if (platformScale > 0)
-        desktop.setGlobalScaleFactor ((float) (scale / platformScale));
+    const auto detected = globalNow > 0 ? display->scale / globalNow : display->scale;
+    const auto physical = display->totalArea.toDouble() * display->scale;   // logical -> physical px
 
-    // GTK (the WebKit view): integer device scale, no extra text scaling on top.
-    ::setenv ("GDK_SCALE", juce::String (scale).toRawUTF8(), 1);
-    ::unsetenv ("GDK_DPI_SCALE");
+    const char* overrideValue = std::getenv ("GOMIDAS_SCALE");
+    const auto choice = chooseUiScale (display->dpi, detected,
+                                       juce::roundToInt (physical.getWidth()), juce::roundToInt (physical.getHeight()),
+                                       overrideValue);
 
-    std::cerr << "[Gomidas] UI scale " << scale << " (display " << juce::roundToInt (display->dpi)
-              << " dpi" << (std::getenv ("GOMIDAS_SCALE") != nullptr ? ", GOMIDAS_SCALE override" : "")
-              << ")" << std::endl;
+    // JUCE: Display::scale is (JUCE's per-display scale) x (global factor). Set the global factor
+    // so the product is the chosen scale.
+    if (detected > 0)
+        desktop.setGlobalScaleFactor ((float) (choice.scale / detected));
+
+    // GTK (the WebKit view): integer device scale. GDK_DPI_SCALE is left alone — on classic HiDPI
+    // X11 setups it compensates Xft.dpi, and clearing it would double the text size.
+    ::setenv ("GDK_SCALE", juce::String (choice.scale).toRawUTF8(), 1);
+
+    const char* source = choice.source == UiScaleChoice::Source::override       ? "GOMIDAS_SCALE"
+                       : choice.source == UiScaleChoice::Source::desktopSetting ? "desktop setting"
+                                                                                : "display dpi";
+    std::cerr << "[Gomidas] UI scale " << choice.scale << " (" << source << "; display "
+              << juce::roundToInt (display->dpi) << " dpi, " << juce::roundToInt (physical.getWidth())
+              << "x" << juce::roundToInt (physical.getHeight()) << " px)" << std::endl;
+    if (choice.overrideRejected)
+        std::cerr << "[Gomidas] ignored GOMIDAS_SCALE=" << overrideValue << " (expected an integer 1-4)" << std::endl;
    #endif
 }
 }

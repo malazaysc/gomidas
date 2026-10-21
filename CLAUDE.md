@@ -173,10 +173,13 @@ both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl s
   gsettings `scaling-factor` (0 → **1.0 without ever looking at DPI**), then DPI. When they disagree
   the page renders at the wrong size inside its box: 2x on this 81-dpi ultrawide, which was "ultra
   giant". So `src/ui/UiScale.cpp` (called first thing in `initialise()`, before any web view exists)
-  derives ONE integer scale from the primary display's DPI, `round(dpi/96)` clamped 1-4, and applies it
-  to both: JUCE's global scale factor and `GDK_SCALE` (`GDK_DPI_SCALE` cleared). `GOMIDAS_SCALE=1..4`
-  overrides it — also how to check HiDPI behaviour on a low-DPI screen. Startup logs
-  `[Gomidas] UI scale N (display D dpi)`. Pinned by `tests/ui_scale_test.cpp`.
+  chooses ONE integer scale and applies it to both: JUCE's global scale factor and `GDK_SCALE`.
+  Order: `GOMIDAS_SCALE=1..4`; else JUCE's detected scale when a desktop setting asked for >1; else
+  `round(dpi/96)`. The scale is then **capped so the logical screen still fits the 900x600 window**, or a 13"
+  1080p laptop (~166dpi) and TVs with bogus EDID sizes would come out at 2x+ and not fit. `GDK_SCALE`
+  from the session is ignored on purpose; `GDK_DPI_SCALE` is left alone (it compensates Xft.dpi on
+  classic HiDPI X11). Startup logs `[Gomidas] UI scale N (source; …)`. `GOMIDAS_SCALE=2` is how to
+  check HiDPI behaviour on a low-DPI screen. Pinned by `tests/ui_scale_test.cpp`.
 - ⚠️ **JUCE's X11 loop can leave events stranded in Xlib's queue** (GOM-91). JUCE drains X events in
   an fd callback that runs only when the socket becomes *readable*. Any synchronous Xlib round trip
   on its display reads pending events into Xlib's in-memory queue, after which the socket isn't
