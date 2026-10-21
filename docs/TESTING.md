@@ -11,12 +11,14 @@ pnpm install && pnpm -C packages/core run test  # or: pnpm -C packages/core run 
 
 # Native audio-path smoke tests (sfizz SFZ load + render) via ctest.
 cmake -B build -DGOMIDAS_BUILD_TESTS=ON
-cmake --build build --target gomidas_tests    # builds all test executables
+cmake --build build                           # the app + all test executables (what CI builds)
 ctest --test-dir build --output-on-failure
 ```
 
 Both run in CI on every push / PR (`.github/workflows/ci.yml`): a fast `web-tests` job
-(Vitest, Ubuntu) and a `native-tests` job (ctest, macOS).
+(Vitest, Ubuntu) and `native-tests`, a **macOS + Ubuntu matrix that builds the full app and the
+test executables, then runs ctest** (GOM-89). `cmake --build build --target gomidas_tests` builds
+only the tests, for a quicker local loop. Docs-only changes (`*.md`, `docs/`, `.claude/`) skip CI.
 
 ## Progress (2026-07-01)
 

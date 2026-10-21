@@ -99,10 +99,11 @@ pnpm install                                     # if lockfile/deps moved
 pnpm typecheck
 pnpm test                                        # vitest (builds core first)
 cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGOMIDAS_BUILD_TESTS=ON
-cmake --build build --target gomidas_tests && ctest --test-dir build --output-on-failure
+cmake --build build && ctest --test-dir build --output-on-failure   # app + tests, as CI builds
 ```
 
-The desktop app itself must also still build — `cmake --build build`. The standing rule is that
+CI builds the same on macOS **and** Ubuntu, so a Linux-only or macOS-only compile error fails the
+PR even if your machine is the other one. The standing rule is that
 **every commit leaves `cmake --build build` green and the macOS app behaving identically**.
 
 **Gate B — the dangling-reference sweep.** `app.js` / `editor.js` / `fretboard.js` / `grooves.js`
