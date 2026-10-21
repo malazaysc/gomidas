@@ -75,7 +75,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Triplet (3 in space of 2) | `/` / toolbar `3` | same (Triolet) | 🟡 per-beat (spanning groups → backlog) |
 | Tuplets 5 / 6 / 7 / 9 | Note menu | same | ✅ `setTuplet(n)`; denom = nearest lower power of two; applies across the beat selection (spanning groups), toggles off when all selected already have it |
 | Rest | `R` / toolbar `R` | same | ✅ clears beat to a timed rest |
-| Insert beat after cursor | `⌃+`, toolbar `＋beat`, or `→` at end | `⌃+` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
+| Insert beat after cursor | `⌃+` (Linux/Windows: `Ctrl+Ins`), toolbar `＋beat`, or `→` at end | `⌃+` / `Ctrl+Ins` | ✅ **capacity-aware**: appends within the bar, or **flows into a new bar** (created if at the end) once the bar is full per its time signature. `→` at the last beat of the last bar always extends — including after a silence |
 | Delete the beats | `⌘-` / toolbar `－beat` | `⌘-` | ✅ |
 | Insert bar (to all tracks) | `⌘+` / toolbar `＋bar` | `⌘+` / `Ins` | ✅ whole-rest bar, master bars kept aligned |
 | Delete bar (from all tracks) | `⌃-` / toolbar `－bar` | `⌃-` | ✅ JSON round-trip rebuild; keeps ≥1 bar |

@@ -47,6 +47,7 @@ const Asset kAssets[] = {
     { "/dist/core/webfiles.js", "webfiles_js",  "text/javascript" },
     { "/dist/core/menus.js",    "menus_js",     "text/javascript" },
     { "/dist/core/webshell.js", "webshell_js",  "text/javascript" },
+    { "/dist/core/keymap.js", "keymap_js",  "text/javascript" },
     { "/dist/core/webaudio.js", "webaudio_js",  "text/javascript" },
     { "/dist/app.js",    "app_js",          "text/javascript" },
     { "/dist/editor.js", "editor_js",       "text/javascript" },
@@ -1011,16 +1012,30 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     else if (key == juce::KeyPress::tabKey)    jsKey = "Tab";
     else if (key == juce::KeyPress::F3Key)     jsKey = "F3";
     else if (key == juce::KeyPress::spaceKey)  jsKey = " ";
+    else if (key == juce::KeyPress::insertKey) jsKey = "Insert";   // GP8 Windows: Ins = Insert Bar
     else
     {
-        const auto c = key.getTextCharacter();
+        auto c = key.getTextCharacter();
+        // Ctrl/Alt turn a letter into a control character (Ctrl+Z -> 0x1A on X11) or into nothing
+        // (Windows); the key code still names the key, so use it for a printable one (GOM-87).
+        if (c < 0x20)
+        {
+            const int code = key.getKeyCode();
+            c = (code >= 0x20 && code < 0x7f) ? (juce::juce_wchar) code : 0;
+        }
         if (c == 0) return false;
         jsKey = juce::String::charToString (c);
     }
 
-    // Send Command (⌘) and Control (⌃) separately — Guitar Pro maps different
-    // actions to each (⌘+ = Insert Bar, ⌃+ = Insert Beat).
+    // Send Command (⌘) and Control (⌃) separately — Guitar Pro maps different actions to each
+    // (⌘+ = Insert Bar, ⌃+ = Insert Beat). Off macOS JUCE reports Ctrl as Command too
+    // (commandModifier == ctrlModifier), so there "meta" is never set and Ctrl arrives as ctrl;
+    // core/keymap.ts then applies GP8's Windows keymap (GOM-87).
+   #if JUCE_MAC
     const bool cmd   = key.getModifiers().isCommandDown();
+   #else
+    const bool cmd   = false;
+   #endif
     const bool ctrl  = key.getModifiers().isCtrlDown();
     const bool shift = key.getModifiers().isShiftDown();
     const bool alt   = key.getModifiers().isAltDown();

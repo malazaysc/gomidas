@@ -44,7 +44,7 @@
     voices.appendChild(el('span', 'eb-label', 'voices'));
     voiceBtns = [];
     for (let i = 0; i < 4; i++) {
-      const b = mkBtn(String(i + 1), 'voice ' + (i + 1) + ' (⌘' + (i + 1) + ')', () => E.selectVoice(i));
+      const b = mkBtn(String(i + 1), 'voice ' + (i + 1) + sc('voice' + (i + 1)), () => E.selectVoice(i));
       b.classList.add('eb-sq', 'eb-voice');
       voiceBtns[i] = b;
       voices.appendChild(b);
@@ -94,7 +94,7 @@
       durs.appendChild(b);
     });
     dotBtn = mkBtn('.', 'dotted (.)', () => E.toggleDot());
-    dot2Btn = mkBtn('‥', 'double dotted (⌘.)', () => E.toggleDoubleDot());
+    dot2Btn = mkBtn('‥', 'double dotted' + sc('doubleDot'), () => E.toggleDoubleDot());
     dotBtn.classList.add('eb-sq'); dot2Btn.classList.add('eb-sq');
     durs.append(dotBtn, dot2Btn);
     bar.appendChild(durs);
@@ -159,14 +159,20 @@
     ops.appendChild(el('span', 'eb-label', 'bars & beats'));
     ops.append(
       mkBtn('R', 'rest (R)', () => E.makeRest()),
-      mkBtn('＋beat', 'insert beat (⌃+)', () => E.insertBeat()),
-      mkBtn('－beat', 'delete beat (⌘-)', () => E.removeBeat()),
-      mkBtn('＋bar', 'insert bar (⌘+)', () => E.addBar()),
-      mkBtn('－bar', 'delete bar (⌃-)', () => E.deleteBar())
+      mkBtn('＋beat', 'insert beat' + sc('insertBeat'), () => E.insertBeat()),
+      mkBtn('－beat', 'delete beat' + sc('deleteBeats'), () => E.removeBeat()),
+      mkBtn('＋bar', 'insert bar' + sc('insertBar'), () => E.addBar()),
+      mkBtn('－bar', 'delete bar' + sc('deleteBar'), () => E.deleteBar())
     );
     bar.appendChild(ops);
   }
 
+  // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
+  function sc(action) {
+    const K = window.GomidasKeymap;
+    const l = K ? K.label(action, K.platformOf(window)) : '';
+    return l ? ' (' + l + ')' : '';
+  }
   function mkBtn(label, title, fn) {
     const b = el('button', 'eb-btn', label);
     b.title = title;
