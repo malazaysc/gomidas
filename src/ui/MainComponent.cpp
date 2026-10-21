@@ -1,6 +1,8 @@
 #include "MainComponent.h"
 #include "GomidasAssets.h"
 #include "AssetBytes.h"
+#include "AppResources.h"
+#include "PathGuard.h"
 
 namespace gomidas
 {
@@ -386,10 +388,15 @@ MainComponent::MainComponent()
                         rel  = obj->getProperty ("file").toString();
                         name = obj->getProperty ("name").toString();
                     }
-                // Built-in instruments live in Gomidas.app/Contents/Resources/instruments.
-                auto appFile = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
-                auto f = appFile.getChildFile ("Contents/Resources/instruments").getChildFile (rel);
-                const bool ok = f.existsAsFile() && engine.loadChannelSfz (channel, f);
+                // Built-in instruments live in <resources>/instruments (AppResources.h). The path comes
+                // from the web view's JS (projects store only the preset id), so it must resolve inside
+                // that folder. The ORIGINAL path is loaded: sfizz resolves sample= paths relative to the
+                // .sfz it opened, and a symlinked .sfz must keep its own folder. (Bundled content is
+                // trusted; whoever can write into the resources dir already controls the app.)
+                const auto instruments = resourcesDir().getChildFile ("instruments");
+                const auto f = instruments.getChildFile (rel);
+                const bool ok = realPathInside (toFsPath (f), toFsPath (instruments)).has_value()
+                                 && engine.loadChannelSfz (channel, f);
                 if (webView != nullptr)
                     webView->evaluateJavascript ("window.gomidasSfzLoaded && window.gomidasSfzLoaded("
                         + juce::String (channel) + "," + juce::String (ok ? "true" : "false") + ","

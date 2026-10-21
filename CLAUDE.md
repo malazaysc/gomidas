@@ -168,9 +168,23 @@ PipeWire, `pipewire-alsa`. `NEEDS_WEB_BROWSER TRUE` on `juce_add_gui_app` is wha
 JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exists on macOS, so it is
 `#if JUCE_MAC`-guarded. **Linux builds and launches but is not at parity yet** — known gaps, each
 ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
-FluidR3 and the bundled SFZ presets are never found, so it plays sonivox (GOM-85); Ctrl reports as
-both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
-`recent.txt` and plugin-chooser paths (GOM-88).
+Ctrl reports as both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts
+are dead (GOM-87); `recent.txt` and plugin-chooser paths (GOM-88).
+- **Bundled resources live in one place per OS** (GOM-85): `src/AppResources.h` `resourcesDir()` —
+  `Gomidas.app/Contents/Resources` on macOS, `<real binary dir>/resources` elsewhere. Off macOS CMake
+  puts `assets/instruments` there as a mirror (re-done when a source preset changes; deletions and
+  renames propagate) and `FluidR3_GM.sf2` as a symlink (re-placed each build, no dependency on the
+  git-ignored file, so removing it falls back to sonivox instead of breaking the build); macOS still
+  copies into the bundle on relink only (GOM-99). The non-Apple dir is derived once from
+  `RUNTIME_OUTPUT_DIRECTORY`; the subdirectory name reaches the code as `GOMIDAS_RESOURCES_SUBDIR`
+  (missing → `#error`). Preset paths (from the web view's JS) go through `realPathInside` (`src/PathGuard.h`; symlinks resolved; the original path is loaded so sfizz finds samples next to it; pinned by
+  `tests/app_resources_test.cpp`). Any new
+  bundled file goes through `resourcesDir()`; a hard-coded `Contents/Resources` is how Linux silently
+  played sonivox and lost the SFZ presets. Off macOS the binary is found via `/proc/self/exe`
+  (`hostApplicationPath`) — `currentApplicationFile` is argv[0] against the CWD and breaks when
+  launched from PATH/a symlink/a .desktop file. **Build tree only**: an installed build (/usr/bin)
+  needs an install step + FHS lookup first. FluidR3 is git-ignored, so a Linux checkout plays sonivox
+  until `assets/soundfont/FluidR3_GM.sf2` exists; the startup log says which bank loaded and why.
 - ⚠️ **JUCE and the WebKitGTK view pick their UI scale independently** (GOM-92). GTK reads `GDK_SCALE`
   (Omarchy exports `2` to every app, whatever the monitor); JUCE reads XSETTINGS, then GNOME's
   gsettings `scaling-factor` (0 → 1.0), then DPI. When they disagree the page renders at the wrong size

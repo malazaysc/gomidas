@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include "GomidasAssets.h" // embedded binary data (juce_add_binary_data)
+#include "AppResources.h"
 #include <juce_dsp/juce_dsp.h>
 #include <cmath>
 
@@ -33,21 +34,26 @@ AudioEngine::~AudioEngine()
 
 void AudioEngine::initialise()
 {
-    // Prefer the high-quality FluidR3 SoundFont bundled in Resources; fall back
-    // to the small embedded sonivox bank if it isn't present.
-    bool loaded = false;
-    auto appFile = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
-    auto fluid = appFile.getChildFile ("Contents/Resources/FluidR3_GM.sf2");
-    if (fluid.existsAsFile())
-        loaded = synth.loadFromFile (fluid);
-    if (! loaded)
+    // Prefer the high-quality FluidR3 SoundFont bundled with the app; fall back
+    // to the small embedded sonivox bank if it isn't present or won't load.
+    const auto fluid = resourcesDir().getChildFile ("FluidR3_GM.sf2");
+    const bool fluidExists = fluid.existsAsFile();
+    juce::String bank;
+    if (fluidExists && synth.loadFromFile (fluid))
     {
-        int sfSize = 0;
-        if (const char* sf = GomidasAssets::getNamedResource ("sonivox_sf2", sfSize))
-            loaded = synth.loadFromMemory (sf, sfSize);
+        bank = "FluidR3";
     }
-    juce::Logger::writeToLog (loaded ? (fluid.existsAsFile() ? "SoundFont: FluidR3" : "SoundFont: sonivox")
-                                     : "SoundFont: FAILED");
+    else
+    {
+        const juce::String why = fluidExists ? "FluidR3 at " + fluid.getFullPathName() + " failed to load"
+                                             : "no " + fluid.getFullPathName();
+        int sfSize = 0;
+        const char* sf = GomidasAssets::getNamedResource ("sonivox_sf2", sfSize);
+        bank = (sf != nullptr && synth.loadFromMemory (sf, sfSize))
+                 ? "sonivox (" + why + ")"
+                 : "FAILED (" + why + "; embedded sonivox failed too)";
+    }
+    juce::Logger::writeToLog ("SoundFont: " + bank);
 
     juce::addDefaultFormatsToManager (pluginFormatManager);   // AU + VST3 hosts, with UI (JUCE 8 API)
 

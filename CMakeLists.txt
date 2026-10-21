@@ -157,28 +157,85 @@ target_sources(Gomidas PRIVATE
   src/synth/SoundFontSynth.cpp
   src/synth/SfzSynth.cpp)
 
-# High-quality GM SoundFont (FluidR3, ~150MB, MIT). Too big to embed in the binary,
-# so it ships as a bundle resource and is loaded at runtime. Falls back to the
-# embedded sonivox bank when this file is absent.
+# Where bundled runtime resources go — must match src/AppResources.h (GOM-85). The layout follows
+# the same predicate as the code's JUCE_MAC: macOS -> Gomidas.app/Contents/Resources (the bundle,
+# populated by MACOSX_PACKAGE_LOCATION / the POST_BUILD copy below); everything else ->
+# <binary dir>/${GOMIDAS_RESOURCES_SUBDIR}, one directory derived once and used for every copy. The
+# subdirectory name reaches the code as a compile definition, so the two cannot disagree.
+set(GOMIDAS_RESOURCES_SUBDIR "resources")
+target_compile_definitions(Gomidas PRIVATE GOMIDAS_RESOURCES_SUBDIR="${GOMIDAS_RESOURCES_SUBDIR}")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  set(GOMIDAS_BUNDLE_RESOURCES TRUE)
+else()
+  set(GOMIDAS_BUNDLE_RESOURCES FALSE)
+  get_target_property(GOMIDAS_OUT_DIR Gomidas RUNTIME_OUTPUT_DIRECTORY)
+  if(NOT GOMIDAS_OUT_DIR)
+    message(FATAL_ERROR "Gomidas has no RUNTIME_OUTPUT_DIRECTORY (did juce_add_gui_app change?) - "
+                        "can't place bundled resources next to the binary (GOM-85)")
+  endif()
+  set(GOMIDAS_RESOURCES_OUT "${GOMIDAS_OUT_DIR}/${GOMIDAS_RESOURCES_SUBDIR}")
+endif()
+
+# High-quality GM SoundFont (FluidR3, ~150MB, MIT). Too big to embed in the binary, so it ships
+# next to it and is loaded at runtime. Falls back to the embedded sonivox bank when absent.
 set(GOMIDAS_FLUID_SF "${CMAKE_CURRENT_SOURCE_DIR}/assets/soundfont/FluidR3_GM.sf2")
 if(EXISTS "${GOMIDAS_FLUID_SF}")
-  target_sources(Gomidas PRIVATE "${GOMIDAS_FLUID_SF}")
-  set_source_files_properties("${GOMIDAS_FLUID_SF}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  if(GOMIDAS_BUNDLE_RESOURCES)
+    target_sources(Gomidas PRIVATE "${GOMIDAS_FLUID_SF}")
+    set_source_files_properties("${GOMIDAS_FLUID_SF}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  else()
+    # Re-placed on every build, but cheaply: a symlink on Unix (no 150 MB copy per build tree), a
+    # copy_if_different on Windows. No DEPENDS on the source on purpose — it is git-ignored and may
+    # vanish after configure, which must not break the build: the link then dangles, the app logs
+    # "no FluidR3" and plays sonivox, exactly as without it.
+    if(WIN32)
+      set(GOMIDAS_FLUID_CMD copy_if_different)
+    else()
+      set(GOMIDAS_FLUID_CMD create_symlink)
+    endif()
+    add_custom_target(GomidasFluidSoundFont
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${GOMIDAS_RESOURCES_OUT}"
+      COMMAND ${CMAKE_COMMAND} -E ${GOMIDAS_FLUID_CMD} "${GOMIDAS_FLUID_SF}" "${GOMIDAS_RESOURCES_OUT}/FluidR3_GM.sf2"
+      COMMENT "Gomidas: placing FluidR3_GM.sf2 next to the binary")
+    add_dependencies(Gomidas GomidasFluidSoundFont)
+  endif()
   message(STATUS "Gomidas: bundling FluidR3_GM.sf2 SoundFont")
 else()
   message(STATUS "Gomidas: FluidR3_GM.sf2 not found — using embedded sonivox bank")
+  if(NOT GOMIDAS_BUNDLE_RESOURCES)
+    # The source is gone: don't leave a dangling symlink (or a stale copy) for the app to find.
+    add_custom_target(GomidasFluidSoundFontCleanup
+      COMMAND ${CMAKE_COMMAND} -E rm -f "${GOMIDAS_RESOURCES_OUT}/FluidR3_GM.sf2")
+    add_dependencies(Gomidas GomidasFluidSoundFontCleanup)
+  endif()
 endif()
 
-# Bundle built-in SFZ instruments (small CC0 sets) into the app Resources, so
-# sfizz can load them by absolute path with no download. Big sets (e.g. Karoryfer
-# drums ~2.3 GB) will fetch on first run instead — keep only small CC0 here.
+# Bundle built-in SFZ instruments (small CC0 sets) with the app, so sfizz can load them by
+# absolute path with no download. Big sets (e.g. Karoryfer drums ~2.3 GB) will fetch on first
+# run instead — keep only small CC0 here.
 set(GOMIDAS_INSTRUMENTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/instruments")
 if(EXISTS "${GOMIDAS_INSTRUMENTS}")
-  add_custom_command(TARGET Gomidas POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GOMIDAS_INSTRUMENTS}"
-            "$<TARGET_FILE_DIR:Gomidas>/../Resources/instruments"
-    COMMENT "Gomidas: bundling SFZ instruments into app Resources")
+  if(GOMIDAS_BUNDLE_RESOURCES)
+    add_custom_command(TARGET Gomidas POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              "${GOMIDAS_INSTRUMENTS}" "$<TARGET_FILE_DIR:Gomidas>/../Resources/instruments"
+      COMMENT "Gomidas: bundling SFZ instruments into the app bundle")
+  else()
+    # A mirror (deletions and renames propagate), redone only when a source file changes or the
+    # mirrored folder is gone — the stamp lives inside it. Not on every build: an rm -rf under a
+    # running app would pull samples out from under sfizz. (copy_directory_if_different would need
+    # CMake 3.26; the project supports 3.22.)
+    file(GLOB_RECURSE GOMIDAS_INSTRUMENT_FILES CONFIGURE_DEPENDS "${GOMIDAS_INSTRUMENTS}/*")
+    set(GOMIDAS_INSTRUMENTS_STAMP "${GOMIDAS_RESOURCES_OUT}/instruments/.mirrored")
+    add_custom_command(OUTPUT "${GOMIDAS_INSTRUMENTS_STAMP}"
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${GOMIDAS_RESOURCES_OUT}/instruments"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory "${GOMIDAS_INSTRUMENTS}" "${GOMIDAS_RESOURCES_OUT}/instruments"
+      COMMAND ${CMAKE_COMMAND} -E touch "${GOMIDAS_INSTRUMENTS_STAMP}"
+      DEPENDS ${GOMIDAS_INSTRUMENT_FILES}
+      COMMENT "Gomidas: mirroring SFZ instruments next to the binary")
+    add_custom_target(GomidasInstruments DEPENDS "${GOMIDAS_INSTRUMENTS_STAMP}")
+    add_dependencies(Gomidas GomidasInstruments)
+  endif()
 endif()
 
 target_include_directories(Gomidas PRIVATE src)
@@ -233,6 +290,12 @@ if(GOMIDAS_BUILD_TESTS)
   set_target_properties(asset_bytes_test PROPERTIES CXX_STANDARD 20)
   add_test(NAME asset_bytes COMMAND asset_bytes_test)
 
+  # Bundled preset paths must stay inside instruments/, symlinks resolved (GOM-85). Header-only.
+  add_executable(app_resources_test tests/app_resources_test.cpp)
+  target_include_directories(app_resources_test PRIVATE src)
+  set_target_properties(app_resources_test PROPERTIES CXX_STANDARD 20)
+  add_test(NAME app_resources COMMAND app_resources_test)
+
   # One UI scale for JUCE and the WebKitGTK view: GOMIDAS_SCALE, else Hyprland's monitor scale,
   # else the desktop's setting — never a DPI guess (GOM-92). Header-only.
   add_executable(ui_scale_test tests/ui_scale_test.cpp)
@@ -243,7 +306,7 @@ if(GOMIDAS_BUILD_TESTS)
   # Aggregate target to build every test executable at once locally (`cmake --build build
   # --target gomidas_tests`). CI builds `all` (the app + these), so a new test target must not be
   # EXCLUDE_FROM_ALL.
-  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test)
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test app_resources_test)
 endif()
 
 target_link_libraries(Gomidas PRIVATE
