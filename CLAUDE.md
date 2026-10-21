@@ -177,9 +177,9 @@ WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI re
   among them the ConfigureNotify with the tile size. So the content stayed 1280x820 inside the tile,
   and when later input drained the queue, JUCE dropped that stale configure (`serial <
   moveResizeSerial`). Fix: `src/ui/X11EventWake.cpp`, one app-wide watchdog (owned by
-  `GomidasApplication`). Every 100ms it reads the queued count (no I/O). After two ticks with events
-  queued, it sends the app a no-op ClientMessage, so JUCE drains everything through its own handlers.
-  Measured 10/10; about one wake per launch, none when idle. Approaches that **didn't** work or were
+  `GomidasApplication`). Every 100ms it reads the queued count (no I/O) and, if anything is queued,
+  runs JUCE's own X fd callback via `LinuxEventLoopInternal::invokeEventLoopCallbackForFd` (an
+  `@internal` JUCE hook its VST3 client uses). Measured 10/10. Approaches that **didn't** work or were
   rejected along the way: polling the real bounds and `setSize`-ing (worked, but five review rounds
   of side effects); re-requesting bounds (2/5); re-reading the geometry on MapNotify inside JUCE
   (3/10). The probe that found it: log `XEventsQueued(display, QueuedAlready)` from a timer.

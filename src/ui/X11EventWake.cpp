@@ -4,14 +4,15 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "X11EventWake.h"
 
+#if JUCE_LINUX || JUCE_BSD
+ // @internal in JUCE, but it is exactly the hook JUCE's own VST3 client uses to run an fd's
+ // callback; a JUCE upgrade that changes it fails to compile here rather than silently.
+ #include <juce_events/native/juce_EventLoopInternal_linux.h>
+#endif
+
 namespace gomidas
 {
 #if JUCE_LINUX || JUCE_BSD
-namespace
-{
-    constexpr int kIntervalMs = 100;
-}
-
 X11EventWake::X11EventWake()  { startTimer (kIntervalMs); }
 X11EventWake::~X11EventWake() { stopTimer(); }
 
@@ -19,44 +20,23 @@ void X11EventWake::timerCallback()
 {
     auto* xws = juce::XWindowSystem::getInstanceWithoutCreating();
     auto* display = xws != nullptr ? xws->getDisplay() : nullptr;
-    if (display == nullptr || juce::ComponentPeer::getNumPeers() == 0)
+    if (display == nullptr)
         return;
 
     auto& x = *juce::X11Symbols::getInstance();
-    juce::XWindowSystemUtilities::ScopedXLock lock;
-
-    // Only what is already buffered in Xlib's queue — reading the socket here would be the very
-    // round trip that strands events.
-    if (x.xEventsQueued (display, QueuedAlready) <= 0)
+    int queued = 0, fd = -1;
     {
-        ticksWithQueuedEvents = 0;
-        return;
+        juce::XWindowSystemUtilities::ScopedXLock lock;
+        // Only what is already buffered in Xlib — reading the socket here would be the very kind
+        // of round trip that strands events.
+        queued = x.xEventsQueued (display, QueuedAlready);
+        fd = x.xConnectionNumber (display);
     }
 
-    // One tick of queued events is normal (JUCE's callback may simply not have run yet); two
-    // means nothing is going to wake it.
-    if (++ticksWithQueuedEvents < 2)
-        return;
-
-    ticksWithQueuedEvents = 0;
-
-    // With an empty event mask, XSendEvent delivers to the client that created the window — us.
-    // An unknown message_type is ignored by JUCE's handleClientMessageEvent; its only effect is
-    // that the socket becomes readable and JUCE drains the whole queue.
-    const auto target = (::Window) juce::ComponentPeer::getPeer (0)->getNativeHandle();
-    if (target == 0)
-        return;
-
-    static const ::Atom wakeAtom = x.xInternAtom (display, "GOMIDAS_EVENT_WAKE", False);
-
-    XEvent event {};
-    event.xclient.type = ClientMessage;
-    event.xclient.window = target;
-    event.xclient.message_type = wakeAtom;
-    event.xclient.format = 32;
-
-    x.xSendEvent (display, target, False, NoEventMask, &event);
-    x.xFlush (display);
+    // Run JUCE's own X fd callback (it drains with XPending/XNextEvent through its normal
+    // handlers). Harmless if JUCE was about to run it anyway: it just finds the queue empty.
+    if (queued > 0 && fd >= 0)
+        juce::LinuxEventLoopInternal::invokeEventLoopCallbackForFd (fd);
 }
 #else
 X11EventWake::X11EventWake()  {}
