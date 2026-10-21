@@ -240,15 +240,39 @@ MainComponent::MainComponent()
             [this] (const juce::Array<juce::var>&,
                     juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
-                auto start = juce::File ("/Library/Audio/Plug-Ins");
+                // One block per platform: title, start folder, filter and flags belong together.
+               #if JUCE_MAC
                 auto chooser = std::make_shared<juce::FileChooser> (
-                    "Choose an AU (.component) or VST3 (.vst3) plugin", start, "*.vst3;*.component");
-                chooser->launchAsync (juce::FileBrowserComponent::openMode
+                    "Choose an AU (.component) or VST3 (.vst3) plugin",
+                    juce::File ("/Library/Audio/Plug-Ins"), "*.vst3;*.component");
+                const int pickFlags = juce::FileBrowserComponent::openMode
                                       | juce::FileBrowserComponent::canSelectFiles
-                                      | juce::FileBrowserComponent::canSelectDirectories,
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #elif JUCE_LINUX || JUCE_BSD
+                // A Linux VST3 is a DIRECTORY bundle (Foo.vst3/Contents/x86_64-linux/Foo.so), and JUCE's
+                // zenity/kdialog path treats "files and directories" as files-only, so it could never
+                // return one: pick in folder mode. No filter — "*.vst3" would also hide the folders on
+                // the way to the bundle. Start folder ignored under xdg-desktop-portal: GOM-105.
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose a VST3 plugin (the .vst3 folder)", defaultVst3Dir(), juce::String());
+                const int pickFlags = juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #else
+                auto chooser = std::make_shared<juce::FileChooser> (
+                    "Choose a VST3 (.vst3) plugin", defaultVst3Dir(), "*.vst3");
+                const int pickFlags = juce::FileBrowserComponent::openMode
+                                      | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::canSelectDirectories;
+               #endif
+                chooser->launchAsync (pickFlags,
                     [this, chooser] (const juce::FileChooser& fc)
                     {
                         auto f = fc.getResult();
+                       #if JUCE_LINUX || JUCE_BSD
+                        // Picked a folder INSIDE the bundle (…/Foo.vst3/Contents/x86_64-linux)? Load the bundle.
+                        for (auto p = f; p != juce::File() && p != p.getParentDirectory(); p = p.getParentDirectory())
+                            if (p.hasFileExtension ("vst3")) { f = p; break; }
+                       #endif
                         if (f != juce::File())
                         {
                             closePluginEditor();                 // drop the old editor first
@@ -704,12 +728,37 @@ void MainComponent::runMenuAction (const juce::String& action)
 // ---- open + recent files -----------------------------------------------------
 juce::File MainComponent::recentStoreFile() const
 {
-    // macOS: userApplicationDataDirectory == ~/Library, so add "Application Support".
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("Application Support")
-               .getChildFile ("Gomidas")
-               .getChildFile ("recent.txt");
+    auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    // userApplicationDataDirectory is ~/Library on macOS, so add "Application Support". Existing
+    // users' lists live here — never move it.
+    base = base.getChildFile ("Application Support");
+   #endif
+    // Elsewhere it already is the per-user config dir: ~/.config on Linux, %APPDATA% on Windows
+    // (GOM-88 — it used to grow a literal "Application Support" folder there).
+    return base.getChildFile ("Gomidas").getChildFile ("recent.txt");
 }
+
+#if ! JUCE_MAC
+// Where the VST3 SDK says plugins live (Linux: per-user first, then system-wide); home if none exists.
+juce::File MainComponent::defaultVst3Dir()
+{
+   #if JUCE_WINDOWS
+    const juce::File candidates[] = {
+        juce::File::getSpecialLocation (juce::File::globalApplicationsDirectory)
+            .getChildFile ("Common Files").getChildFile ("VST3") };
+   #else
+    const juce::File candidates[] = {
+        juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (".vst3"),
+        juce::File ("/usr/lib/vst3"),
+        juce::File ("/usr/local/lib/vst3") };
+   #endif
+    for (const auto& dir : candidates)
+        if (dir.isDirectory())
+            return dir;
+    return juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+}
+#endif
 
 // The one Clear Recent, for both the macOS submenu and the page's HTML menu (GOM-86).
 void MainComponent::clearRecentFiles()
@@ -719,8 +768,34 @@ void MainComponent::clearRecentFiles()
     pushRecentFiles();
 }
 
+#if ! JUCE_MAC
+// One-time move (GOM-88): before it, non-macOS builds kept the list under a literal
+// "<config>/Application Support/Gomidas/recent.txt". Copied VERBATIM — loadRecentList drops entries
+// that don't exist right now (an unmounted drive), and the old file is the only copy. Then the old
+// file goes, and its two folders only if EMPTY (deleteFile on a directory is rmdir) and never a
+// symlink, since deleteFile would remove the link itself.
+void MainComponent::migrateLegacyRecentList() const
+{
+    const auto target = recentStoreFile();
+    const auto legacy = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("Application Support").getChildFile ("Gomidas").getChildFile ("recent.txt");
+    if (target.existsAsFile() || ! legacy.existsAsFile())
+        return;
+    target.getParentDirectory().createDirectory();
+    if (! legacy.copyFileTo (target) || ! legacy.deleteFile())
+        return;
+    const auto gomidasDir = legacy.getParentDirectory();
+    for (const auto& dir : { gomidasDir, gomidasDir.getParentDirectory() })
+        if (dir.isSymbolicLink() || ! dir.deleteFile())
+            break;
+}
+#endif
+
 void MainComponent::loadRecentList()
 {
+   #if ! JUCE_MAC
+    migrateLegacyRecentList();
+   #endif
     recentFiles.clear();
     auto f = recentStoreFile();
     if (! f.existsAsFile()) return;

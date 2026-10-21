@@ -39,6 +39,14 @@ function hostHas(host: any, method: string): boolean {
   return !!host && typeof host[method] === 'function';
 }
 
+/** On a PC host, drop the macOS-only "AU/" from labels like "Load Input Plugin (AU/VST3)..." — derived
+ *  from the generated table, so a renamed C++ label can't leave a stale copy here. The macOS native
+ *  menu keeps the original; with no keymap loaded the label is left as the table has it. */
+function itemLabel(item: { label: string }): string {
+  const K = (window as any).GomidasKeymap;
+  return K && K.platform() === 'pc' ? item.label.replace('AU/VST3', 'VST3') : item.label;
+}
+
 function actionBlocked(action: string, caps: any, host?: any): boolean {
   for (const cap of Object.keys(CAP_ACTIONS)) {
     if (!caps[cap] && CAP_ACTIONS[cap].indexOf(action) >= 0) return true;
@@ -121,7 +129,7 @@ function buildMenuBar(caps: any, host?: any): void {
     for (const item of menu.items) {
       if (item.label === '-') { list.appendChild(el('div', 'wm-sep')); continue; }
       const blocked = actionBlocked(item.action, caps, host);
-      const b = el('button', 'wm-item' + (blocked ? ' wm-disabled' : ''), item.label);
+      const b = el('button', 'wm-item' + (blocked ? ' wm-disabled' : ''), itemLabel(item));
       if (blocked) {
         // Kept visible but inert, with the reason — silently omitting items makes the web build
         // look broken rather than different.

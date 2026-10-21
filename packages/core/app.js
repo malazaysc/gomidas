@@ -1423,7 +1423,7 @@ Audio.on('recordingState', (ev) => {
 // only — caps.pluginHost is false on web, where this event never fires.
 window.gomidasInputPluginLoaded = function (ok, name) { Audio.emit('pluginLoaded', { ok, name }); };
 Audio.on('pluginLoaded', ({ ok, name }) => {
-  setStatus(ok ? ('Input plugin: ' + (name || 'loaded')) : 'Plugin load failed (not a valid AU/VST3)');
+  setStatus(ok ? ('Input plugin: ' + (name || 'loaded')) : ((window.GomidasKeymap && window.GomidasKeymap.platform() === 'pc') ? 'Plugin load failed (not a VST3 - choose the .vst3 folder)' : 'Plugin load failed (not a valid AU/VST3)'));
 });
 // Clicking anywhere in the score grabs keyboard focus for the editor.
 document.getElementById('at-wrap').addEventListener('mousedown', focusEditor);

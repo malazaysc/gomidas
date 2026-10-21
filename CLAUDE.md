@@ -175,8 +175,9 @@ whenever it changes (`pushRecentFiles`, a no-op on macOS), the page calls `getRe
 and both menus open by **path** — never position, since the list can change while the unsaved-changes
 guard is up; native opens only a path it put in the list itself (anything else would let page script read arbitrary
 files through the bridge), and says so when a file has left the list or no longer exists.
-**Linux builds and launches but is not at parity yet** — known gaps, each ticketed:
-`recent.txt` and plugin-chooser paths (GOM-88); no Quit/Exit item in the HTML menu (GOM-101).
+**Linux builds and launches but is not at parity yet** — known gaps, each ticketed: no Quit/Exit item
+in the HTML menu (GOM-101); file dialogs ignore their start folder under xdg-desktop-portal, because
+JUCE's zenity path passes a relative `--filename` and changes the process cwd (GOM-105).
 - **Bundled resources live in one place per OS** (GOM-85): `src/AppResources.h` `resourcesDir()` —
   `Gomidas.app/Contents/Resources` on macOS, `<real binary dir>/resources` elsewhere. Off macOS CMake
   puts `assets/instruments` there as a mirror (re-done when a source preset changes; deletions and
@@ -301,7 +302,8 @@ track selector · tempo field.
 **Open + Recent files:** Open routes through a **native** `juce::FileChooser` (`MainComponent::openFileDialog`
 → `loadFileFromPath`) so we get a real path; `.gomidas` → `gomidasLoadProject`, others → base64 →
 `gomidasLoadBinary` → `api.load`. Opened paths persist to `~/Library/Application Support/Gomidas/recent.txt`
-(note: JUCE `userApplicationDataDirectory` is `~/Library` on macOS, so we append `Application Support`).
+on macOS (JUCE `userApplicationDataDirectory` is `~/Library` there, so we append `Application Support`)
+and to `<userApplicationDataDirectory>/Gomidas/recent.txt` elsewhere — `~/.config/Gomidas` on Linux (GOM-88).
 File→**Open Recent** submenu (built in `getMenuForIndex`, ids `kRecentIdBase+i`) routes through
 `window.gomidasConfirmOpenRecent` so the unsaved-changes guard runs first.
 **Key delivery:** `onKey` (JS window-capture) and the native `keyPressed`→`gomidasNativeKey` path both reach

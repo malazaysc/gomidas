@@ -16,7 +16,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Add track (Guitar / Bass / Drums) | toolbar `+ Track…` | ✅ matches existing master bars; drums via importer+JSON merge |
 | Delete track | `⌥⌘R` (Linux/Windows: no key, menu only) / menu Track→Delete Track | ✅ JSON round-trip rebuild; keeps ≥1 track; cursor moves to previous track |
 | Open `.gp` / `.gomidas` / MusicXML | toolbar `Open` / menu File→Open | ✅ native file chooser (real path); `.gomidas` = score JSON, others via alphaTab (`gomidasLoadBinary`, base64) |
-| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
+| Open Recent | menu File→Open Recent | ✅ last 10 files, persisted to `~/Library/Application Support/Gomidas/recent.txt` (macOS) / `~/.config/Gomidas/recent.txt` (Linux); honours the unsaved-changes guard; `Clear Recent`. Linux/Windows: the same list inside the HTML menu bar's File menu (GOM-86) |
 | Save `.gomidas` project | toolbar `Save` | ✅ clears the unsaved-changes flag; **folds per-track volume/pan into `playbackInfo`** so the mix persists (mute/solo/hidden stay session-only) |
 | Export Guitar Pro `.gp` | menu File→Export Guitar Pro | ✅ alphaTab `Gp7Exporter` → native save dialog (`saveBinary`, base64). Round-trip pending runtime verification |
 | Unsaved-changes guard | — | ✅ New / Open / Sample prompt to discard if there are unsaved edits |
@@ -161,7 +161,7 @@ Legend: ✅ done · 🟡 partial · key in `mono` is the live binding.
 | Practice speed (tempo slow-down) | transport speed select (25–150%) | — | ✅ `AudioEngine::setPlaybackRate` scales playback tempo without changing pitch or the notated tempo |
 | Count-in | transport `⏱` toggle + 1/2-bar selector / menu Sound→Count-in | — | ✅ **1 or 2 bars** of wood-block clicks at the playback tempo before the transport starts, with a **big on-screen countdown** number over the score; press play again to abort |
 | Live input monitor | transport `🎤` toggle / menu Sound→Live Input | — | 🟡 reopens the device with a mic bus and mixes input→output (first toggle triggers the macOS mic prompt) |
-| Input plugin insert (AU/VST3) | menu Sound→Load/Clear Input Plugin | — | 🟡 hosts one VST3/AU effect/instrument on the live input; **plugin editor window** (Show Plugin Editor, auto-opens on load). No per-track chains / state-save yet; needs runtime verification |
+| Input plugin insert (AU/VST3) | menu Sound→Load/Clear Input Plugin | — | 🟡 hosts one VST3/AU effect/instrument on the live input (AU is macOS-only; on Linux the chooser picks the `.vst3` bundle folder, and a folder inside the bundle resolves to the bundle); **plugin editor window** (Show Plugin Editor, auto-opens on load). No per-track chains / state-save yet; needs runtime verification |
 | Input gain | transport slider (next to `🎤`) | — | ✅ live monitoring gain (0–200%) → `setLiveInput` gain |
 | Output level meter | transport VU bar | — | ✅ peak meter (green/amber/red); native pushes `getOutputPeak` ~30 Hz while playing or monitoring |
 | Record to WAV | transport `⏺` / menu Sound→Record | — | ✅ records the output mix (tracks + live input) to a 24-bit WAV via a background `ThreadedWriter` (RT-safe); save dialog → `~/Music` default |
