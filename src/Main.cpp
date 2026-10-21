@@ -51,12 +51,6 @@ public:
                 boundsSync.start();
         }
 
-        void broughtToFront() override
-        {
-            DocumentWindow::broughtToFront();
-            boundsSync.start();
-        }
-
         void closeButtonPressed() override
         {
             JUCEApplication::getInstance()->systemRequestedQuit();

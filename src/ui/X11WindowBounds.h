@@ -10,8 +10,12 @@ namespace gomidas
 // content stays at its own size, clipped or letterboxed. Later resizes arrive normally, so
 // after each map/activation this polls briefly and adopts the real bounds when JUCE disagrees.
 //
-// Call start() whenever the window may just have been (re)mapped: visibilityChanged (visible),
-// activeWindowStatusChanged (active), broughtToFront. No-op off Linux/BSD.
+// Call start() whenever the window may just have been (re)mapped: visibilityChanged (visible)
+// and activeWindowStatusChanged (active) — not broughtToFront, which fires on every click.
+// It polls for the whole window rather than stopping once JUCE and X agree: before the WM has
+// tiled the window they agree on the pre-tile size, and stopping then is the bug. Only a SIZE
+// mismatch is corrected — positions don't clip content, and on reparenting WMs a client-vs-frame
+// position difference is not an error. No-op off Linux/BSD.
 class X11BoundsSync : private juce::Timer
 {
 public:
@@ -23,13 +27,11 @@ public:
 private:
     void timerCallback() override;
 
-    static constexpr int kIntervalMs   = 200;
-    static constexpr int kWindowMs     = 3000;
-    static constexpr int kInSyncToStop = 3;     // consecutive matching reads before stopping early
+    static constexpr int kIntervalMs = 200;
+    static constexpr int kWindowMs   = 3000;
 
     juce::Component& window;
     int ticks = 0;
-    int inSyncReads = 0;
     std::optional<juce::Rectangle<int>> lastMismatch;   // physical; adopted only once read twice
 
     JUCE_DECLARE_NON_COPYABLE (X11BoundsSync)

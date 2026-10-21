@@ -37,18 +37,16 @@ namespace
         return size.withPosition (position.roundToInt());
     }
 
-    bool closeEnough (juce::Rectangle<int> a, juce::Rectangle<int> b)
+    bool sameSize (juce::Rectangle<int> a, juce::Rectangle<int> b)
     {
         constexpr int tolerance = 2;   // physical px; absorbs scale rounding both ways
-        return std::abs (a.getX() - b.getX()) <= tolerance && std::abs (a.getY() - b.getY()) <= tolerance
-            && std::abs (a.getWidth() - b.getWidth()) <= tolerance && std::abs (a.getHeight() - b.getHeight()) <= tolerance;
+        return std::abs (a.getWidth() - b.getWidth()) <= tolerance && std::abs (a.getHeight() - b.getHeight()) <= tolerance;
     }
 }
 
 void X11BoundsSync::start()
 {
     ticks = 0;
-    inSyncReads = 0;
     lastMismatch.reset();
     startTimer (kIntervalMs);
 }
@@ -68,15 +66,11 @@ void X11BoundsSync::timerCallback()
 
     // Compare in physical pixels: the peer's own bounds are physical / platform scale.
     const auto believed = (peer->getBounds().toDouble() * (double) peer->getPlatformScaleFactor()).toNearestInt();
-    if (closeEnough (believed, *real))
+    if (sameSize (believed, *real))
     {
         lastMismatch.reset();
-        if (++inSyncReads >= kInSyncToStop)
-            stopTimer();
         return;
     }
-
-    inSyncReads = 0;
 
     // Adopt only a mismatch read twice in a row, so a resize the user (or WM) is making right now
     // is never fought. Keep polling afterwards: if the WM re-tiles just after our request, JUCE
