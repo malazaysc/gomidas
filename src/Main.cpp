@@ -14,13 +14,10 @@ public:
 
     void initialise (const juce::String&) override
     {
-        // Linux: one UI scale for JUCE and the WebKit view (GOM-92). GDK_SCALE is set only while the
-        // window (and the WebKit child it forks) is created, then restored.
-        const auto webViewScale = applyUiScale();
-        {
-            const ScopedGdkScale gdkScale (webViewScale);
-            mainWindow = std::make_unique<MainWindow> ("Gomidas");
-        }
+        // Linux: one UI scale for JUCE and the WebKit view (GOM-92). Must run before the window is
+        // built (the WebKit child is forked then) and before any thread starts (it sets GDK_SCALE).
+        applyUiScale();
+        mainWindow = std::make_unique<MainWindow> ("Gomidas");
     }
 
     void shutdown() override { mainWindow = nullptr; }
@@ -38,8 +35,14 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setResizable (true, true);
-            setResizeLimits (900, 600, 4000, 2600);
-            centreWithSize (getWidth(), getHeight());
+
+            // At a large desktop scale the logical screen can be smaller than the window's usual
+            // minimum or initial size (200% on 1080p is 960x540): fit both to the usable area.
+            auto usable = juce::Rectangle<int> (4000, 2600);
+            if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+                usable = display->userArea;
+            setResizeLimits (juce::jmin (900, usable.getWidth()), juce::jmin (600, usable.getHeight()), 4000, 2600);
+            centreWithSize (juce::jmin (getWidth(), usable.getWidth()), juce::jmin (getHeight(), usable.getHeight()));
             setVisible (true);
         }
 

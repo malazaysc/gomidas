@@ -80,21 +80,23 @@ inline UiScaleChoice chooseUiScale (const char* overrideValue,
     return choice;
 }
 
-// Linux/BSD: decides the scale (querying Hyprland when running under it) and applies it to JUCE's
-// global scale factor. Returns the scale for the web view, or 0 elsewhere. Logs the choice.
-int applyUiScale();
-
-// Sets GDK_SCALE for as long as it lives, then restores the previous value — so only the WebKit
-// child (forked synchronously in the WebBrowserComponent constructor) inherits it, not zenity or
-// anything else Gomidas launches later. scale <= 0 does nothing.
-class ScopedGdkScale
+// The JUCE global scale factor that makes a display come out at `chosen`. JUCE's Display::scale
+// is (its own per-display scale) x (current global factor), so the per-display part is
+// displayScale / currentGlobal, and the new factor is chosen / that. Returns currentGlobal when
+// the inputs are unusable.
+inline double globalScaleFactorFor (double displayScale, double currentGlobal, int chosen)
 {
-public:
-    explicit ScopedGdkScale (int scale);
-    ~ScopedGdkScale();
+    if (! (displayScale > 0) || ! (currentGlobal > 0) || chosen < 1)
+        return currentGlobal;
+    const auto detected = displayScale / currentGlobal;
+    return chosen / detected;
+}
 
-private:
-    bool active = false;
-    std::optional<std::string> previous;
-};
+// Linux/BSD: decides the scale (querying Hyprland only when no valid GOMIDAS_SCALE is set) and
+// applies it to both halves — JUCE's global scale factor and GDK_SCALE for the WebKit child. Call
+// it first thing in initialise(): before the window exists (the WebKit child is forked while it is
+// built) and before any other thread starts (setenv is not safe against concurrent getenv). The
+// value stays set, so apps launched later inherit the scale the desktop chose — on Omarchy that is
+// the monitor's correct value, unlike the session's GDK_SCALE. Logs the choice. No-op elsewhere.
+void applyUiScale();
 }

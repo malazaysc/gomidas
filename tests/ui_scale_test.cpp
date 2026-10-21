@@ -49,6 +49,21 @@ int main()
     }
     if (chooseUiScale ("", std::nullopt, 1.0).overrideRejected) { std::printf ("FAIL: empty override reported as rejected\n"); ++failures; }
 
+    // The JUCE global factor that turns the display into the chosen scale.
+    auto near = [] (double a, double b) { return a > b - 1.0e-9 && a < b + 1.0e-9; };
+    struct { double display, global; int chosen; double want; const char* what; } factors[] = {
+        { 1.0, 1.0, 1, 1.0, "detected 1, choose 1 -> factor stays 1" },
+        { 1.0, 1.0, 2, 2.0, "detected 1, choose 2 -> factor 2" },
+        { 2.0, 1.0, 2, 1.0, "detected 2 (desktop), choose 2 -> factor 1" },
+        { 2.0, 1.0, 1, 0.5, "detected 2, override 1 -> factor 0.5" },
+        { 4.0, 2.0, 2, 1.0, "display 4 with global 2 already applied (detected 2), choose 2 -> 1" },
+        { 1.5, 1.0, 2, 2.0 / 1.5, "fractional desktop 1.5, choose 2" },
+        { 0.0, 1.0, 2, 1.0, "no display scale -> unchanged" },
+    };
+    for (const auto& f : factors)
+        if (! near (gomidas::globalScaleFactorFor (f.display, f.global, f.chosen), f.want))
+        { std::printf ("FAIL: %s (got %f, want %f)\n", f.what, gomidas::globalScaleFactorFor (f.display, f.global, f.chosen), f.want); ++failures; }
+
     if (failures == 0)
         std::printf ("PASS: ui_scale_test\n");
     return failures == 0 ? 0 : 1;

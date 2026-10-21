@@ -1,4 +1,5 @@
 #include "UiScale.h"
+#include <string>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <iostream>
 
@@ -7,7 +8,10 @@ namespace gomidas
 #if JUCE_LINUX || JUCE_BSD
 namespace
 {
-    // stdout of `hyprctl -j <args>`, or empty if hyprctl is missing, slow or fails.
+    // stdout of `hyprctl -j <args>`, or empty if hyprctl is missing, slow or fails. Waits FIRST and
+    // reads after: readAllProcessOutput blocks until the child closes stdout, so reading first
+    // would let a hung hyprctl (stalled compositor, stale socket) freeze startup with no limit.
+    // The JSON is a few KB, well inside a pipe buffer, so the child can finish before we read.
     juce::var hyprctlJson (const juce::StringArray& args)
     {
         juce::ChildProcess process;
@@ -15,10 +19,14 @@ namespace
         command.addArray (args);
         if (! process.start (command, juce::ChildProcess::wantStdOut))
             return {};
-        const auto output = process.readAllProcessOutput();
-        if (! process.waitForProcessToFinish (1000) || process.getExitCode() != 0)
+        if (! process.waitForProcessToFinish (1000))
+        {
+            process.kill();
             return {};
-        return juce::JSON::parse (output);
+        }
+        if (process.getExitCode() != 0)
+            return {};
+        return juce::JSON::parse (process.readAllProcessOutput());
     }
 
     std::optional<HyprlandInfo> queryHyprland()
@@ -61,57 +69,41 @@ namespace
     }
 }
 
-int applyUiScale()
+void applyUiScale()
 {
     auto& desktop = juce::Desktop::getInstance();
     const auto* display = desktop.getDisplays().getPrimaryDisplay();
-    if (display == nullptr)
-        return 0;
-
-    // JUCE's own per-display scale (what it read from the desktop), without any global factor.
     const auto globalNow = (double) desktop.getGlobalScaleFactor();
-    const auto detected = globalNow > 0 ? display->scale / globalNow : display->scale;
+    const auto detected = display != nullptr && globalNow > 0 ? display->scale / globalNow : 1.0;
 
+    // A valid override makes the Hyprland query irrelevant — and is the escape hatch if it misbehaves.
     const char* overrideValue = std::getenv ("GOMIDAS_SCALE");
-    const auto hyprland = queryHyprland();
-    const auto choice = chooseUiScale (overrideValue, hyprland, detected);
+    auto choice = chooseUiScale (overrideValue, std::nullopt, detected);
+    std::optional<HyprlandInfo> hyprland;
+    if (choice.source != UiScaleChoice::Source::override)
+    {
+        hyprland = queryHyprland();
+        choice = chooseUiScale (overrideValue, hyprland, detected);
+    }
 
-    // Display::scale is (JUCE's per-display scale) x (global factor): make the product the choice.
-    if (detected > 0 && std::abs (choice.scale / detected - globalNow) > 1.0e-6)
-        desktop.setGlobalScaleFactor ((float) (choice.scale / detected));
+    if (display != nullptr)
+    {
+        const auto factor = globalScaleFactorFor (display->scale, globalNow, choice.scale);
+        if (std::abs (factor - globalNow) > 1.0e-6)
+            desktop.setGlobalScaleFactor ((float) factor);
+    }
+
+    // Always set it — even without a display — so the session's GDK_SCALE never reaches WebKit.
+    ::setenv ("GDK_SCALE", std::to_string (choice.scale).c_str(), 1);
 
     std::cerr << "[Gomidas] UI scale " << choice.scale << " (" << describe (choice.source);
     if (hyprland.has_value())
         std::cerr << "; monitor scale " << hyprland->monitorScale;
-    std::cerr << "; JUCE detected " << detected << ")" << std::endl;
+    std::cerr << "; JUCE detected " << detected << (display == nullptr ? ", no display info" : "") << ")" << std::endl;
     if (choice.overrideRejected)
         std::cerr << "[Gomidas] ignored GOMIDAS_SCALE=" << overrideValue << " (expected an integer 1-4)" << std::endl;
-
-    return choice.scale;
-}
-
-ScopedGdkScale::ScopedGdkScale (int scale)
-{
-    if (scale <= 0)
-        return;
-    if (const char* old = std::getenv ("GDK_SCALE"))
-        previous = std::string (old);
-    ::setenv ("GDK_SCALE", std::to_string (scale).c_str(), 1);
-    active = true;
-}
-
-ScopedGdkScale::~ScopedGdkScale()
-{
-    if (! active)
-        return;
-    if (previous.has_value())
-        ::setenv ("GDK_SCALE", previous->c_str(), 1);
-    else
-        ::unsetenv ("GDK_SCALE");
 }
 #else
-int applyUiScale() { return 0; }
-ScopedGdkScale::ScopedGdkScale (int) {}
-ScopedGdkScale::~ScopedGdkScale() {}
+void applyUiScale() {}
 #endif
 }

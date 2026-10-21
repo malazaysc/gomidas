@@ -233,7 +233,8 @@ if(GOMIDAS_BUILD_TESTS)
   set_target_properties(asset_bytes_test PROPERTIES CXX_STANDARD 20)
   add_test(NAME asset_bytes COMMAND asset_bytes_test)
 
-  # One UI scale for JUCE and the WebKitGTK view, from the display's DPI (GOM-92). Header-only.
+  # One UI scale for JUCE and the WebKitGTK view: GOMIDAS_SCALE, else Hyprland's monitor scale,
+  # else the desktop's setting — never a DPI guess (GOM-92). Header-only.
   add_executable(ui_scale_test tests/ui_scale_test.cpp)
   target_include_directories(ui_scale_test PRIVATE src)
   set_target_properties(ui_scale_test PROPERTIES CXX_STANDARD 20)
