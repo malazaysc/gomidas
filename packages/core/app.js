@@ -484,7 +484,7 @@ function chevronFor(side, collapsed) {
   const name = side === 'left' ? (collapsed ? 'chevron-right' : 'chevron-left')
              : side === 'right' ? (collapsed ? 'chevron-left' : 'chevron-right')
              : (collapsed ? 'chevron-up' : 'chevron-down');
-  return window.Icons ? window.Icons.use(name, 'sm') : '';
+  return window.Icons.use(name, 'sm');   // defined by index.html's inline script, before any of these files
 }
 function initDrawers() {
   const defs = [
@@ -691,7 +691,7 @@ function trackRowHtml(t, i) {
   return '<div class="m-track" data-i="' + i + '">' +
     '<select class="m-inst">' + inst + '</select>' +
     '<select class="m-tuning"' + (isDrums ? ' style="visibility:hidden"' : '') + '>' + (isDrums ? '' : tuningOptions(t.kind, t.tuning)) + '</select>' +
-    '<button class="m-del" title="remove track">' + (window.Icons ? window.Icons.use('trash', 'sm') : 'x') + '</button>' +
+    '<button class="m-del" title="remove track">' + window.Icons.use('trash', 'sm') + '</button>' +
   '</div>';
 }
 function openNewDialog(presetKind) {

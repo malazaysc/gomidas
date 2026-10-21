@@ -8,13 +8,13 @@
   const SINGLE_INLAY = new Set([3, 5, 7, 9, 15, 17, 19, 21]);
   const DOUBLE_INLAY = new Set([12, 24]);
   const DURS = [
-    { v: 1, label: '𝅝', name: 'whole' },
-    { v: 2, label: '𝅗𝅥', name: 'half' },
-    { v: 4, label: '♩', name: 'quarter' },
-    { v: 8, label: '♪', name: 'eighth' },
-    { v: 16, label: '𝅘𝅥𝅯', name: '16th' },
-    { v: 32, label: '𝅘𝅥𝅰', name: '32nd' }
-  ].map(d => ({ v: d.v, name: d.name, label: ({ 1: '1', 2: '½', 4: '¼', 8: '⅛', 16: '16', 32: '32' })[d.v] }));
+    { v: 1, label: '1', name: 'whole' },
+    { v: 2, label: '½', name: 'half' },
+    { v: 4, label: '¼', name: 'quarter' },
+    { v: 8, label: '⅛', name: 'eighth' },
+    { v: 16, label: '16', name: '16th' },
+    { v: 32, label: '32', name: '32nd' }
+  ];
   const E = window.GomidasEditor;
   function nlog(m) { try { window.GomidasHost.log('[fretboard] ' + m); } catch (e) {} }
 
@@ -63,12 +63,12 @@
     const sig = el('div', 'eb-group');
     sig.appendChild(el('span', 'eb-label', 'bar & signatures'));
     sig.append(
-      mkMenu(SM(0xE262) + SM(0xE260), 'key signature', 'keysig', false, 'eb-smufl'),
+      music(mkMenu('', 'key signature', 'keysig'), [0xE262, 0xE260]),
       mkMenu('4/4', 'time signature', 'timesig'),
       mkMenu('|:', 'repeat start', 'repeatstart'),
       mkMenu(':|', 'repeat end', 'repeatend'),
       mkMenu('TF', 'triplet feel', 'tripletfeel'),
-      mkMenu(SM(0xE4C0), 'fermata', 'fermata', false, 'eb-smufl'),
+      music(mkMenu('', 'fermata', 'fermata'), 0xE4C0),
       mkMenu('T', 'text', 'text')
     );
     bar.appendChild(sig);
@@ -94,7 +94,7 @@
       durs.appendChild(b);
     });
     dotBtn = mkBtn('.', 'dotted (.)', () => E.toggleDot());
-    dot2Btn = smufl(mkBtn(SM(0xE1E7) + SM(0xE1E7), 'double dotted' + sc('doubleDot'), () => E.toggleDoubleDot()));
+    dot2Btn = music(mkBtn('', 'double dotted' + sc('doubleDot'), () => E.toggleDoubleDot()), [0xE1E7, 0xE1E7]);
     dotBtn.classList.add('eb-sq'); dot2Btn.classList.add('eb-sq');
     durs.append(dotBtn, dot2Btn);
     bar.appendChild(durs);
@@ -127,43 +127,38 @@
     const fx = el('div', 'eb-group');
     fx.appendChild(el('span', 'eb-label', 'articulations'));
     pmBtn = mkBtn('P.M.', 'palm mute (P / Shift+P)', () => E.palmMute());
-    deadBtn = smufl(mkBtn(SM(0xE0A9), 'dead note (X)', () => E.deadNote()));
+    deadBtn = music(mkBtn('', 'dead note (X)', () => E.deadNote()), 0xE0A9);
     lrBtn = mkBtn('L.R.', 'let ring (I)', () => E.letRing());
-    tieBtn = smufl(mkBtn(SM(0xE1FD), 'tie (L / Shift+L)', () => E.tieNote()));
+    tieBtn = music(mkBtn('', 'tie (L / Shift+L)', () => E.tieNote()), 0xE1FD);
     hpBtn = mkBtn('H', 'hammer-on / pull-off (H)', () => E.hammerPull());
     slideBtn = mkBtn('sl', 'legato slide (S)', () => E.slideNote(false));
     ghostBtn = mkBtn('gh', 'ghost note (O)', () => E.ghostNote());
-    stacBtn = smufl(mkBtn(SM(0xE4A2), 'staccato (!)', () => E.staccato()));
+    stacBtn = music(mkBtn('', 'staccato (!)', () => E.staccato()), 0xE4A2);
     accentBtn = mkBtn('>', 'accent (;) · heavy (:)', () => E.accent(false));
-    harmBtn = smufl(mkBtn(SM(0xE0D9), 'natural harmonic (Y)', () => E.naturalHarmonic()));
-    vibBtn = smufl(mkBtn(SM(0xEAB2) + SM(0xEAB2), 'vibrato (V)', () => E.vibratoNote()));
+    harmBtn = music(mkBtn('', 'natural harmonic (Y)', () => E.naturalHarmonic()), 0xE0D9);
+    vibBtn = music(mkBtn('', 'vibrato (V)', () => E.vibratoNote()), [0xEAB2, 0xEAB2]);
     [pmBtn, deadBtn, lrBtn, tieBtn, hpBtn, slideBtn, ghostBtn, stacBtn, accentBtn, harmBtn, vibBtn]
       .forEach(b => b.classList.add('eb-sq'));
     fx.append(pmBtn, deadBtn, lrBtn, tieBtn, hpBtn, slideBtn, ghostBtn, stacBtn, accentBtn, harmBtn, vibBtn);
     // more fx (wired through the menu dispatch; no per-state highlight)
-    // A number is a SMuFL code point drawn in Bravura (shipped); { icon } is a sprite icon (the
-    // SMuFL arpeggios are staff-height and overflow a button); a string is plain text, which must
-    // stay inside what any sans font covers (GOM-93 — no optional system symbol fonts).
+    // Faces: { m } = SMuFL code point(s) drawn in Bravura (shipped); { icon } = sprite icon (the
+    // SMuFL arpeggios are staff-height and overflow a button); a plain string = text, which must stay
+    // inside what any sans font covers (GOM-93; tests/ui-glyphs.test.js enforces it).
     [
-      ['sh', 'shift slide', 'shiftslide'], [[0xEAB3, 0xEAB3], 'wide vibrato', 'widevibrato'],
-      [0xE846, 'brush up', 'brushup'], [0xE847, 'brush down', 'brushdown'],
+      ['sh', 'shift slide', 'shiftslide'], [{ m: [0xEAB3, 0xEAB3] }, 'wide vibrato', 'widevibrato'],
+      [{ m: 0xE846 }, 'brush up', 'brushup'], [{ m: 0xE847 }, 'brush down', 'brushdown'],
       [{ icon: 'arp-up' }, 'arpeggio up', 'arpup'], [{ icon: 'arp-down' }, 'arpeggio down', 'arpdown'],
-      [0xE612, 'pick stroke up', 'pickup'], [0xE610, 'pick stroke down', 'pickdown'],
-      ['tr', 'trill', 'trill'], [0xE222, 'tremolo picking', 'tremolo'],
+      [{ m: 0xE612 }, 'pick stroke up', 'pickup'], [{ m: 0xE610 }, 'pick stroke down', 'pickdown'],
+      ['tr', 'trill', 'trill'], [{ m: 0xE222 }, 'tremolo picking', 'tremolo'],
       ['gr', 'grace note', 'grace'], ['slap', 'slap', 'slap'], ['pop', 'pop', 'pop'],
-      [0xE843, 'fade in', 'fadein'], [0xE844, 'fade out', 'fadeout'], [0xE845, 'volume swell', 'swell'],
+      [{ m: 0xE843 }, 'fade in', 'fadein'], [{ m: 0xE844 }, 'fade out', 'fadeout'], [{ m: 0xE845 }, 'volume swell', 'swell'],
       ['ps↑', 'pick slide up', 'pickslideup'], ['ps↓', 'pick slide down', 'pickslidedown'],
       ['AH', 'artificial harmonic', 'artharmonic'], ['PH', 'pinch harmonic', 'pinchharmonic']
-    ].forEach(([lbl, title, act]) => {
-      if (lbl && lbl.icon) {
-        const b = mkMenu('', title, 'fx:' + act, false, 'eb-sq');
-        b.innerHTML = IC(lbl.icon);
-        fx.appendChild(b);
-        return;
-      }
-      const music = typeof lbl !== 'string';
-      const text = music ? [].concat(lbl).map(SM).join('') : lbl;
-      fx.appendChild(mkMenu(text, title, 'fx:' + act, false, music ? 'eb-sq eb-smufl' : 'eb-sq'));
+    ].forEach(([face, title, act]) => {
+      const b = mkMenu(typeof face === 'string' ? face : '', title, 'fx:' + act, false, 'eb-sq');
+      if (face.m) music(b, face.m);
+      else if (face.icon) b.innerHTML = IC(face.icon);
+      fx.appendChild(b);
     });
     bar.appendChild(fx);
 
@@ -182,11 +177,43 @@
 
   // ' (⌘Z)' on macOS, ' (Ctrl+Z)' elsewhere — from the same table the keys resolve through (GOM-87).
   function sc(action) { return window.GomidasKeymap ? window.GomidasKeymap.hint(action) : ''; }
-  // A SMuFL code point as a string, and the class that draws a button face in Bravura — the music
-  // font we already ship for alphaTab. Symbols from optional system fonts render as boxes on a
-  // bare Linux install (GOM-93).
-  function SM(cp) { return String.fromCodePoint(cp); }
-  function smufl(b) { b.classList.add('eb-smufl'); return b; }
+  // A music button face: SMuFL code point(s) drawn in Bravura, the music font we already ship for
+  // alphaTab — symbols from optional system fonts render as boxes on a bare Linux install (GOM-93).
+  // SMuFL glyphs are drawn for a staff (sized to a staff space, placed on its lines), so each face
+  // gets its own size and vertical nudge to sit centred in a 28px button; values measured from the
+  // glyph boxes in Bravura. The glyph is aria-hidden, so the button's name is its title.
+  const MUSIC_FACE = {
+    0xE262: { px: 20 }, 0xE260: { px: 20 },           // sharp, flat (key signature)
+    0xE4C0: { px: 20, dy: 3 },                         // fermata
+    0xE1E7: { px: 30, dy: -2 },                        // augmentation dot (double dot)
+    0xE0A9: { px: 26 },                                // dead note: X notehead
+    0xE1FD: { px: 22, dy: -6 },                        // tie
+    0xE4A2: { px: 34, dy: -1 },                        // staccato
+    0xE0D9: { px: 26 },                                // natural harmonic: diamond notehead
+    0xEAB2: { px: 22 }, 0xEAB3: { px: 20 },            // vibrato, wide vibrato (tiling segments)
+    0xE846: { px: 18, dy: 5 }, 0xE847: { px: 18, dy: 5 },   // brush up / down
+    0xE612: { px: 20, dy: 3 }, 0xE610: { px: 20, dy: 3 },   // pick stroke (up / down bow)
+    0xE222: { px: 18 },                                // tremolo picking
+    0xE843: { px: 20, dy: 4 }, 0xE844: { px: 20, dy: 4 }, 0xE845: { px: 20, dy: 4 }  // fades, swell
+  };
+  // Pairs that are separate symbols (♯♭, the two dots) get a gap; tiling segments (vibrato) must not.
+  const MUSIC_SPACED = new Set([0xE262, 0xE1E7]);
+  function music(b, cps) {
+    const list = [].concat(cps);
+    const f = MUSIC_FACE[list[0]] || { px: 20 };
+    const span = document.createElement('span');
+    span.className = 'smf';
+    span.setAttribute('aria-hidden', 'true');
+    span.textContent = list.map((cp) => String.fromCodePoint(cp)).join('');
+    span.style.fontSize = f.px + 'px';
+    if (f.dy) span.style.top = f.dy + 'px';
+    if (list.length > 1 && MUSIC_SPACED.has(list[0])) span.style.letterSpacing = '0.15em';
+    b.textContent = '';
+    b.appendChild(span);
+    b.classList.add('eb-smufl');
+    b.setAttribute('aria-label', b.title);
+    return b;
+  }
   function mkBtn(label, title, fn) {
     const b = el('button', 'eb-btn', label);
     b.title = title;
@@ -713,7 +740,7 @@
     if (vibBtn) vibBtn.classList.toggle('active', !!s.vibrato);
     voiceBtns.forEach((b, i) => b && b.classList.toggle('active', i === (s.curVoice | 0)));
     if (playBtn) playBtn.innerHTML = window.Icons ? window.Icons.use(s.isPlaying ? 'pause' : 'play', 'lg')
-                                                  : (s.isPlaying ? '\u25A0' : '>');
+                                                  : (s.isPlaying ? '||' : '>');
     if (trackLabel) trackLabel.textContent = (s.curTrackIndex + 1) + '. ' + s.trackName;
     if (posLabel) posLabel.textContent = s.pos;
     const tsEl = document.getElementById('tp-timesig');

@@ -103,8 +103,8 @@
     /* Music-symbol button faces: SMuFL code points in Bravura, which ships with the app for alphaTab.
        Symbols from optional system fonts render as boxes on a bare Linux install (GOM-93). */
     @font-face { font-family: 'GomidasMusic'; src: url('Bravura.woff2') format('woff2'), url('Bravura.woff') format('woff'); }
-    .eb-btn.eb-smufl { font-family: 'GomidasMusic'; font-size: 20px; line-height: 1; letter-spacing: 0.15em;
-                       padding-top: 0; padding-bottom: 0; overflow: hidden; }
+    .eb-btn.eb-smufl { padding-top: 0; padding-bottom: 0; overflow: hidden; }
+    .smf { font-family: 'GomidasMusic'; line-height: 1; position: relative; display: inline-block; }
     .pl-card .pl-fav.on .ic { fill: currentColor; }
     /* count-in visual countdown (big centered number over the score) */
     #countdown-ov { position: fixed; left: 50%; top: 46%; transform: translate(-50%, -50%);
@@ -625,7 +625,7 @@
 
       <div id="tp-trackchip">
         <div id="tp-track-line"><svg class="ic sm" style="color:var(--accent)"><use href="#ic-guitar"></use></svg><span id="tp-track">—</span></div>
-        <div id="tp-sub"><span id="tp-pos">bar 1 · beat 1</span><span id="tp-timesig" title="Time signature (click to change)">4/4</span><span class="tp-tempo">♩ = <input id="tempo" type="number" min="40" max="240" step="1" value="120" style="width:44px;height:20px;padding:0 4px;" /></span></div>
+        <div id="tp-sub"><span id="tp-pos">bar 1 · beat 1</span><span id="tp-timesig" title="Time signature (click to change)">4/4</span><span class="tp-tempo"><span class="smf" aria-hidden="true" style="font-size:18px;top:2px">&#xECA5;</span> = <input id="tempo" type="number" min="40" max="240" step="1" value="120" style="width:44px;height:20px;padding:0 4px;" /></span></div>
       </div>
 
       <button class="tp-btn" id="loop-btn" title="Loop selection (A/B)"><svg class="ic"><use href="#ic-loop"></use></svg></button>
