@@ -1,10 +1,10 @@
 // Gomidas — browser shell (GMD-38, docs/WEB_PORT.md §10 Phase 7).
 //
 // Supplies the two things the desktop host provides natively and the browser does not:
-//   1. A MENU BAR. macOS gets a real juce::MenuBarModel; caps.nativeMenus is false on web, so
-//      without this every menu-only feature (wide vibrato, artificial harmonic, tremolo bar,
-//      the whole Effects menu) is unreachable in a browser. Built from core/menus.ts, which is
-//      GENERATED from the same C++ table the desktop menu uses.
+//   1. A MENU BAR. macOS gets a real juce::MenuBarModel; caps.nativeMenus is false on web AND on
+//      the Linux/Windows desktop (no global menu there, GOM-86), so without this every menu-only
+//      feature (Export .gp, the whole Effects menu, Open Recent) is unreachable. Built from
+//      core/menus.ts, which is GENERATED from the same C++ table the desktop menu uses.
 //   2. CAPABILITY GATING. §2.3: "The UI must hide what a backend cannot do rather than calling
 //      it and failing." Live input and plugin hosting do not exist in a browser and never will.
 //
@@ -20,23 +20,89 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return n;
 }
 
-/** Actions that cannot work in a browser, keyed by the capability they need. */
+/** Actions keyed by the capability they need (the browser lacks liveInput/pluginHost; every
+ *  host without a native menu bar — browser and Linux/Windows desktop — lacks nativeMenus). */
 const CAP_ACTIONS: Record<string, string[]> = {
   liveInput: ['liveinput'],   // the tuner is a transport button, not a menu action
   pluginHost: ['loadplugin', 'showplugineditor', 'clearplugin'],
+  // Window > Minimize stays off where there is no native menu bar: Hyprland and other tiling
+  // compositors ignore the iconify request, so an enabled item would silently do nothing.
   nativeMenus: ['minimize']
 };
 
-function actionBlocked(action: string, caps: any): boolean {
+/** Actions keyed by the host method they call — present on the desktop (any OS), absent on web.
+ *  (Minimize is gated by CAP_ACTIONS.nativeMenus alone, which already excludes the browser.) */
+const HOST_ACTIONS: Record<string, string> = { about: 'showAbout' };
+
+/** Desktop-only UI is gated on the host method it calls — present on the desktop (any OS). */
+function hostHas(host: any, method: string): boolean {
+  return !!host && typeof host[method] === 'function';
+}
+
+function actionBlocked(action: string, caps: any, host?: any): boolean {
   for (const cap of Object.keys(CAP_ACTIONS)) {
     if (!caps[cap] && CAP_ACTIONS[cap].indexOf(action) >= 0) return true;
   }
-  return false;
+  const method = HOST_ACTIONS[action];
+  return !!method && !hostHas(host, method);
 }
 
-function buildMenuBar(caps: any): void {
+// ---- Open Recent (desktop hosts without a global menu: Linux/Windows, GOM-86) ---------------
+// Native owns the list (MainComponent recentFiles) and pushes {name, path} pairs to
+// window.gomidasRecentFiles whenever it changes; opening routes through gomidasConfirmOpenRecent
+// so the unsaved-changes guard runs, exactly like the macOS native submenu. It passes the PATH,
+// not the position, so a list that changed since the last push can't open the wrong file.
+interface RecentEntry { name: string; path: string; }
+let recentHost: HTMLElement | null = null;
+let recentBackend: any = null;      // the host that gated the section in — Clear goes to the same one
+let closeMenus: () => void = () => {};
+let recentFiles: RecentEntry[] = [];
+
+function renderRecent(): void {
+  if (!recentHost) return;
+  recentHost.textContent = '';
+  const label = el('div', 'wm-group', 'Open Recent');
+  label.addEventListener('click', (ev) => ev.stopPropagation());   // a heading, not an item
+  recentHost.appendChild(label);
+  if (recentFiles.length === 0) {
+    const none = el('button', 'wm-item wm-sub wm-disabled', '(no recent files)');
+    (none as HTMLButtonElement).disabled = true;
+    recentHost.appendChild(none);
+    return;
+  }
+  for (const f of recentFiles) {
+    const b = el('button', 'wm-item wm-sub', f.name);
+    b.title = f.path;
+    b.addEventListener('click', () => {
+      closeMenus();
+      try { (window as any).gomidasConfirmOpenRecent && (window as any).gomidasConfirmOpenRecent(f.path); } catch (e) { /* keep the menu alive */ }
+    });
+    recentHost.appendChild(b);
+  }
+  if (!hostHas(recentBackend, 'clearRecent')) return;
+  recentHost.appendChild(el('div', 'wm-sep'));    // as on the macOS submenu: Clear is not a file
+  const clear = el('button', 'wm-item wm-sub', 'Clear Recent');
+  clear.addEventListener('click', () => {
+    closeMenus();
+    recentBackend.clearRecent();
+  });
+  recentHost.appendChild(clear);
+}
+
+/** Native -> page: the current recent-files list, most recent first. */
+function setRecentFiles(list: unknown): void {
+  recentFiles = Array.isArray(list)
+    ? list.filter((f) => f && typeof f.path === 'string')
+          .map((f) => ({ path: f.path, name: typeof f.name === 'string' ? f.name : f.path }))
+    : [];
+  renderRecent();
+}
+
+function buildMenuBar(caps: any, host?: any): void {
   const menus = (window as any).GomidasMenus && (window as any).GomidasMenus.GOMIDAS_MENUS;
   if (!menus || document.getElementById('webmenubar')) return;
+  recentHost = null;
+  recentBackend = host;
 
   const bar = el('div', 'wm-bar');
   bar.id = 'webmenubar';
@@ -45,6 +111,7 @@ function buildMenuBar(caps: any): void {
   const closeAll = () => {
     if (openMenu) { openMenu.classList.remove('wm-open'); openMenu = null; }
   };
+  closeMenus = closeAll;
 
   for (const menu of menus) {
     const wrap = el('div', 'wm-menu');
@@ -53,12 +120,13 @@ function buildMenuBar(caps: any): void {
 
     for (const item of menu.items) {
       if (item.label === '-') { list.appendChild(el('div', 'wm-sep')); continue; }
-      const blocked = actionBlocked(item.action, caps);
+      const blocked = actionBlocked(item.action, caps, host);
       const b = el('button', 'wm-item' + (blocked ? ' wm-disabled' : ''), item.label);
       if (blocked) {
         // Kept visible but inert, with the reason — silently omitting items makes the web build
         // look broken rather than different.
-        b.title = 'Not available in the browser (desktop app only)';
+        b.title = caps.fileSystem === 'native' ? 'Not available on this system'
+                                               : 'Not available in the browser (desktop app only)';
         (b as HTMLButtonElement).disabled = true;
       } else {
         b.addEventListener('click', () => {
@@ -69,6 +137,12 @@ function buildMenuBar(caps: any): void {
         });
       }
       list.appendChild(b);
+      // Desktop host: Open Recent right after File > Open, where macOS puts its native submenu.
+      if (item.action === 'open' && hostHas(host, 'requestRecentFiles')) {
+        recentHost = el('div', 'wm-recent');
+        list.appendChild(recentHost);
+        renderRecent();
+      }
     }
 
     title.addEventListener('click', (ev) => {
@@ -122,6 +196,8 @@ function styles(): string {
   .wm-item.wm-disabled { color: #6a6a74; }
   .wm-item.wm-disabled:hover { background: none; color: #6a6a74; }
   .wm-sep { height: 1px; background: #33333d; margin: 4px 8px; }
+  .wm-group { color: #8a8a96; padding: 5px 14px 2px; font-size: 11px; }
+  .wm-item.wm-sub { padding-left: 26px; }
   `;
 }
 
@@ -131,14 +207,17 @@ function initWebShell(): void {
   const style = document.createElement('style');
   style.textContent = styles();
   document.head.appendChild(style);
-  buildMenuBar(caps);
+  const host = (window as any).GomidasHost;
+  buildMenuBar(caps, host);
   gateTransport(caps);
+  if (hostHas(host, 'requestRecentFiles')) host.requestRecentFiles();
 }
 
-  const api = { initWebShell, buildMenuBar, gateTransport, actionBlocked, CAP_ACTIONS };
+  const api = { initWebShell, buildMenuBar, gateTransport, actionBlocked, setRecentFiles, CAP_ACTIONS };
   if (typeof module !== 'undefined' && module && module.exports) module.exports = api;
   if (typeof window !== 'undefined') {
     (window as any).GomidasWebShell = api;
+    (window as any).gomidasRecentFiles = setRecentFiles;   // called by MainComponent by literal name
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initWebShell);
     else initWebShell();
   }

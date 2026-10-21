@@ -166,10 +166,18 @@ open "build/Gomidas_artefacts/Debug/Gomidas.app"   # macOS
 **Linux** (GOM-84) needs `webkit2gtk-4.1 gtk3 alsa-lib freetype2 fontconfig pkgconf python` and, on
 PipeWire, `pipewire-alsa`. `NEEDS_WEB_BROWSER TRUE` on `juce_add_gui_app` is what links WebKitGTK —
 JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exists on macOS, so it is
-`#if JUCE_MAC`-guarded. **Linux builds and launches but is not at parity yet** — known gaps, each
-ticketed: no menu, so menu-only actions (Export .gp, Open Recent, Panic) are unreachable (GOM-86);
-Ctrl reports as both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts
-are dead (GOM-87); `recent.txt` and plugin-chooser paths (GOM-88).
+guarded by `#if GOMIDAS_NATIVE_MENUS` (1 on macOS). **Off macOS the menu is the page's own HTML menu bar** (GOM-86): the JUCE
+backend's `caps.nativeMenus` comes from **native**: `GOMIDAS_NATIVE_MENUS` (`MainComponent.h`, the switch
+that also compiles in `setMacMainMenu`) is published as `initialisationData.gomidasNativeMenus`, so the
+page can't disagree with the binary (missing or malformed reads as `false`: the HTML bar shows), and `core/webshell.ts` draws the bar from the same generated `core/menus.ts` table whenever
+it is false. Open Recent lives in File there too: native pushes `{name, path}` pairs to `window.gomidasRecentFiles`
+whenever it changes (`pushRecentFiles`, a no-op on macOS), the page calls `getRecentFiles` / `clearRecent`,
+and both menus open by **path** — never position, since the list can change while the unsaved-changes
+guard is up; native opens only a path it put in the list itself (anything else would let page script read arbitrary
+files through the bridge), and says so when a file has left the list or no longer exists.
+**Linux builds and launches but is not at parity yet** — known gaps, each ticketed: Ctrl reports as
+both ⌘ and ⌃, so the ⌃ shortcuts do the ⌘ action and browser-side Ctrl shortcuts are dead (GOM-87);
+`recent.txt` and plugin-chooser paths (GOM-88); no Quit/Exit item in the HTML menu (GOM-101).
 - **Bundled resources live in one place per OS** (GOM-85): `src/AppResources.h` `resourcesDir()` —
   `Gomidas.app/Contents/Resources` on macOS, `<real binary dir>/resources` elsewhere. Off macOS CMake
   puts `assets/instruments` there as a mirror (re-done when a source preset changes; deletions and

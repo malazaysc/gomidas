@@ -4,8 +4,8 @@
 //   cd web && node tools/extract-menus.mjs
 // tests/menus.test.js re-parses the C++ and fails if this drifts.
 //
-// The desktop app builds a real macOS menu bar from the C++ table; the browser has no native
-// menus (caps.nativeMenus === false) and renders its own from this copy. Both dispatch the same
+// The macOS app builds a real menu bar from the C++ table; the browser and the Linux/Windows
+// desktop have no native menus (caps.nativeMenus === false) and render their own from this copy. Both dispatch the same
 // action strings through window.gomidasMenu.
 
 // SCOPE NOTE: body wrapped in an IIFE — these emit as plain <script> files sharing one global scope.

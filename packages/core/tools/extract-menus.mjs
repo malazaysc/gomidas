@@ -1,8 +1,8 @@
 // Generates web/core/menus.ts from the menu table in src/ui/MainComponent.cpp.
 //
-// The C++ table is the SINGLE SOURCE OF TRUTH: the desktop app builds a real macOS menu bar from
-// it, and the browser has no native menus (caps.nativeMenus === false) so it renders its own from
-// this generated copy. Hand-maintaining two copies of 157 items would drift within a week.
+// The C++ table is the SINGLE SOURCE OF TRUTH: the macOS app builds a real menu bar from it; the
+// browser AND the Linux/Windows desktop have no native menus (caps.nativeMenus === false, GOM-86)
+// so they render their own from this generated copy — the only menu those desktops have. Hand-maintaining two copies of 157 items would drift within a week.
 //
 // Run: node tools/extract-menus.mjs      (checked by tests/menus.test.js, so CI catches drift)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -57,8 +57,8 @@ const banner = `// GENERATED FILE — do not edit by hand.
 //   cd web && node tools/extract-menus.mjs
 // tests/menus.test.js re-parses the C++ and fails if this drifts.
 //
-// The desktop app builds a real macOS menu bar from the C++ table; the browser has no native
-// menus (caps.nativeMenus === false) and renders its own from this copy. Both dispatch the same
+// The macOS app builds a real menu bar from the C++ table; the browser and the Linux/Windows
+// desktop have no native menus (caps.nativeMenus === false) and render their own from this copy. Both dispatch the same
 // action strings through window.gomidasMenu.
 
 // SCOPE NOTE: body wrapped in an IIFE — these emit as plain <script> files sharing one global scope.
