@@ -30,12 +30,20 @@ int main()
            "application/json gets a BOM");
     check (str (gomidas::assetBytes (html.data(), html.size(), "image/svg+xml", true)) == bom + html,
            "image/svg+xml gets a BOM");
+    check (str (gomidas::assetBytes (html.data(), html.size(), "application/manifest+json", true)) == bom + html,
+           "+json gets a BOM");
+    check (str (gomidas::assetBytes (html.data(), html.size(), "Application/JSON; charset=utf-8", true)) == bom + html,
+           "MIME matching ignores case and parameters");
+
+    const std::string utf16 ("\xFF\xFE" "N\0e\0w\0", 8);
+    check (str (gomidas::assetBytes (utf16.data(), utf16.size(), "text/plain", true)) == utf16,
+           "a UTF-16 asset keeps its own BOM and gets no UTF-8 one");
 
     const std::string withBom = bom + html;
     check (str (gomidas::assetBytes (withBom.data(), withBom.size(), "text/html", true)) == withBom,
            "an asset that already has a BOM is not given a second one");
 
-    const std::string font = "wOF2\x00\x01";
+    const std::string font ("wOF2\x00\x01\xEF\xBB", 8);   // NULs and high bytes, kept by explicit length
     check (str (gomidas::assetBytes (font.data(), font.size(), "font/woff2", true)) == font,
            "binary assets are untouched");
     check (str (gomidas::assetBytes (font.data(), font.size(), "image/webp", true)) == font,

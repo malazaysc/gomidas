@@ -176,13 +176,14 @@ plugin-chooser paths (GOM-88); no Linux CI leg (GOM-89).
   document is sniffed as HTML and decodes as **windows-1252** — `<meta charset="utf-8">` and a
   `; charset=utf-8` MIME both do nothing. `serveResource` therefore serves every UTF-8 text asset (text/*,
   JSON, JS, XML/SVG) with a UTF-8 **BOM** on WebKitGTK platforms; the rule lives in `src/ui/AssetBytes.h`
-  and is pinned by `tests/asset_bytes_test.cpp`. A new UTF-8 asset type must be covered by
-  `isUtf8TextMime`. Probe the page with `document.characterSet` / `document.contentType` — that, not
-  the source bytes, is the truth.
-
-FetchContent only re-runs a patch step whose
-command changed, so the sfizz `PATCH_COMMAND` carries `patch_sfizz.py`'s SHA-256: editing the script
-re-patches an existing `build/_deps/sfizz-src` on the next configure. Every fix in it must stay idempotent.
+  and is pinned by `tests/asset_bytes_test.cpp`. Embedded text must be saved as UTF-8, and a new text
+  asset type must be covered by `isUtf8TextMime`. Consequence: on Linux an embedded text asset is 3
+  bytes longer than its source — anything that ever reads one as raw bytes (size checks, hashes) must
+  expect that. Probe the page with `document.characterSet` / `document.contentType` — that, not the
+  source bytes, is the truth. The underlying missing content type is GOM-94.
+- FetchContent only re-runs a patch step whose command changed, so the sfizz `PATCH_COMMAND` carries
+  `patch_sfizz.py`'s SHA-256: editing the script re-patches an existing `build/_deps/sfizz-src` on the
+  next configure. Every fix in it must stay idempotent.
 
 Root scripts: `pnpm build` / `test` / `typecheck` (packages/core) and `pnpm web:dev` /
 `web:build` / `web:preview` (apps/web). Per-package: `pnpm -C <dir> run <script>` — filter by
