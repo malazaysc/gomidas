@@ -36,12 +36,16 @@ set(SFIZZ_DEVTOOLS  OFF CACHE BOOL "" FORCE)
 set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(SFIZZ_USE_SNDFILE OFF CACHE BOOL "" FORCE)
 set(ENABLE_LTO      OFF CACHE BOOL "" FORCE)   # faster dev builds; revisit for release
+# sfizz 1.2.3 doesn't build cleanly with modern toolchains; patch_sfizz.py fixes the arm64
+# compile flags and an atomic_queue conformance error (Apple Silicon / clang) and a missing
+# <cstdint> in vendored abseil (GCC 16, Linux). The script's hash is passed as an argument the
+# script ignores: it puts the script's content into the patch step, so editing the script
+# re-patches an existing build/_deps/sfizz-src instead of silently keeping the old patch.
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_sfizz.py" GOMIDAS_SFIZZ_PATCH_HASH)
 FetchContent_Declare(sfizz
   GIT_REPOSITORY https://github.com/sfztools/sfizz.git
   GIT_TAG        1.2.3
-  # sfizz 1.2.3 doesn't build cleanly on arm64 + modern clang; patch_sfizz.py fixes
-  # the arm64 compile flags and an atomic_queue template-keyword conformance error.
-  PATCH_COMMAND  python3 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_sfizz.py")
+  PATCH_COMMAND  python3 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_sfizz.py" "${GOMIDAS_SFIZZ_PATCH_HASH}")
 # Build sfizz (and its vendored abseil) as C++17: 1.2.3 is a C++17-era codebase that
 # breaks under C++20 (uses the removed std::result_of, pre-char8_t u8"..." literals, etc.).
 # Drop to 17 just for sfizz's add_subdirectory, then restore 20 for our own target.

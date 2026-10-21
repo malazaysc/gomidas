@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Patch sfizz 1.2.3 so it builds with a modern toolchain on Apple Silicon.
+"""Patch sfizz 1.2.3 so it builds with modern toolchains (Apple Silicon clang, Linux GCC 16).
 
-Run from the sfizz source dir (this is FetchContent's PATCH_COMMAND cwd). Idempotent:
+Run from the sfizz source dir (this is FetchContent's PATCH_COMMAND cwd). CMake passes this
+file's SHA-256 as an argument, which is ignored here; it only exists so that editing this
+script re-runs the patch on an existing checkout. Every fix must therefore stay idempotent:
 every fix is a no-op if already applied or if upstream changed the code. Never fails the
 build on a missing/altered file — we'd rather let the compile surface a clear error.
 

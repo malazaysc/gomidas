@@ -163,9 +163,9 @@ open "build/Gomidas_artefacts/Debug/Gomidas.app"   # macOS
 **Linux** (GOM-84) needs `webkit2gtk-4.1 gtk3 alsa-lib freetype2 fontconfig pkgconf python` and, on
 PipeWire, `pipewire-alsa`. `NEEDS_WEB_BROWSER TRUE` on `juce_add_gui_app` is what links WebKitGTK —
 JUCE prefers `webkit2gtk-4.1` and falls back to 4.0. `setMacMainMenu` only exists on macOS, so it is
-`#if JUCE_MAC`-guarded and Linux has no menu yet (GOM-86). Changing `cmake/patch_sfizz.py` does **not**
-re-patch an existing `build/_deps/sfizz-src` — FetchContent runs the patch only on a fresh fetch, so run
-the script from that directory by hand or delete `build/_deps/sfizz-*`.
+`#if JUCE_MAC`-guarded and Linux has no menu yet (GOM-86). FetchContent only re-runs a patch step whose
+command changed, so the sfizz `PATCH_COMMAND` carries `patch_sfizz.py`'s SHA-256: editing the script
+re-patches an existing `build/_deps/sfizz-src` on the next configure. Every fix in it must stay idempotent.
 
 Root scripts: `pnpm build` / `test` / `typecheck` (packages/core) and `pnpm web:dev` /
 `web:build` / `web:preview` (apps/web). Per-package: `pnpm -C <dir> run <script>` — filter by
