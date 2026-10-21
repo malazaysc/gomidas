@@ -172,10 +172,13 @@ WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI re
 - ⚠️ **JUCE can miss the size a tiling WM gives the window as it maps it** (GOM-91). Measured under
   Hyprland: the X window had the tile's size while JUCE still believed its own 1280x820, in about 2
   launches in 5, with **no** ConfigureNotify reaching JUCE's handler at all (so not its serial check).
-  Re-requesting the bounds didn't help. `Main.cpp`'s `MainWindow` therefore polls the real size from the
-  X server (`src/platform/X11WindowSize.cpp`, its own TU because Xlib macros collide with JUCE) for
-  the first 3s and adopts it. Later resizes/re-tiles are delivered normally. Check with
-  `hyprctl clients -j` against a temporary `resized()` log — Hyprland's number is the truth.
+  Re-requesting the bounds didn't help. So after every map, `Main.cpp`'s `MainWindow` compares JUCE's
+  bounds with the X server's for up to 3s and adopts the real ones once (two identical reads first,
+  1px tolerance). The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
+  (exposed by `JUCE_GUI_BASICS_INCLUDE_XHEADERS`, which is why that TU stands alone — Xlib's macros),
+  converted back through JUCE's own scale maths. Don't open a second X connection or link libX11 —
+  JUCE loads Xlib at runtime on purpose. Check with `hyprctl clients -j` against a temporary
+  `resized()` log — Hyprland's number is the truth.
 - ⚠️ **WebKitGTK ignores the `Content-Type` JUCE sets on resource-provider responses** (GOM-90). JUCE
   only calls `webkit_uri_scheme_response_set_http_headers`, never `…_set_content_type` (not in 8.0.13,
   master or develop), so every embedded asset reaches the page as `application/octet-stream`. The

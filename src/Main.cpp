@@ -1,8 +1,6 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "ui/MainComponent.h"
-#if JUCE_LINUX || JUCE_BSD
- #include "platform/X11WindowSize.h"
-#endif
+#include "ui/X11WindowBounds.h"
 
 namespace gomidas
 {
@@ -41,36 +39,60 @@ public:
             setVisible (true);
 
            #if JUCE_LINUX || JUCE_BSD
-            startTimer (kSizeSyncIntervalMs);
+            startBoundsSync();
            #endif
         }
 
        #if JUCE_LINUX || JUCE_BSD
         // A tiling window manager (Hyprland, i3, … via XWayland) resizes the window as it maps it,
-        // and JUCE can miss that first ConfigureNotify: the X window has the tile's size while the
-        // content stays at its initial 1280x820, clipped or letterboxed (GOM-91). Later resizes are
-        // delivered fine, so for the first few seconds read the real size from the X server and
-        // adopt it if JUCE disagrees.
+        // and JUCE can miss that ConfigureNotify: the X window has the tile's bounds while the
+        // content stays at its initial 1280x820, clipped or letterboxed (GOM-91). Later resizes
+        // arrive normally, so after each map, briefly compare JUCE's bounds with the X server's
+        // and adopt the real ones once — only after two identical reads, so a resize the user is
+        // making right then is never fought, and with a 1 px tolerance for scale rounding.
+        void visibilityChanged() override
+        {
+            DocumentWindow::visibilityChanged();
+            if (isVisible())
+                startBoundsSync();
+        }
+
+        void startBoundsSync()
+        {
+            syncTicks = 0;
+            lastRead.reset();
+            startTimer (kSyncIntervalMs);
+        }
+
         void timerCallback() override
         {
-            if (++sizeSyncTicks * kSizeSyncIntervalMs >= kSizeSyncWindowMs)
+            if (++syncTicks * kSyncIntervalMs >= kSyncWindowMs)
                 stopTimer();
 
             auto* peer = getPeer();
-            int w = 0, h = 0;
-            if (peer == nullptr || ! queryX11WindowSize (peer->getNativeHandle(), w, h))
+            const auto real = peer != nullptr ? realPeerBounds (*peer) : std::nullopt;
+            if (! real.has_value())
                 return;
 
-            const auto scale = peer->getPlatformScaleFactor();
-            const auto logical = juce::Rectangle<double> (w, h) / (scale > 0 ? scale : 1.0);
-            const auto size = logical.toNearestInt();
-            if (size.getWidth() > 0 && size.getHeight() > 0 && (size.getWidth() != getWidth() || size.getHeight() != getHeight()))
-                setSize (size.getWidth(), size.getHeight());
+            const bool stable = lastRead.has_value() && *lastRead == *real;
+            lastRead = real;
+            if (! stable)
+                return;
+
+            const auto current = peer->getBounds();
+            auto differs = [] (int a, int b) { return std::abs (a - b) > 1; };
+            if (differs (real->getX(), current.getX()) || differs (real->getY(), current.getY())
+                || differs (real->getWidth(), current.getWidth()) || differs (real->getHeight(), current.getHeight()))
+            {
+                peer->setBounds (*real, false);   // updates the component; the X request equals the real bounds
+                stopTimer();
+            }
         }
 
-        static constexpr int kSizeSyncIntervalMs = 200;
-        static constexpr int kSizeSyncWindowMs   = 3000;
-        int sizeSyncTicks = 0;
+        static constexpr int kSyncIntervalMs = 200;
+        static constexpr int kSyncWindowMs   = 3000;
+        int syncTicks = 0;
+        std::optional<juce::Rectangle<int>> lastRead;
        #endif
 
         void closeButtonPressed() override
