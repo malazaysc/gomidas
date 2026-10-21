@@ -21,9 +21,6 @@ public:
     void systemRequestedQuit() override { quit(); }
 
     class MainWindow final : public juce::DocumentWindow
-                          #if JUCE_LINUX || JUCE_BSD
-                           , private juce::Timer
-                          #endif
     {
     public:
         explicit MainWindow (juce::String name)
@@ -37,63 +34,28 @@ public:
             setResizeLimits (900, 600, 4000, 2600);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
-
-           #if JUCE_LINUX || JUCE_BSD
-            startBoundsSync();
-           #endif
         }
 
-       #if JUCE_LINUX || JUCE_BSD
-        // A tiling window manager (Hyprland, i3, … via XWayland) resizes the window as it maps it,
-        // and JUCE can miss that ConfigureNotify: the X window has the tile's bounds while the
-        // content stays at its initial 1280x820, clipped or letterboxed (GOM-91). Later resizes
-        // arrive normally, so after each map, briefly compare JUCE's bounds with the X server's
-        // and adopt the real ones once — only after two identical reads, so a resize the user is
-        // making right then is never fought, and with a 1 px tolerance for scale rounding.
+        // Keep JUCE's bounds in step with what a tiling WM applied (GOM-91) — see X11BoundsSync.
         void visibilityChanged() override
         {
             DocumentWindow::visibilityChanged();
             if (isVisible())
-                startBoundsSync();
+                boundsSync.start();
         }
 
-        void startBoundsSync()
+        void activeWindowStatusChanged() override
         {
-            syncTicks = 0;
-            lastRead.reset();
-            startTimer (kSyncIntervalMs);
+            DocumentWindow::activeWindowStatusChanged();
+            if (isActiveWindow())
+                boundsSync.start();
         }
 
-        void timerCallback() override
+        void broughtToFront() override
         {
-            if (++syncTicks * kSyncIntervalMs >= kSyncWindowMs)
-                stopTimer();
-
-            auto* peer = getPeer();
-            const auto real = peer != nullptr ? realPeerBounds (*peer) : std::nullopt;
-            if (! real.has_value())
-                return;
-
-            const bool stable = lastRead.has_value() && *lastRead == *real;
-            lastRead = real;
-            if (! stable)
-                return;
-
-            const auto current = peer->getBounds();
-            auto differs = [] (int a, int b) { return std::abs (a - b) > 1; };
-            if (differs (real->getX(), current.getX()) || differs (real->getY(), current.getY())
-                || differs (real->getWidth(), current.getWidth()) || differs (real->getHeight(), current.getHeight()))
-            {
-                peer->setBounds (*real, false);   // updates the component; the X request equals the real bounds
-                stopTimer();
-            }
+            DocumentWindow::broughtToFront();
+            boundsSync.start();
         }
-
-        static constexpr int kSyncIntervalMs = 200;
-        static constexpr int kSyncWindowMs   = 3000;
-        int syncTicks = 0;
-        std::optional<juce::Rectangle<int>> lastRead;
-       #endif
 
         void closeButtonPressed() override
         {
@@ -101,6 +63,8 @@ public:
         }
 
     private:
+        X11BoundsSync boundsSync { *this };
+
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 

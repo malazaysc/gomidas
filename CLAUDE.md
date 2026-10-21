@@ -172,9 +172,11 @@ WebKitGTK honours Omarchy's `GDK_SCALE=2` while JUCE lays out at 1, so the UI re
 - ⚠️ **JUCE can miss the size a tiling WM gives the window as it maps it** (GOM-91). Measured under
   Hyprland: the X window had the tile's size while JUCE still believed its own 1280x820, in about 2
   launches in 5, with **no** ConfigureNotify reaching JUCE's handler at all (so not its serial check).
-  Re-requesting the bounds didn't help. So after every map, `Main.cpp`'s `MainWindow` compares JUCE's
-  bounds with the X server's for up to 3s and adopts the real ones once (two identical reads first,
-  1px tolerance). The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
+  Re-requesting the bounds didn't help. So **every** top-level window (`MainWindow` in `Main.cpp` and
+  `PluginEditorWindow` in `MainComponent.cpp` — a new one must too) owns an `X11BoundsSync`, started on
+  visibilityChanged/activeWindowStatusChanged/broughtToFront. It compares JUCE's bounds with the X
+  server's in physical px for up to 3s, adopts a mismatch only once it has read the same twice, and
+  stops early after 3 in-sync reads. The read is `src/ui/X11WindowBounds.cpp`: JUCE's own `XWindowSystem::getWindowBounds`
   (exposed by `JUCE_GUI_BASICS_INCLUDE_XHEADERS`, which is why that TU stands alone — Xlib's macros),
   converted back through JUCE's own scale maths. Don't open a second X connection or link libX11 —
   JUCE loads Xlib at runtime on purpose. Check with `hyprctl clients -j` against a temporary

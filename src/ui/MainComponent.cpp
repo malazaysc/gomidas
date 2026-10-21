@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "GomidasAssets.h"
 #include "AssetBytes.h"
+#include "X11WindowBounds.h"
 
 namespace gomidas
 {
@@ -20,7 +21,14 @@ struct MainComponent::PluginEditorWindow : public juce::DocumentWindow
         setVisible (true);
     }
     void closeButtonPressed() override { if (closeFn) closeFn(); }
+
+    // A tiling WM maps this window too, so it has the same missed-size problem (GOM-91).
+    void visibilityChanged() override          { DocumentWindow::visibilityChanged(); if (isVisible()) boundsSync.start(); }
+    void activeWindowStatusChanged() override  { DocumentWindow::activeWindowStatusChanged(); if (isActiveWindow()) boundsSync.start(); }
+    void broughtToFront() override             { DocumentWindow::broughtToFront(); boundsSync.start(); }
+
     std::function<void()> closeFn;
+    X11BoundsSync boundsSync { *this };
 };
 
 namespace
