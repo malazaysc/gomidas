@@ -717,11 +717,12 @@ void MainComponent::buildMenus()
         { "Help",   { { "About Gomidas", "about" } } },
     };
 
-    // Every table id must stay below the Open Recent range (GOM-102).
-    size_t longest = 0;
-    for (const auto& m : menus) longest = std::max (longest, m.second.size());
-    jassert (gomidas::menuids::fits ((int) menus.size(), (int) longest));
-    juce::ignoreUnused (longest);
+    menuIds = {};
+    for (auto& m : menus)
+        for (auto& it : m.second)
+            if (it.label != "-")
+                it.id = menuIds.add ({ MenuCommand::Kind::action, it.action });
+    menuIds.freeze();
 }
 
 void MainComponent::runMenuAction (const juce::String& action)
@@ -923,21 +924,24 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
     {
         const auto& it = items[(size_t) j];
         if (it.label == "-") { menu.addSeparator(); continue; }
-        const int id = gomidas::menuids::tableId (topLevelMenuIndex, j);
-        menu.addItem (id, it.label, it.action.isNotEmpty(), false);
+        menu.addItem (it.id, it.label, it.action.isNotEmpty(), false);
 
         // Tuck the "Open Recent" submenu in right after the File → Open item.
         if (it.action == "open")
         {
+            // Each entry's id carries the path it shows, so a click opens that file even if the
+            // list has changed since (GOM-102) — by path, never position.
+            menuIds.clearDynamic();
             juce::PopupMenu recent;
             if (recentFiles.isEmpty())
-                recent.addItem (gomidas::menuids::kNoRecentId, "(no recent files)", false, false);
+                recent.addItem (menuIds.add ({ MenuCommand::Kind::action, {} }), "(no recent files)", false, false);
             else
             {
-                for (int r = 0; r < recentFiles.size(); ++r)
-                    recent.addItem (gomidas::menuids::recentId (r), juce::File (recentFiles[r]).getFileName(), true, false);
+                for (const auto& path : recentFiles)
+                    recent.addItem (menuIds.add ({ MenuCommand::Kind::openRecent, path }),
+                                    juce::File (path).getFileName(), true, false);
                 recent.addSeparator();
-                recent.addItem (gomidas::menuids::kClearRecentId, "Clear Recent", true, false);
+                recent.addItem (menuIds.add ({ MenuCommand::Kind::clearRecent, {} }), "Clear Recent", true, false);
             }
             menu.addSubMenu ("Open Recent", recent);
         }
@@ -947,25 +951,26 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
 
 void MainComponent::menuItemSelected (int menuItemID, int)
 {
-    namespace ids = gomidas::menuids;
-    // Each id range is matched explicitly (GOM-102): the table, Open Recent and Clear Recent.
-    if (menuItemID == ids::kClearRecentId)
-    {
-        clearRecentFiles();
+    const auto* cmd = menuIds.find (menuItemID);
+    if (cmd == nullptr)
         return;
-    }
-    if (const auto idx = ids::decodeRecent (menuItemID))
+    switch (cmd->kind)
     {
-        if (*idx < recentFiles.size() && webView != nullptr)
-            // Route through JS so the unsaved-changes guard runs first.
-            webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
-                                         + juce::JSON::toString (juce::var (recentFiles[*idx])) + ");");
-        return;
+        case MenuCommand::Kind::action:
+            if (cmd->value.isNotEmpty())
+                runMenuAction (cmd->value);
+            break;
+        case MenuCommand::Kind::openRecent:
+            // Route through JS so the unsaved-changes guard runs first; native openRecent then
+            // opens it only if it is still in the list.
+            if (webView != nullptr)
+                webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
+                                             + juce::JSON::toString (juce::var (cmd->value)) + ");");
+            break;
+        case MenuCommand::Kind::clearRecent:
+            clearRecentFiles();
+            break;
     }
-
-    if (const auto t = ids::decodeTable (menuItemID))
-        if (t->menu < (int) menus.size() && t->item < (int) menus[(size_t) t->menu].second.size())
-            runMenuAction (menus[(size_t) t->menu].second[(size_t) t->item].action);
 }
 
 std::optional<juce::WebBrowserComponent::Resource>

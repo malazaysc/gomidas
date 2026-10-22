@@ -39,8 +39,11 @@ private:
     void timerCallback() override;
 
     // ---- macOS menu bar (GP8-style File/Edit/Track/… menus) ----
-    struct MenuEntry { juce::String label; juce::String action; }; // label "-" = separator; empty action = disabled
+    struct MenuEntry { juce::String label; juce::String action; int id = 0; }; // label "-" = separator; empty action = disabled
     std::vector<std::pair<juce::String, std::vector<MenuEntry>>> menus;
+    // What each native menu item id means (GOM-102): ids are handles, never arithmetic.
+    struct MenuCommand { enum class Kind { action, openRecent, clearRecent } kind; juce::String value; };
+    gomidas::MenuIdRegistry<MenuCommand> menuIds;   // the table (fixed) + Open Recent (rebuilt)
     void buildMenus();
     void runMenuAction (const juce::String& action);
     juce::StringArray getMenuBarNames() override;
@@ -63,7 +66,7 @@ private:
     void pushRecentFiles();                      // -> window.gomidasRecentFiles (GOM-86)
     void clearRecentFiles();
     juce::StringArray recentFiles;               // full paths, most-recent first
-    static constexpr int kRecentMax = gomidas::menuids::kRecentMax;   // ids: ui/MenuIds.h (GOM-102)
+    static constexpr int kRecentMax = 10;
     // Published to the page as gomidasNativeMenus so its HTML menu bar follows the binary (GOM-86).
     static constexpr bool kNativeMenus = GOMIDAS_NATIVE_MENUS != 0;
 
