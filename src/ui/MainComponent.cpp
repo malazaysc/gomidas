@@ -955,9 +955,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
 void MainComponent::menuItemSelected (int menuItemID, int)
 {
     // Every item built by getMenuForIndex carries its own action, so JUCE only lands here for an
-    // item added the old way, with an id — which would silently do nothing (GOM-102).
-    DBG ("menuItemSelected: item " << menuItemID << " has no action");
-    juce::ignoreUnused (menuItemID);
+    // item added the old way, with an id — which does nothing (GOM-102). Logged in every build;
+    // tests/menus.test.js rejects id-based items at the source.
+    juce::Logger::writeToLog ("[Gomidas] menu item " + juce::String (menuItemID) + " has no action");
     jassertfalse;
 }
 

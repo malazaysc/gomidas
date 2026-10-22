@@ -292,8 +292,9 @@ before New/Open/Sample.
 **View model:** `app.js` has `viewMode` = `single` (one focused track, set by a track-row click /
 `track-select`) or `multi` (all non-hidden, set by the eye control); `renderView()` reconciles them.
 **Native menu bar:** `MainComponent` is a `juce::MenuBarModel` (`setMacMainMenu`) with GP8 menus
-(File/Edit/Track/Bar/Note/Effects/Section/Tools/Sound/View/Window/Help). Items carry an action string →
-`menuItemSelected` → `evaluateJavascript("window.gomidasMenu('action')")` → dispatched in `app.js`.
+(File/Edit/Track/Bar/Note/Effects/Section/Tools/Sound/View/Window/Help). Each enabled item carries a callback
+capturing its action string (`getMenuForIndex`) → `runMenuAction` → `evaluateJavascript("window.gomidasMenu('action')")`
+→ dispatched in `app.js`; `menuItemSelected` is unused and asserts (GOM-102, see Open Recent below).
 Keep menu labels **ASCII** (non-ASCII `const char*` literals trip a JUCE String UTF-8 assertion).
 **Playback rule:** a bar always spans its full time-signature length (`masterBarTicks`); underfilled bars
 are silence-padded so the next bar starts on the downbeat. **Mixer:** mute/solo/volume are applied **live**
@@ -310,8 +311,8 @@ track selector · tempo field.
 on macOS (JUCE `userApplicationDataDirectory` is `~/Library` there, so we append `Application Support`)
 and to `<userApplicationDataDirectory>/Gomidas/recent.txt` elsewhere — `~/.config/Gomidas` on Linux (GOM-88).
 File→**Open Recent** submenu (built in `getMenuForIndex`) routes through
-`window.gomidasConfirmOpenRecent` so the unsaved-changes guard runs first. Every native menu item carries
-its own callback (`addItem (text, enabled, ticked, std::function)`), never a numeric id — ids used to encode
+`window.gomidasConfirmOpenRecent` so the unsaved-changes guard runs first. Every enabled native menu item carries
+its own callback (`addItem (text, enabled, ticked, std::function)`; disabled ones get `nullptr`), never a numeric id — ids used to encode
 (menu, item) and the 9th menu ran into the recent range (GOM-102). Each recent entry captures its path.
 **Key delivery:** `onKey` (JS window-capture) and the native `keyPressed`→`gomidasNativeKey` path both reach
 `handleKey`; **`onKey` bails when a text field/SELECT/modal is focused** so Space types instead of toggling
