@@ -15,6 +15,7 @@
  #error "GOMIDAS_NATIVE_MENUS=1 needs setMacMainMenu, which exists only on macOS (it can only be forced to 0)"
 #endif
 #include "engine/AudioEngine.h"
+#include "ui/MenuIds.h"
 
 namespace gomidas
 {
@@ -62,8 +63,7 @@ private:
     void pushRecentFiles();                      // -> window.gomidasRecentFiles (GOM-86)
     void clearRecentFiles();
     juce::StringArray recentFiles;               // full paths, most-recent first
-    static constexpr int kRecentMax = 10;
-    static constexpr int kRecentIdBase = 9000;   // menu item id base for recent entries
+    static constexpr int kRecentMax = gomidas::menuids::kRecentMax;   // ids: ui/MenuIds.h (GOM-102)
     // Published to the page as gomidasNativeMenus so its HTML menu bar follows the binary (GOM-86).
     static constexpr bool kNativeMenus = GOMIDAS_NATIVE_MENUS != 0;
 

@@ -304,10 +304,16 @@ if(GOMIDAS_BUILD_TESTS)
   set_target_properties(ui_scale_test PROPERTIES CXX_STANDARD 20)
   add_test(NAME ui_scale COMMAND ui_scale_test)
 
+  # Native menu-bar item ids: the table and Open Recent never overlap (GOM-102). Header-only.
+  add_executable(menu_ids_test tests/menu_ids_test.cpp)
+  target_include_directories(menu_ids_test PRIVATE src)
+  set_target_properties(menu_ids_test PROPERTIES CXX_STANDARD 20)
+  add_test(NAME menu_ids COMMAND menu_ids_test)
+
   # Aggregate target to build every test executable at once locally (`cmake --build build
   # --target gomidas_tests`). CI builds `all` (the app + these), so a new test target must not be
   # EXCLUDE_FROM_ALL.
-  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test app_resources_test)
+  add_custom_target(gomidas_tests DEPENDS sfz_smoketest sf_smoketest asset_bytes_test ui_scale_test app_resources_test menu_ids_test)
 endif()
 
 target_link_libraries(Gomidas PRIVATE

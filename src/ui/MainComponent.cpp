@@ -716,6 +716,12 @@ void MainComponent::buildMenus()
         { "Window", { { "Minimize", "minimize" } } },
         { "Help",   { { "About Gomidas", "about" } } },
     };
+
+    // Every table id must stay below the Open Recent range (GOM-102).
+    size_t longest = 0;
+    for (const auto& m : menus) longest = std::max (longest, m.second.size());
+    jassert (gomidas::menuids::fits ((int) menus.size(), (int) longest));
+    juce::ignoreUnused (longest);
 }
 
 void MainComponent::runMenuAction (const juce::String& action)
@@ -917,7 +923,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
     {
         const auto& it = items[(size_t) j];
         if (it.label == "-") { menu.addSeparator(); continue; }
-        const int id = (topLevelMenuIndex + 1) * 1000 + (j + 1);
+        const int id = gomidas::menuids::tableId (topLevelMenuIndex, j);
         menu.addItem (id, it.label, it.action.isNotEmpty(), false);
 
         // Tuck the "Open Recent" submenu in right after the File → Open item.
@@ -925,13 +931,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         {
             juce::PopupMenu recent;
             if (recentFiles.isEmpty())
-                recent.addItem (kRecentIdBase + kRecentMax + 1, "(no recent files)", false, false);
+                recent.addItem (gomidas::menuids::kNoRecentId, "(no recent files)", false, false);
             else
             {
                 for (int r = 0; r < recentFiles.size(); ++r)
-                    recent.addItem (kRecentIdBase + r, juce::File (recentFiles[r]).getFileName(), true, false);
+                    recent.addItem (gomidas::menuids::recentId (r), juce::File (recentFiles[r]).getFileName(), true, false);
                 recent.addSeparator();
-                recent.addItem (kRecentIdBase + kRecentMax + 2, "Clear Recent", true, false);
+                recent.addItem (gomidas::menuids::kClearRecentId, "Clear Recent", true, false);
             }
             menu.addSubMenu ("Open Recent", recent);
         }
@@ -941,27 +947,25 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
 
 void MainComponent::menuItemSelected (int menuItemID, int)
 {
-    // Recent-files range (and Clear Recent) live above kRecentIdBase.
-    if (menuItemID >= kRecentIdBase)
+    namespace ids = gomidas::menuids;
+    // Each id range is matched explicitly (GOM-102): the table, Open Recent and Clear Recent.
+    if (menuItemID == ids::kClearRecentId)
     {
-        if (menuItemID == kRecentIdBase + kRecentMax + 2) // Clear Recent
-        {
-            clearRecentFiles();
-            return;
-        }
-        const int idx = menuItemID - kRecentIdBase;
-        if (idx >= 0 && idx < recentFiles.size() && webView != nullptr)
+        clearRecentFiles();
+        return;
+    }
+    if (const auto idx = ids::decodeRecent (menuItemID))
+    {
+        if (*idx < recentFiles.size() && webView != nullptr)
             // Route through JS so the unsaved-changes guard runs first.
             webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
-                                         + juce::JSON::toString (juce::var (recentFiles[idx])) + ");");
+                                         + juce::JSON::toString (juce::var (recentFiles[*idx])) + ");");
         return;
     }
 
-    const int top = menuItemID / 1000 - 1;
-    const int item = menuItemID % 1000 - 1;
-    if (top >= 0 && top < (int) menus.size()
-        && item >= 0 && item < (int) menus[(size_t) top].second.size())
-        runMenuAction (menus[(size_t) top].second[(size_t) item].action);
+    if (const auto t = ids::decodeTable (menuItemID))
+        if (t->menu < (int) menus.size() && t->item < (int) menus[(size_t) t->menu].second.size())
+            runMenuAction (menus[(size_t) t->menu].second[(size_t) t->item].action);
 }
 
 std::optional<juce::WebBrowserComponent::Resource>
