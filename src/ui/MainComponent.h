@@ -63,7 +63,6 @@ private:
     void clearRecentFiles();
     juce::StringArray recentFiles;               // full paths, most-recent first
     static constexpr int kRecentMax = 10;
-    static constexpr int kRecentIdBase = 9000;   // menu item id base for recent entries
     // Published to the page as gomidasNativeMenus so its HTML menu bar follows the binary (GOM-86).
     static constexpr bool kNativeMenus = GOMIDAS_NATIVE_MENUS != 0;
 
