@@ -716,7 +716,6 @@ void MainComponent::buildMenus()
         { "Window", { { "Minimize", "minimize" } } },
         { "Help",   { { "About Gomidas", "about" } } },
     };
-
 }
 
 void MainComponent::runMenuAction (const juce::String& action)
@@ -921,7 +920,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
     for (const auto& it : menus[(size_t) topLevelMenuIndex].second)
     {
         if (it.label == "-") { menu.addSeparator(); continue; }
-        menu.addItem (it.label, it.action.isNotEmpty(), false,
+        if (it.action.isEmpty()) { menu.addItem (it.label, false, false, nullptr); continue; }
+        menu.addItem (it.label, true, false,
                       [self, action = it.action] { if (self != nullptr) self->runMenuAction (action); });
 
         // Tuck the "Open Recent" submenu in right after the File → Open item.
@@ -952,9 +952,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
     return menu;
 }
 
-void MainComponent::menuItemSelected (int, int)
+void MainComponent::menuItemSelected (int menuItemID, int)
 {
-    // Unused: every item built by getMenuForIndex carries its own action.
+    // Every item built by getMenuForIndex carries its own action, so JUCE only lands here for an
+    // item added the old way, with an id — which would silently do nothing (GOM-102).
+    DBG ("menuItemSelected: item " << menuItemID << " has no action");
+    juce::ignoreUnused (menuItemID);
+    jassertfalse;
 }
 
 std::optional<juce::WebBrowserComponent::Resource>

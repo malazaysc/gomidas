@@ -1211,7 +1211,7 @@ window.gomidasNativeKey = function (key, cmd, ctrl, shift, alt) {
   if (E && (!E.acceptsKeys || E.acceptsKeys(null, true))) E.handleKey(key, { meta: !!cmd, ctrl: !!ctrl, shift: !!shift, alt: !!alt });
 };
 
-// Dispatch a native menu-bar action (MainComponent menuItemSelected → here).
+// Dispatch a native menu-bar action (each item's callback in MainComponent::getMenuForIndex → runMenuAction → here).
 window.gomidasMenu = function (action) {
   const E = window.GomidasEditor;
   if (!E && !/^(new|open|save|export|import|sample)/.test(action)) return;
