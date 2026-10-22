@@ -309,7 +309,7 @@ track selector · tempo field.
 `gomidasLoadBinary` → `api.load`. Opened paths persist to `~/Library/Application Support/Gomidas/recent.txt`
 on macOS (JUCE `userApplicationDataDirectory` is `~/Library` there, so we append `Application Support`)
 and to `<userApplicationDataDirectory>/Gomidas/recent.txt` elsewhere — `~/.config/Gomidas` on Linux (GOM-88).
-File→**Open Recent** submenu (built in `getMenuForIndex`, ids `kRecentIdBase+i`) routes through
+File→**Open Recent** submenu (built in `getMenuForIndex`; every native menu item carries its own callback, never an id — GOM-102, ids once encoded (menu, item) and the 9th menu ran into the recent range; each entry captures its path) routes through
 `window.gomidasConfirmOpenRecent` so the unsaved-changes guard runs first.
 **Key delivery:** `onKey` (JS window-capture) and the native `keyPressed`→`gomidasNativeKey` path both reach
 `handleKey`; **`onKey` bails when a text field/SELECT/modal is focused** so Space types instead of toggling

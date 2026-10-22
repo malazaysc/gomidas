@@ -717,12 +717,6 @@ void MainComponent::buildMenus()
         { "Help",   { { "About Gomidas", "about" } } },
     };
 
-    menuIds = {};
-    for (auto& m : menus)
-        for (auto& it : m.second)
-            if (it.label != "-")
-                it.id = menuIds.add ({ MenuCommand::Kind::action, it.action });
-    menuIds.freeze();
 }
 
 void MainComponent::runMenuAction (const juce::String& action)
@@ -915,33 +909,42 @@ juce::StringArray MainComponent::getMenuBarNames()
 
 juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juce::String&)
 {
+    // Every item carries its own callback rather than an id (GOM-102): ids used to encode
+    // (menu, item) arithmetically, and the 9th menu reached the Open Recent range, so Sound items
+    // opened recent files and View/Window/Help did nothing. JUCE's macOS menu keeps a copy of each
+    // PopupMenu::Item and runs its action asynchronously, hence the SafePointer.
     juce::PopupMenu menu;
     if (topLevelMenuIndex < 0 || topLevelMenuIndex >= (int) menus.size())
         return menu;
 
-    const auto& items = menus[(size_t) topLevelMenuIndex].second;
-    for (int j = 0; j < (int) items.size(); ++j)
+    juce::Component::SafePointer<MainComponent> self (this);
+    for (const auto& it : menus[(size_t) topLevelMenuIndex].second)
     {
-        const auto& it = items[(size_t) j];
         if (it.label == "-") { menu.addSeparator(); continue; }
-        menu.addItem (it.id, it.label, it.action.isNotEmpty(), false);
+        menu.addItem (it.label, it.action.isNotEmpty(), false,
+                      [self, action = it.action] { if (self != nullptr) self->runMenuAction (action); });
 
         // Tuck the "Open Recent" submenu in right after the File → Open item.
         if (it.action == "open")
         {
-            // Each entry's id carries the path it shows, so a click opens that file even if the
-            // list has changed since (GOM-102) — by path, never position.
-            menuIds.clearDynamic();
             juce::PopupMenu recent;
             if (recentFiles.isEmpty())
-                recent.addItem (menuIds.add ({ MenuCommand::Kind::action, {} }), "(no recent files)", false, false);
+                recent.addItem ("(no recent files)", false, false, nullptr);
             else
             {
+                // Each entry opens the path it shows, never a position (GOM-86). Routed through JS
+                // so the unsaved-changes guard runs first; native openRecent then opens it only if
+                // it is still in the list.
                 for (const auto& path : recentFiles)
-                    recent.addItem (menuIds.add ({ MenuCommand::Kind::openRecent, path }),
-                                    juce::File (path).getFileName(), true, false);
+                    recent.addItem (juce::File (path).getFileName(), true, false, [self, path]
+                    {
+                        if (self != nullptr && self->webView != nullptr)
+                            self->webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
+                                                               + juce::JSON::toString (juce::var (path)) + ");");
+                    });
                 recent.addSeparator();
-                recent.addItem (menuIds.add ({ MenuCommand::Kind::clearRecent, {} }), "Clear Recent", true, false);
+                recent.addItem ("Clear Recent", true, false,
+                                [self] { if (self != nullptr) self->clearRecentFiles(); });
             }
             menu.addSubMenu ("Open Recent", recent);
         }
@@ -949,28 +952,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
     return menu;
 }
 
-void MainComponent::menuItemSelected (int menuItemID, int)
+void MainComponent::menuItemSelected (int, int)
 {
-    const auto* cmd = menuIds.find (menuItemID);
-    if (cmd == nullptr)
-        return;
-    switch (cmd->kind)
-    {
-        case MenuCommand::Kind::action:
-            if (cmd->value.isNotEmpty())
-                runMenuAction (cmd->value);
-            break;
-        case MenuCommand::Kind::openRecent:
-            // Route through JS so the unsaved-changes guard runs first; native openRecent then
-            // opens it only if it is still in the list.
-            if (webView != nullptr)
-                webView->evaluateJavascript ("window.gomidasConfirmOpenRecent("
-                                             + juce::JSON::toString (juce::var (cmd->value)) + ");");
-            break;
-        case MenuCommand::Kind::clearRecent:
-            clearRecentFiles();
-            break;
-    }
+    // Unused: every item built by getMenuForIndex carries its own action.
 }
 
 std::optional<juce::WebBrowserComponent::Resource>

@@ -15,7 +15,6 @@
  #error "GOMIDAS_NATIVE_MENUS=1 needs setMacMainMenu, which exists only on macOS (it can only be forced to 0)"
 #endif
 #include "engine/AudioEngine.h"
-#include "ui/MenuIds.h"
 
 namespace gomidas
 {
@@ -39,11 +38,8 @@ private:
     void timerCallback() override;
 
     // ---- macOS menu bar (GP8-style File/Edit/Track/… menus) ----
-    struct MenuEntry { juce::String label; juce::String action; int id = 0; }; // label "-" = separator; empty action = disabled
+    struct MenuEntry { juce::String label; juce::String action; }; // label "-" = separator; empty action = disabled
     std::vector<std::pair<juce::String, std::vector<MenuEntry>>> menus;
-    // What each native menu item id means (GOM-102): ids are handles, never arithmetic.
-    struct MenuCommand { enum class Kind { action, openRecent, clearRecent } kind; juce::String value; };
-    gomidas::MenuIdRegistry<MenuCommand> menuIds;   // the table (fixed) + Open Recent (rebuilt)
     void buildMenus();
     void runMenuAction (const juce::String& action);
     juce::StringArray getMenuBarNames() override;
